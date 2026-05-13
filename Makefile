@@ -12,10 +12,22 @@ LDFLAGS := -s -w \
 	-X $(BUILD_PKG).Commit=$(COMMIT) \
 	-X $(BUILD_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: build test lint clean tidy
+.PHONY: build build-prod frontend-build test lint clean tidy dev
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
+
+build-prod: frontend-build
+	cp -r frontend/dist server/embedded/dist
+	go build -tags prod -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
+	rm -rf server/embedded/dist
+
+frontend-build:
+	cd frontend && pnpm build:pages
+
+dev:
+	cd frontend && pnpm generate && pnpm dev &
+	go run -ldflags "$(LDFLAGS)" . serve
 
 test:
 	go test ./...
@@ -27,4 +39,4 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -rf bin/
+	rm -rf bin/ server/embedded/dist/

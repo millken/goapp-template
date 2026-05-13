@@ -1,6 +1,6 @@
 module github.com/millken/goapp-template
 
-go 1.23
+go 1.24.4
 
 require (
 	github.com/joho/godotenv v1.5.1
@@ -10,6 +10,11 @@ require (
 )
 
 require (
+	github.com/buke/quickjs-go v0.6.10 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/millken/inertia v1.0.2 // indirect
+	github.com/millken/inertia/middleware v1.0.2 // indirect
+	github.com/millken/inertia/ssr v1.0.2 // indirect
+	github.com/millken/inertia/ssr/quickjs v1.0.2 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 )

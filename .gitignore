@@ -10,12 +10,18 @@
 
 # Test binary, built with `go test -c`
 *.test
+*.log
 
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
 *.coverprofile
 profile.cov
+node_modules/
+bin/
+dist/
+frontend/dist/
+server/embedded/dist/
 
 # Dependency directories (remove the comment below to include it)
 # vendor/

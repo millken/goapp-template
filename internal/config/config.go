@@ -9,7 +9,20 @@ import (
 
 // Config is the top-level application configuration.
 type Config struct {
-	Log LogConfig `yaml:"log"`
+	Log    LogConfig    `yaml:"log"`
+	Server ServerConfig `yaml:"server"`
+}
+
+// ServerConfig controls the HTTP server.
+type ServerConfig struct {
+	// Addr is the listen address (default: :8080).
+	Addr string `yaml:"addr"`
+	// StaticPath is the path to the frontend dist directory (dev mode only).
+	StaticPath string `yaml:"static_path"`
+	// SSRBundlePath is the path to the SSR bundle JS (SSR mode only).
+	SSRBundlePath string `yaml:"ssr_bundle_path"`
+	// SSR enables server-side rendering via QuickJS (default: false).
+	SSR bool `yaml:"ssr"`
 }
 
 // LogConfig controls logging behaviour.
@@ -62,6 +75,11 @@ func defaults() Config {
 				MaxSize:    100 * 1024 * 1024, // 100MB
 				MaxBackups: 7,
 			},
+		},
+		Server: ServerConfig{
+			Addr:          ":8080",
+			StaticPath:    "frontend/dist",
+			SSRBundlePath: "frontend/dist/ssr-render-cjs.js",
 		},
 	}
 }

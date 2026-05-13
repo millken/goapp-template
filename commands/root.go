@@ -57,6 +57,7 @@ func New() *cobra.Command {
 	root.CompletionOptions.HiddenDefaultCmd = true
 
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newServeCmd())
 
 	return root
 }
