@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
@@ -10,6 +11,8 @@ import (
 	phuslog "github.com/phuslu/log"
 	"github.com/spf13/cobra"
 )
+
+type appConfigKey struct{}
 
 // AppInit performs shared initialization (env loading, config, logging).
 // Subcommands that define their own PersistentPreRunE must call this explicitly:
@@ -25,8 +28,7 @@ func AppInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	cfgPath := resolveConfigFile(cmd)
-	cfg, err := config.Load(cfgPath)
+	cfg, cfgPath, err := loadConfig(cmd)
 	if err != nil {
 		slog.Warn("failed to load config", "path", cfgPath, "err", err)
 	}
@@ -36,9 +38,21 @@ func AppInit(cmd *cobra.Command, args []string) error {
 		cfg.Log.Level = "debug"
 	}
 
+	cmd.SetContext(context.WithValue(cmd.Context(), appConfigKey{}, cfg))
 	setupLogging(cfg.Log)
 	slog.Debug("logging initialized", "level", cfg.Log.Level, "format", cfg.Log.Format)
 	return nil
+}
+
+func loadConfig(cmd *cobra.Command) (config.Config, string, error) {
+	cfgPath := resolveConfigFile(cmd)
+	cfg, err := config.Load(cfgPath)
+	return cfg, cfgPath, err
+}
+
+func configFromContext(ctx context.Context) (config.Config, bool) {
+	cfg, ok := ctx.Value(appConfigKey{}).(config.Config)
+	return cfg, ok
 }
 
 func New() *cobra.Command {

@@ -18,17 +18,25 @@ build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
 
 build-prod: frontend-build
-	cp -r frontend/dist server/embedded/dist
-	go build -tags prod -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
 	rm -rf server/embedded/dist
+	cp -r frontend/dist server/embedded/dist
+	trap 'rm -rf server/embedded/dist' EXIT; \
+	go build -tags prod -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
 
 frontend-build:
 	cd frontend && pnpm build:pages
 
-dev:
-	cd frontend && pnpm generate && pnpm dev &
-	MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . serve
+DEV_PORT ?= 5173
 
+dev:
+	cd frontend && pnpm generate
+	(cd frontend && DEV_PORT=$(DEV_PORT) pnpm dev) & \
+	trap 'kill %1 2>/dev/null || true' EXIT INT TERM; \
+	VITE_DEV_ADDR=http://localhost:$(DEV_PORT) MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . serve
+
+run:
+	go run -ldflags "$(LDFLAGS)" . serve
+	
 test:
 	go test ./...
 

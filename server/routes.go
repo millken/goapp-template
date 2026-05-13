@@ -1,16 +1,22 @@
 package server
 
-import "github.com/millken/inertia"
+import (
+	"log/slog"
+
+	"github.com/millken/inertia"
+)
 
 func registerRoutes(eng *inertia.Engine) {
-	// Pages
 	eng.GET("/", func(ctx *inertia.Context) {
 		ctx.Set("message", "Welcome to goapp-template")
-		_ = ctx.Render("Home")
+		if err := ctx.Render("Home"); err != nil {
+			slog.Error("render Home", "err", err)
+		}
 	})
 
-	// API example
 	eng.GET("/api/health", func(ctx *inertia.Context) {
-		_ = ctx.JSON(map[string]string{"status": "ok"})
+		if err := ctx.JSON(map[string]string{"status": "ok"}); err != nil {
+			slog.Error("json health", "err", err)
+		}
 	})
 }

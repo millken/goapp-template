@@ -19,6 +19,8 @@ type ServerConfig struct {
 	Addr string `yaml:"addr"`
 	// StaticPath is the path to the frontend dist directory (dev mode only).
 	StaticPath string `yaml:"static_path"`
+	// DevAddr is the Vite dev server URL used by the dev proxy.
+	DevAddr string `yaml:"dev_addr"`
 	// SSRBundlePath is the path to the SSR bundle JS (SSR mode only).
 	SSRBundlePath string `yaml:"ssr_bundle_path"`
 	// SSR enables server-side rendering via QuickJS (default: false).
@@ -79,6 +81,7 @@ func defaults() Config {
 		Server: ServerConfig{
 			Addr:          ":8080",
 			StaticPath:    "frontend/dist",
+			DevAddr:       "http://localhost:5173",
 			SSRBundlePath: "frontend/dist/ssr-render-cjs.js",
 		},
 	}

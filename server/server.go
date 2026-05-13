@@ -27,6 +27,7 @@ func New(cfg config.ServerConfig) (*inertia.Engine, error) {
 
 	opts := []inertia.Option{
 		inertia.WithMode(mode),
+		inertia.WithDevAddr(cfg.DevAddr),
 		inertia.WithErrorHandler(http.StatusNotFound, func(w http.ResponseWriter, r *http.Request, _ error) {
 			http.Error(w, "404 Not Found", http.StatusNotFound)
 		}),
@@ -73,10 +74,14 @@ func rootHTML(distFS fs.FS) string {
 	cssLink := ""
 	if entries, err := fs.Glob(distFS, "assets/main-*.css"); err == nil && len(entries) > 0 {
 		cssLink = fmt.Sprintf(`<link rel="stylesheet" href="/%s">`, entries[0])
+	} else {
+		slog.Warn("rootHTML: no main CSS found in dist assets")
 	}
 	jsTag := ""
 	if entries, err := fs.Glob(distFS, "assets/main-*.js"); err == nil && len(entries) > 0 {
 		jsTag = fmt.Sprintf(`<script type="module" src="/%s"></script>`, entries[0])
+	} else {
+		slog.Warn("rootHTML: no main JS found in dist assets")
 	}
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
