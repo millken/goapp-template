@@ -12,7 +12,7 @@ LDFLAGS := -s -w \
 	-X $(BUILD_PKG).Commit=$(COMMIT) \
 	-X $(BUILD_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: build build-prod frontend-build test lint clean tidy dev
+.PHONY: build build-prod frontend-build test lint clean tidy dev update update-go update-npm
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
@@ -32,11 +32,12 @@ dev:
 	cd frontend && pnpm generate
 	(cd frontend && DEV_PORT=$(DEV_PORT) pnpm dev) & \
 	trap 'kill %1 2>/dev/null || true' EXIT INT TERM; \
-	VITE_DEV_ADDR=http://localhost:$(DEV_PORT) MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . serve
+	VITE_DEV_ADDR=http://localhost:$(DEV_PORT) MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . serve; \
+	exit 0
 
 run:
 	go run -ldflags "$(LDFLAGS)" . serve
-	
+
 test:
 	go test ./...
 
@@ -48,3 +49,12 @@ tidy:
 
 clean:
 	rm -rf bin/ server/embedded/dist/
+
+update: update-go update-npm
+
+update-go:
+	go get -u ./...
+	go mod tidy
+
+update-npm:
+	cd frontend && pnpm update --latest
