@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Go: serve (dev)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}",
+      "args": ["serve"],
+      "env": {
+        "MYAPP_HOME": "${workspaceFolder}",
+        "VITE_DEV_ADDR": "http://localhost:5173"
+      },
+      "buildFlags": "",
+      "showLog": true
+    },
+    {
+      "name": "Go: serve (prod build)",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}",
+      "args": ["serve"],
+      "env": {
+        "MYAPP_HOME": "${workspaceFolder}"
+      },
+      "buildFlags": "-tags prod",
+      "preLaunchTask": "frontend: embed",
+      "showLog": true
+    },
+    {
+      "name": "Go: test current package",
+      "type": "go",
+      "request": "launch",
+      "mode": "test",
+      "program": "${fileDirname}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Dev: Vite + Go",
+      "configurations": ["Vite dev server", "Go: serve (dev)"],
+      "stopAll": true,
+      "preLaunchTask": "pnpm: generate"
+    }
+  ]
+}
