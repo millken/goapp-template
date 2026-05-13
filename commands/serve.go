@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,11 +24,7 @@ func newServeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			appCfg, ok := configFromContext(cmd.Context())
 			if !ok {
-				var err error
-				appCfg, _, err = loadConfig(cmd)
-				if err != nil {
-					slog.Warn("failed to load config", "err", err)
-				}
+				return fmt.Errorf("config not found in context: AppInit must run before serve")
 			}
 			cfg := appCfg.Server
 			if addr != "" {
