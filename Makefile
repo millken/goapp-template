@@ -27,7 +27,7 @@ frontend-build:
 
 dev:
 	cd frontend && pnpm generate && pnpm dev &
-	go run -ldflags "$(LDFLAGS)" . serve
+	MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . serve
 
 test:
 	go test ./...

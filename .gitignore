@@ -32,6 +32,10 @@ go.work.sum
 
 # env file
 .env
+.config
+
+# Local dev config (MYAPP_HOME=. points here)
+config.yaml
 
 # Editor/IDE
 # .idea/

@@ -88,7 +88,7 @@ func rootHTML(distFS fs.FS) string {
   %s
 </head>
 <body>
-  <div id="app"></div>
+  <div id="app"><!--inertia-ssr-content-inertia--></div>
   <script>window.__INERTIA_PAGE_DATA__="<!--inertia-data-page-inertia-->";</script>
   %s
 </body>
