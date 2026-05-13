@@ -4,6 +4,7 @@
     "ssr-build.ts",
     "ssr-esm-render.ts",
     "ssr-modules.ts",
+    "ssr/**/*",
     "scripts/**/*"
   ],
   "compilerOptions": {

@@ -1,4 +1,4 @@
-import { boot } from 'millken-inertia-vue'
+import { boot } from './inertia'
 import './styles/main.css'
 import { modules } from './inertia/modules'
 

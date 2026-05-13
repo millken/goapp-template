@@ -13,6 +13,17 @@ import (
 	"github.com/millken/inertia/ssr/quickjs"
 )
 
+// ModeName returns a human-readable mode string for logging.
+func ModeName(cfg config.ServerConfig) string {
+	if cfg.SSR {
+		return "ssr"
+	}
+	if defaultMode == inertia.ModeDevelopment {
+		return "development"
+	}
+	return "production"
+}
+
 // New creates an inertia.Engine from application config and registers routes.
 func New(cfg config.ServerConfig) (*inertia.Engine, error) {
 	mode := defaultMode

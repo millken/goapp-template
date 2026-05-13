@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { onMounted } from 'vue';
+
 defineProps<{
   message: string
 }>()
+onMounted(() => {
+  console.log('Home component mounted');
+})
 </script>
 
 <template>

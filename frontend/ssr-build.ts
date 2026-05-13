@@ -1,11 +1,11 @@
-import { build, type BuildOptions } from 'esbuild'
-import { createSSRBuildOptions } from 'millken-inertia-vue/ssr-build'
+import { build } from 'esbuild'
+import { createSSRBuildOptions } from './ssr/build-options'
 import vuePlugin from 'millken-esbuild-plugin-vue'
 
 build(createSSRBuildOptions({
   entryPoints: ['./ssr-esm-render.ts'],
   plugins: [vuePlugin()],
-}) as BuildOptions).then(() => {
+})).then(() => {
   console.log('SSR build done')
 }).catch((err) => {
   console.error('SSR build failed:', err)

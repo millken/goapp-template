@@ -69,7 +69,7 @@ func runServer(ctx context.Context, cfg config.ServerConfig) error {
 		}
 	}()
 
-	slog.Info("server starting", "addr", cfg.Addr, "dev_addr", cfg.DevAddr)
+	slog.Info("server starting", "addr", cfg.Addr, "mode", server.ModeName(cfg), "dev_addr", cfg.DevAddr)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
