@@ -29,11 +29,13 @@ frontend-build:
 DEV_PORT ?= 5173
 
 dev:
-	cd frontend && pnpm generate
-	(cd frontend && DEV_PORT=$(DEV_PORT) pnpm dev) & \
-	trap 'kill %1 2>/dev/null || true' EXIT INT TERM; \
+	cd frontend && pnpm generate && pnpm build:ssr
+	@VITE_PID=""; \
+	cleanup() { [ -n "$$VITE_PID" ] && kill "$$VITE_PID" 2>/dev/null || true; }; \
+	trap cleanup EXIT INT TERM; \
+	(cd frontend && DEV_PORT=$(DEV_PORT) pnpm dev) & VITE_PID=$$!; \
 	VITE_DEV_ADDR=http://localhost:$(DEV_PORT) MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . serve; \
-	exit 0
+	cleanup
 
 run:
 	go run -ldflags "$(LDFLAGS)" . serve
