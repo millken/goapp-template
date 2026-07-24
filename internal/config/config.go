@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -51,6 +52,8 @@ type LogFileConfig struct {
 
 // Load reads config from the given YAML file path.
 // Returns a zero-value Config (with defaults applied) if the file does not exist.
+// A read or parse error is returned wrapped with the path so callers can fail
+// loudly instead of silently falling back to defaults.
 func Load(path string) (Config, error) {
 	cfg := defaults()
 
@@ -59,11 +62,11 @@ func Load(path string) (Config, error) {
 		return cfg, nil
 	}
 	if err != nil {
-		return cfg, err
+		return cfg, fmt.Errorf("read config %s: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, err
+		return cfg, fmt.Errorf("parse config %s: %w", path, err)
 	}
 	return cfg, nil
 }

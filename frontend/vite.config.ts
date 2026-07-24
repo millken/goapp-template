@@ -10,6 +10,15 @@ export default defineConfig({
     host: '127.0.0.1',
     port: devPort,
     strictPort: true,
+    // In dev mode the page is served by the Go backend (e.g. :8080) which
+    // reverse-proxies non-route requests to this Vite server. The HMR
+    // WebSocket would otherwise try to connect to the backend port and fail.
+    // Point the HMR client straight at the Vite dev server port instead.
+    hmr: {
+      host: '127.0.0.1',
+      port: devPort,
+      protocol: 'ws',
+    },
   },
   resolve: {
     alias: {

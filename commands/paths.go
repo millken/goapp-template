@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,9 @@ func homeEnvVar() string {
 	return strings.ToUpper(buildinfo.AppName) + "_HOME"
 }
 
-var homeOnce = sync.OnceValues(func() (string, error) {
+// resolveHome computes the app home directory from the environment.
+// Priority: $MYAPP_HOME env var → ~/.<AppName>
+func resolveHome() (string, error) {
 	// Allow overriding the entire home dir via env var (e.g. MYAPP_HOME).
 	if p := os.Getenv(homeEnvVar()); p != "" {
 		return p, nil
@@ -26,25 +27,32 @@ var homeOnce = sync.OnceValues(func() (string, error) {
 		return "", err
 	}
 	return filepath.Join(h, "."+buildinfo.AppName), nil
-})
+}
+
+var homeOnce = sync.OnceValues(resolveHome)
 
 // Home returns the app home directory.
 // Priority: $MYAPP_HOME env var → ~/.myapp
-func Home() string {
-	h, err := homeOnce()
-	if err != nil {
-		slog.Warn("failed to determine home directory", "err", err)
-		return ""
-	}
-	return h
+// Returns an error if the home directory cannot be determined, so callers
+// can fail loudly instead of silently operating on the filesystem root.
+func Home() (string, error) {
+	return homeOnce()
 }
 
 // ConfigFile returns the path to config.yaml inside Home().
-func ConfigFile() string {
-	return filepath.Join(Home(), "config.yaml")
+func ConfigFile() (string, error) {
+	h, err := Home()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(h, "config.yaml"), nil
 }
 
 // EnvFile returns the path to .env inside Home().
-func EnvFile() string {
-	return filepath.Join(Home(), ".env")
+func EnvFile() (string, error) {
+	h, err := Home()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(h, ".env"), nil
 }

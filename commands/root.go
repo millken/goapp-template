@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -21,16 +22,20 @@ type appConfigKey struct{}
 //	    return AppInit(cmd, args)
 //	},
 func AppInit(cmd *cobra.Command, args []string) error {
+	envPath, err := EnvFile()
+	if err != nil {
+		return fmt.Errorf("resolve env file: %w", err)
+	}
 	// godotenv.Load wraps errors, so use os.Stat to check existence first.
-	if _, err := os.Stat(EnvFile()); err == nil {
-		if err := godotenv.Load(EnvFile()); err != nil {
-			slog.Warn("failed to load .env", "path", EnvFile(), "err", err)
+	if _, err := os.Stat(envPath); err == nil {
+		if err := godotenv.Load(envPath); err != nil {
+			slog.Warn("failed to load .env", "path", envPath, "err", err)
 		}
 	}
 
-	cfg, cfgPath, err := loadConfig(cmd)
+	cfg, err := loadConfig(cmd)
 	if err != nil {
-		slog.Warn("failed to load config", "path", cfgPath, "err", err)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	verbose, _ := cmd.Root().PersistentFlags().GetBool("verbose")
@@ -44,10 +49,13 @@ func AppInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func loadConfig(cmd *cobra.Command) (config.Config, string, error) {
-	cfgPath := resolveConfigFile(cmd)
+func loadConfig(cmd *cobra.Command) (config.Config, error) {
+	cfgPath, err := resolveConfigFile(cmd)
+	if err != nil {
+		return config.Config{}, fmt.Errorf("resolve config file: %w", err)
+	}
 	cfg, err := config.Load(cfgPath)
-	return cfg, cfgPath, err
+	return cfg, err
 }
 
 func configFromContext(ctx context.Context) (config.Config, bool) {
@@ -119,9 +127,9 @@ func setupLogging(cfg config.LogConfig) {
 // resolveConfigFile returns the config file path using the following priority:
 //  1. --config flag
 //  2. ConfigFile() which derives from Home() (itself respects $MYAPP_HOME)
-func resolveConfigFile(cmd *cobra.Command) string {
+func resolveConfigFile(cmd *cobra.Command) (string, error) {
 	if p, _ := cmd.Root().PersistentFlags().GetString("config"); p != "" {
-		return p
+		return p, nil
 	}
 	return ConfigFile()
 }
