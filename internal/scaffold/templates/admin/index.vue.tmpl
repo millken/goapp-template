@@ -1,0 +1,39 @@
+<script setup lang="ts">
+import AdminLayout from '@/components/AdminLayout.vue'
+
+interface MenuItem { title: string; path: string; order?: number }
+
+defineProps<{
+  items: Array<{ id: number; name: string }>
+  basePath: string
+  // Injected by the admin auth middleware for the shell:
+  adminMenu?: MenuItem[]
+  adminUser?: unknown
+  adminMount?: string
+  loginPath?: string
+}>()
+</script>
+
+<template>
+  <AdminLayout :menu="adminMenu" :user="adminUser" :mount="adminMount" :login-path="loginPath">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold text-gray-900">[[.Type]]</h1>
+      <a :href="`${basePath}/new`" class="px-3 py-1.5 bg-blue-600 text-white rounded">New</a>
+    </div>
+    <ul class="divide-y bg-white rounded shadow">
+      <li
+        v-for="item in items"
+        :key="item.id"
+        class="py-2 px-4 flex items-center justify-between"
+      >
+        <span>{{ item.name }}</span>
+        <div class="space-x-2">
+          <a :href="`${basePath}/${item.id}`" class="text-blue-600">Edit</a>
+          <form :action="`${basePath}/${item.id}/delete`" method="post" class="inline">
+            <button type="submit" class="text-red-600">Delete</button>
+          </form>
+        </div>
+      </li>
+    </ul>
+  </AdminLayout>
+</template>

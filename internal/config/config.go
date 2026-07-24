@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/millken/goapp-template/internal/module/admin"
 	"github.com/millken/goapp-template/internal/module/db"
 	"github.com/millken/goapp-template/internal/module/session"
 	"gopkg.in/yaml.v3"
@@ -22,6 +23,9 @@ type Config struct {
 	// Session holds the session module config. nil when not used. session
 	// imports app (not config), so config→session→app→inertia is acyclic.
 	Session *session.Config `yaml:"session"`
+	// Admin holds the admin module config. nil when not used. admin imports
+	// session and app (not config), so the dependency chain is acyclic.
+	Admin *admin.Config `yaml:"admin"`
 }
 
 // ServerConfig controls the HTTP server.

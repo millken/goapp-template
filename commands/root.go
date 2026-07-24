@@ -84,6 +84,8 @@ func New() *cobra.Command {
 
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newServeCmd())
+	root.AddCommand(newGenCmd())
+	root.AddCommand(newAdminCmd())
 
 	return root
 }

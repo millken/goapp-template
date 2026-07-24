@@ -1,6 +1,6 @@
 # goapp-template 模块化设计文档
 
-> 状态:草案 v4(app 内核改为薄内核:`app.New(*inertia.Engine)`,不 import config;装配留 server.New;config 不动)· 适用范围:单个 `goapp-template`,主要自用 · 目标:让 db / session / admin / mvc 等 feature 成为**可组合的 Module**,按需启用。
+> 状态:v5(已落地 phase 1–4:薄内核 + db + session + 完整 admin 框架 + `internal/scaffold` 生成器)· 适用范围:单个 `goapp-template`,主要自用 · 目标:让 db / session / admin 等 feature 成为**可组合的 Module**,按需启用;资源脚手架由 `internal/scaffold` 生成。
 
 ---
 
@@ -356,40 +356,38 @@ func (m *Module) Shutdown(context.Context) error { if m.db != nil { return m.db.
 
 **迁移执行时机**:默认在 `Boot` 里自动跑(便于自用/开发);生产若想显式控制,可加 `migrate` 子命令复用同一 Module —— 后续迭代点。
 
-### 5.2 `session`(后端待定)
-- 职责:请求级会话,中间件形式注入 `*inertia.Context`。
-- 依赖:`db.Provider`(用 DB 作 store)—— 也可选内存/Redis store,通过 `Store` 接口可插拔。
-- Config:`secret`、`cookie_name`、`ttl`、`store`(db/redis/memory)、`secure`/`samesite`。
-- Register:挂一个中间件(靠 §4.2 的顺序保证,排在依赖它的 admin 之前)。
+### 5.2 `session`(已实现:签名 cookie + 可插拔 store)
+- 职责:请求级会话,中间件形式挂到 `*inertia.Context`。
+- 依赖:`db.Provider`(store=db 时);store=memory 时不需要。
+- Config:`secret`(必填)、`cookie_name`、`ttl`、`store`(`memory`|`db`)、`db_table`、`secure`、`same_site`、`path`、`domain`。`HttpOnly` 恒为 true(无 opt-out 字段)。
+- Register:挂一个中间件(靠 §4.2 顺序保证,排在依赖它的 admin 之前),把 `c.Writer` 注入 session。
+- **cookie 写回时机**:session ID 装在 HMAC-SHA256 签名 cookie 里;数据存 Store。`Session.Save/Destroy` **同步**写/清 cookie —— 因为 inertia 的 ResponseWriter 是**写穿透**(首个 body 写就刷 header),事后写 cookie 会丢。所以 handler 必须在写 body 前 `Save`。
+- DBStore:`ON CONFLICT`/`ON DUPLICATE KEY` 按 `db.Flavor` 生成(3 占位符);`expires_at BIGINT`(UnixNano,PG/MySQL 的 INTEGER 会溢出);表名校验 `^[A-Za-z_]\w*$`。
 - 暴露 `Provider.Session(c *inertia.Context) Session`。
 
-### 5.3 `admin`(草图)
-- 职责:后台管理脚手架(登录态保护的路由 + 通用 CRUD over models)。
-- 依赖:`db.Provider` + `session.Provider`(鉴权)。
-- 前端:一组 `.vue` 后台页面 + 一套 inertia 路由;复用 mvc 约定,套 admin 布局。
-- Config:`mount`(默认 `/admin`)、`auth`。
-- **自带生成器 `goapp gen admin <resource>`**:产出一组 admin 路由模板(handler + model + admin 页面 + 路由挂载),约等于 `gen mvc` 输出 + 鉴权中间件 + admin 外壳(见 §5.5)。
+### 5.3 `admin`(已实现:完整后台框架)
+不再是"只有鉴权中间件"的薄壳,而是一套后台基础框架:
+- **组成**(`internal/module/admin/`):`admin.go`(Module/Config/New/Register/Boot)、`auth.go`(鉴权中间件 + `isUnder` + 已登录请求注入 `adminMenu`/`adminUser`/`adminMount`/`loginPath` 共享 props)、`handlers.go`(loginForm/loginSubmit/logout/dashboard)、`menu.go`(`MenuItem` + `AddMenuItem` + 排序的 `menuItems`)、`user.go`(`User` + `HashPassword`/`verifyPassword`(bcrypt)+ `findUser` + `authenticate`,含未知用户的等时 dummy 比较)。
+- **依赖**:`SessionProvider`(登录态)+ `DBProvider`(用户查库),构造注入;`New(cfg, sessProv, dbProv)`。
+- **路由**(挂在 `Mount()` 下,默认 `/admin`):`GET /login`、`POST /login`、`POST /logout`、`GET /`(dashboard)。auth 中间件放行 login,其余需登录。
+- **认证来源**:`users` 表(经 db 模块;见 §5.1 的 `002_users` 迁移),密码 bcrypt。首个用户用 `goapp admin create-user <username>` 播种(读 stdin 或 `--password`)——模板里不写死 hash。
+- **Config**:`mount`、`login_path`、`auth_key`(默认 `admin_user_id`)、`users_table`(默认 `users`,校验标识符)。
+- **登录/登出**遵守写穿透:`sess.Save/Destroy` 先于 302 重定向的 body 写出。
+- **前端**:`frontend/src/components/AdminLayout.vue`(侧栏菜单 + 登出表单 + slot)、`frontend/pages/admin/{login,dashboard}.vue`。菜单项由 admin 资源在 `Register` 时 `AddMenuItem` 注册,中间件注入为 prop。
+- **生成的 admin 资源**依赖 `dbProvider{DB() *sqldb.DB}` + `adminHost{Mount(); AddMenuItem(admin.MenuItem)}`(都是小接口,`*db.Module`/`*admin.Module` 满足),在 `commands/serve.go` 里排在 `adminMod` 之后:`a.Use(..., adminMod, adminpost.New(dbMod, adminMod))`。
 
-### 5.4 `mvc`(草图,约定为主)
-- 把 Go + Inertia + Vue 的常见结构**约定化**,减少样板:目录约定(`internal/module/<x>/{handler,model}.go` + `frontend/pages/<x>/*.vue`)、Handler 签名 + 请求绑定/响应 helper、按约定注册路由(可覆盖)。
-- **自带生成器 `goapp gen mvc <resource>`**:给定资源名,直接生成**一整组路由模板**(CRUD handler + model + 列表/新建/编辑 Vue 页面 + 路由注册 + 可选迁移)。这是 mvc 的核心交付,不是可选项(见 §5.5)。
-- "view" 即 Vue 页面(Inertia);mvc 主要是**后端约定 + 前端页面目录约定 + 生成器**,不是服务端模板引擎。
+### 5.4 `scaffold` 生成器(`internal/scaffold`,原 mvc)
+把 Go + Inertia + Vue 的 CRUD 结构约定化的**开发期代码生成器**——**是工具,不是运行时 Module**,所以放 `internal/scaffold/`(不在 `internal/module/`)。原 `mvc` 包即此;`mvc` 作为命令别名保留。
+- `Spec`/`NewSpec`:资源名归一化(snake/kebab/Camel → 各种形态)。
+- `Resource(name)`:生成 public 资源(handler + model + `index/form.vue`)。CLI `goapp gen resource <name>`(别名 `mvc`)。
+- `Admin(name)`:生成 admin 资源(handler 挂 admin mount + 注册菜单 + 复用 resource 的 model + admin 版 `index/form.vue` 套 `AdminLayout`)。CLI `goapp gen admin <name>`。
 
-### 5.5 脚手架生成器(`goapp gen`)
-
-mvc 与 admin 都自带**资源脚手架生成器**:给定资源名,直接生成**一组路由模板**(CRUD handler + model + Vue 页面 + 路由注册),省去手写样板。这是两者的核心交付之一。
-
-- **CLI**:`goapp gen mvc <resource>` / `goapp gen admin <resource>`(cobra 子命令,在 `commands/`)。例:`goapp gen mvc post`。
-- **机制**:`text/template` + 各包 `//go:embed` 的 `.tmpl` 模板 + 写文件。生成器是**构建/开发期工具**(由 `gen` 子命令调用),与运行期 Module 解耦。
-- **mvc 产物**(资源 `post`):
-  - `internal/module/post/handler.go` —— List/Create/Read/Update/Delete(inertia.Context + 请求绑定 helper)。
-  - `internal/module/post/model.go` —— `Post` struct(sqldb `db` tag)+ 表名。
-  - `frontend/pages/post/{index,create,edit}.vue` —— 列表/新建/编辑(Inertia)。
-  - 路由注册(挂到 `app.Use` 的 post Module)。
-  - 可选:`internal/module/post/migrations/NNN_post.up.sql`。
-- **admin 产物**:复用 mvc 的 handler/model + 套**鉴权中间件 + admin 布局**,页面落 `frontend/pages/admin/<resource>/`,路由挂 admin 的 `/admin` 下。即 `gen admin` ≈ `gen mvc` + admin 外壳。
-- **模板位置**:`internal/module/mvc/templates/*.tmpl`、`internal/module/admin/templates/*.tmpl`(随包 embed)。两个生成器各自实现;等模板写法重复了再抽共享 scaffold 包(YAGNI)。
-- **可覆盖**:生成的是普通文件,随意改;覆盖已存在文件前提示或加 `--force`,生成器不锁死、不接管已写代码。
+### 5.5 生成器机制与约定
+- **CLI**:`goapp gen resource <name>` / `goapp gen admin <name>`(cobra,在 `commands/gen.go`;`gen` 跳过 AppInit,纯写文件)。
+- **机制**:`text/template`(`[[ ]]` 分隔符,避开 Vue 的 `{{ }}`)+ `internal/scaffold/templates/{resource,admin}/*.tmpl` 单个 `//go:embed`。生成器与运行期 Module 解耦。
+- **不生成迁移**:schema 变更是事件驱动、通常整体性的,不是"每资源一个";且只有 `internal/module/db/migrations/` 被 embed+执行,每资源的 `migrations/` 会是**没人跑的死文件**。迁移**手写**在 `internal/module/db/migrations/`(`NNN_name.up.sql`/`.down.sql`,sqldb 按文件名序执行并记录版本)。
+- **生成物是普通文件**:随意改;覆盖前需 `--force`。
+- **接线断言测试**:`internal/scaffold/build_test.go` 把生成物写进真实模块树,补一个 `New((*db.Module)(nil)[, (*admin.Module)(nil)])` 断言文件再 `go build`——因为生成包单独能编译(自带接口),类型不匹配只在接线点暴露。
 
 ---
 
@@ -397,27 +395,31 @@ mvc 与 admin 都自带**资源脚手架生成器**:给定资源名,直接生成
 
 ```
 goapp-template/
-  main.go                  # 仅:signal ctx(补 SIGTERM)+ cobra ExecuteContext
-  commands/                # composition root:root(AppInit)/serve —— 调 server.New + app.New + Use + Serve
+  main.go                  # 仅:signal ctx(SIGINT+SIGTERM)+ cobra ExecuteContext
+  commands/                # composition root:root(AppInit)/serve/gen/admin
+    root.go serve.go gen.go admin_user.go   # gen=脚手架;admin create-user=播种首个用户
   internal/
-    app/                   # 【新】薄内核:Module/Booter/Shutdowner + App{New(eng)/Use/Serve(ctx)};只 import inertia
+    app/                   # 薄内核:Module/Booter/Shutdowner + App{New(eng)/Use/Serve(ctx)};只 import inertia
       app.go module.go
-    config/                # 不动:Config{Log,Server} + Load(+ defaults);不 import module(phase2 再决定是否上移组合)
-    module/                # 【phase 2 起】feature 模块,各自一个子包
-      db/      (含 migrations/*.sql)
-      session/
-      admin/   (含 templates/*.tmpl —— gen admin 模板)
-      mvc/     (含 templates/*.tmpl —— gen mvc 模板)
-      post/    # 【生成器产物】goapp gen mvc post → handler.go/model.go + frontend/pages/post/*.vue
-    driver/                # 可选:blank-import 选择的 DB 驱动(直接放 main 也行,不必单独成包)
-    buildinfo/             # 已有
-  server/                  # engine 装配留在这:server.New(装配)+ server.Routes(app.Module)+ mode_*.go + rootHTML + embedded/
+    config/                # Config{Log,Server,DB,Session,Admin} + Load;不 import app(无环)
+    scaffold/              # 【工具层,非运行时】代码生成器(原 mvc):naming/resource/admin + templates/{resource,admin}/*.tmpl
+    module/                # 运行时 feature 模块,各自一个子包
+      db/      (含 migrations/*.sql —— 001_init、002_users)
+      session/ (session.go/impl.go/store*.go/cookie.go)
+      admin/   (admin.go/auth.go/handlers.go/menu.go/user.go —— 完整后台框架)
+      adminpost/ # 【生成器产物示例】goapp gen admin post
+    driver/                # blank-import 选择的 DB 驱动(默认 sqlite3)
+    buildinfo/
+  server/                  # engine 装配:server.New(装配)+ server.Routes(app.Module)+ mode_*.go + rootHTML + embedded/
     server.go routes.go mode_dev.go mode_prod.go
-  frontend/                # 已有:Vue+Vite+SSR;admin/mvc 页面也放这
-  docs/modular-design.md   # 本文档
+  frontend/                # Vue+Vite+SSR
+    src/components/AdminLayout.vue   # admin 外壳(菜单+登出+slot)
+    pages/                 # 视图按 glob 发现,key = pages/ 下相对路径
+      admin/{login,dashboard}.vue    # admin 框架页面;生成的资源落 pages/admin/<name>/
+  docs/modular-design.md
 ```
 
-> 边界:`internal/app` = 通用生命周期内核(只 import inertia,可复用);`server` = template 的 engine 装配 + 示例路由(耦合 embed/构建模式);`server/routes.go` 作为 `app.Module` 注册示例业务路由。Module 各自注册自己的路由。
+> 边界:`internal/app` = 通用生命周期内核(只 import inertia,可复用);`internal/scaffold` = 开发期生成器(工具,非运行时);`internal/module/*` = 运行时模块;`server` = template 的 engine 装配 + 示例路由(耦合 embed/构建模式)。Module 各自注册自己的路由。
 
 ---
 
@@ -443,10 +445,10 @@ goapp-template/
    - 此时再决定 db 配置段放 `config.Config` 还是上移 `commands`(§4.4)。
 3. **`session`(依赖 db)**
    - 验证模块间依赖(db → session)、中间件顺序保证(§4.2)。
-4. **`mvc` + 生成器,再 `admin` + 生成器**
-   - mvc:落目录约定 + handler helper + `goapp gen mvc <resource>`(text/template + embed 模板,产出 CRUD handler/model/Vue 页面/路由)。用它生成第一个资源验证整条链路。
-   - admin:mvc 之上加鉴权 + admin 布局 + `goapp gen admin <resource>`(§5.5)。
-5. **(未来)lift 成 `goapp-foundations`** —— 多项目复用成熟后再做(届时可考虑把 server.New 装配并入 app.New)。
+4. **`scaffold` 生成器 + `admin` 框架**(已实现)
+   - `internal/scaffold`(原 mvc,移出 module/):`goapp gen resource`(别名 `mvc`)+ `goapp gen admin`。**不再生成每资源迁移**;接线断言 build 测试守住"生成物能接上真实模块"。
+   - `admin` 从鉴权中间件扩成完整框架:login/logout(bcrypt + users 表)+ dashboard + menu 注册 + `AdminLayout.vue`;`goapp admin create-user` 播种首用户。serve 顺序:routes → db → session → admin → admin 资源。
+5. **(未来)lift 成 `goapp-foundations`** —— 多项目复用成熟后再做(届时可考虑把 server.New 装配并入 app.New;`internal/scaffold` 也一并带走)。
 
 ---
 
@@ -465,11 +467,13 @@ goapp-template/
 | Boot/Shutdown ctx | Boot 用 Serve 传入 ctx;Shutdown 用 app 自造超时 ctx;错误 errors.Join |
 | Use 回滚 | 不做(engine 无反注册 API,且失败即退出) |
 | 信号 owner | 阶段 1 补 SIGTERM + 删冗余;后续 inertia 加 `RunWithContext(ctx)` 彻底统一(顺带解决二次强杀) |
-| session 后端 | DB / Redis / 内存,**待定**(仅影响 session 模块,不阻塞 db) |
-| 何时抽 foundations | 等痛了(YAGNI);届时再把 server.New 装配并入 app.New |
-| 脚手架生成器 | mvc / admin 各自带 `goapp gen <resource>`(text/template + embed),产出 CRUD 路由模板;二者暂不抽共享 scaffold 包 |
+| session 后端 | **memory / db 已实现**(签名 cookie,Save/Destroy 同步写 cookie);Redis 待需求 |
+| admin | **完整框架已实现**:auth + login/logout(bcrypt/users 表)+ dashboard + menu;`create-user` 播种 |
+| 脚手架生成器 | **`internal/scaffold`(工具层,原 mvc)**:`gen resource`(别名 mvc)/ `gen admin`;不生成迁移;接线 build 测试把关 |
+| 迁移生成 | **不做**:手写在 `db/migrations/`(版本化 `NNN_*.up/down.sql`);每资源迁移会是死文件 |
+| 何时抽 foundations | 等痛了(YAGNI);届时把 app + module + scaffold 带走,server.New 装配可并入 app.New |
 
-DB 访问与迁移已定(sqldb);app 薄内核、ctx 契约、回滚语义、迁移接线均已定。**仅剩 session 默认后端**待定。
+app 薄内核、ctx 契约、回滚语义、迁移接线、db/session/admin/scaffold 均已实现。**开放**:session 的 Redis 后端(待需求)、admin 登录的 CSRF/换 session id(见 §9)。
 
 ---
 
@@ -480,4 +484,8 @@ DB 访问与迁移已定(sqldb);app 薄内核、ctx 契约、回滚语义、迁�
 - **信号双 owner / 二次强杀**:阶段 1 缓解;彻底统一(含二次 Ctrl-C 强杀)待 inertia `RunWithContext`(§4.5)。在此之前 Shutdown 卡死的保底是 `shutdownTimeout`。
 - **过度抽象**:app 保持薄内核(不建 engine、不读 config);Module 接口先做最小 `Register`,lifecycle 按需加;逃生门(`WithEngine`/`WithMigrationsFS`/`Provider` 接口/装配并入 app)等真实需求出现再加。
 - **可测试性**:`server.New` 装配 engine 会碰文件系统(embed/staticFS)—— 需要时再加 `WithEngine`/装配注入逃生门,现在不预设。
-- **MVC 约定太死**:约定永远可被显式路由覆盖;不强制。
+- **约定太死**:生成的是普通文件,可被显式改写/覆盖;不强制。
+- **强制配置面变大**:serve 无条件 `Use(db, session, admin)`,启动需要 `[db]`+`[session]`(含 secret)+`[admin]` 三段齐全,否则 Boot 报缺段。这是"模块默认开、缺段即响亮报错"的取舍;要精简就在 `commands/serve.go` 注释掉对应 New/Use。
+- **admin 登录 session 未换 ID(session fixation)**:登录后复用登录前的 session ID。HttpOnly+签名下风险低,暂记为已知取舍;若日后 `session.Session` 加 `Rotate` 再改,不为此现在扩接口。
+- **admin 登录无 CSRF token**:login/logout 是普通表单 POST,靠 cookie `SameSite=Lax` 缓解;需要更强防护时在 session 层加 CSRF,不预设。
+- **admin 生成资源的前端链接依赖 mount**:handler 用 `Mount()` 算路由(mount 可配),但生成的 vue 用服务端下发的 `basePath` 建链接,已与 mount 解耦;`pages/admin/<name>/` 目录前缀仍假设 mount=`/admin`,改 mount 时注意页面目录。

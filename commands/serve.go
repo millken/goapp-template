@@ -7,6 +7,7 @@ import (
 
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/config"
+	"github.com/millken/goapp-template/internal/module/admin"
 	"github.com/millken/goapp-template/internal/module/db"
 	"github.com/millken/goapp-template/internal/module/session"
 	"github.com/millken/goapp-template/server"
@@ -72,10 +73,18 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	// resolve DB(). session's middleware wraps any later module's handlers
 	// (e.g. admin in a future phase) per the §4.2 ordering guarantee.
 	sessMod := session.New(cfg.Session, dbMod)
+	// admin depends on session (auth state) and db (user lookup), so it is placed
+	// after both. Its auth middleware guards the admin mount; login/logout and a
+	// dashboard are built in, and generated admin resources register their routes
+	// (and menu entries) under the mount and are thus protected.
+	adminMod := admin.New(cfg.Admin, sessMod, dbMod)
 
-	// Order matters: routes → db → session → (future: admin). Each later module
-	// may depend on earlier ones.
-	if err := a.Use(server.NewRoutes(), dbMod, sessMod); err != nil {
+	// Order matters: routes → db → session → admin → admin resources. Each later
+	// module may depend on earlier ones. Generated admin resources are appended
+	// AFTER adminMod, e.g.:
+	//   adminpostMod := adminpost.New(dbMod, adminMod)
+	//   a.Use(server.NewRoutes(), dbMod, sessMod, adminMod, adminpostMod)
+	if err := a.Use(server.NewRoutes(), dbMod, sessMod, adminMod); err != nil {
 		return fmt.Errorf("register modules: %w", err)
 	}
 

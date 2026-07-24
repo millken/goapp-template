@@ -1,0 +1,26 @@
+<script setup lang="ts">
+defineProps<{
+  items: Array<{ id: number; name: string }>
+  viewDir: string
+}>()
+</script>
+
+<template>
+  <div class="max-w-3xl mx-auto py-8">
+    <div class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold">[[.Type]]</h1>
+      <a :href="`/${viewDir}/new`" class="px-3 py-1.5 bg-blue-600 text-white rounded">New</a>
+    </div>
+    <ul class="divide-y">
+      <li v-for="item in items" :key="item.id" class="py-2 flex items-center justify-between">
+        <span>{{ item.name }}</span>
+        <div class="space-x-2">
+          <a :href="`/${viewDir}/${item.id}`" class="text-blue-600">Edit</a>
+          <form :action="`/${viewDir}/${item.id}/delete`" method="post" class="inline">
+            <button type="submit" class="text-red-600">Delete</button>
+          </form>
+        </div>
+      </li>
+    </ul>
+  </div>
+</template>

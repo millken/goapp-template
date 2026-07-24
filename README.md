@@ -11,15 +11,24 @@ Go + Vue 3 + Inertia.js 应用模板。
 
 ```
 .
-├── main.go                    # 入口
-├── commands/                  # cobra 子命令
+├── main.go                    # 入口（signal ctx + cobra）
+├── commands/                  # cobra 子命令 + composition root
 │   ├── root.go                # 根命令 + AppInit (env/config/logging)
-│   ├── serve.go               # serve 子命令
+│   ├── serve.go               # serve：server.New → app.New → Use(db,session,admin) → Serve
+│   ├── gen.go                 # gen resource / gen admin（脚手架）
+│   ├── admin_user.go          # admin create-user（播种首个用户）
 │   ├── version.go
 │   └── paths.go               # ~/.myapp 路径辅助
 ├── internal/
+│   ├── app/                   # 薄生命周期内核（Module/Booter/Shutdowner）
 │   ├── buildinfo/             # 版本信息（ldflags 注入）
-│   └── config/                # YAML 配置加载
+│   ├── config/                # YAML 配置加载
+│   ├── driver/                # blank-import DB 驱动（默认 sqlite3）
+│   ├── scaffold/              # 代码生成器（工具层，非运行时）
+│   └── module/                # 运行时 feature 模块
+│       ├── db/                #   sqldb + 迁移（migrations/*.sql）
+│       ├── session/           #   签名 cookie + memory/db store
+│       └── admin/             #   后台框架：auth + login/logout + dashboard + menu + users
 ├── server/
 │   ├── server.go              # inertia.Engine 构造
 │   ├── routes.go              # HTTP 路由
@@ -60,6 +69,9 @@ make build-prod
 
 ```bash
 myapp serve [-a :8080] [--dev-addr http://localhost:5173] [-c config.yaml]
+myapp gen resource <name>          # 生成 CRUD 资源（别名 gen mvc）
+myapp gen admin <name>             # 生成 admin 资源
+myapp admin create-user <username> # 创建 admin 登录用户（bcrypt）
 myapp version
 myapp -v ...           # 全局 verbose（debug 日志）
 ```
@@ -108,7 +120,38 @@ session:                                                # 会话模块（启用 
   # same_site: lax                                      # lax | strict | none
   # path: "/"
   # domain: ""
+
+admin:                                                   # 后台管理模块（启用 serve 时必须配置）
+  mount: /admin                                          # 默认 /admin
+  login_path: /admin/login                              # 默认 <mount>/login
+  auth_key: admin_user_id                               # session 里标记登录态的 key，默认 admin_user_id
+  users_table: users                                    # 登录校验的用户表，默认 users（需启用 db 迁移建表）
 ```
+
+> 登录需要一个 admin 用户。用 `myapp admin create-user <username>` 创建（bcrypt 存储，写入 `users` 表）；该命令会先跑 db 迁移，确保 `users` 表存在。
+
+## 脚手架生成器（`goapp gen`）
+
+生成 CRUD 资源脚手架,减少手写样板。生成器是开发期工具(`internal/scaffold`),不连 DB、不加载配置。**不生成迁移**——schema 变更手写在 `internal/module/db/migrations/`(版本化 `NNN_*.up/down.sql`)。
+
+```bash
+# 生成一个 public CRUD 资源（handler + model + Vue 页面）
+myapp gen resource post
+myapp gen resource blog-post     # 资源名支持 snake/kebab/CamelCase
+myapp gen mvc post               # mvc 是 gen resource 的别名（沿用旧习惯）
+
+# 生成一个 admin 资源（鉴权保护，路由挂 admin mount 下，页面套 AdminLayout）
+myapp gen admin post
+
+# 覆盖已存在文件
+myapp gen resource post --force
+```
+
+产物：
+- `gen resource post` → `internal/module/post/{handler,model}.go` + `frontend/pages/post/{index,form}.vue`
+- `gen admin post` → `internal/module/adminpost/{handler,model}.go` + `frontend/pages/admin/post/{index,form}.vue`（handler 依赖 `db` + `admin`，注册菜单）
+
+生成的都是 `app.Module`,在 `commands/serve.go` 手动 Use（admin 资源排在 `adminMod` 之后）。代码是普通文件,可随意修改;生成器不锁死、不接管已写代码。
 
 ## SSR 工作流
 
