@@ -3,10 +3,23 @@ package server
 import (
 	"log/slog"
 
+	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/inertia"
 )
 
-func registerRoutes(eng *inertia.Engine) {
+// Routes is an app.Module that registers the template's sample business routes.
+// It demonstrates the Module contract: routes are attached at app.Use time
+// rather than inside server.New, keeping engine assembly and route wiring
+// separate.
+type Routes struct{}
+
+// NewRoutes returns the sample-routes Module.
+func NewRoutes() Routes { return Routes{} }
+
+// Register attaches the sample routes to the App's engine.
+func (Routes) Register(a *app.App) error {
+	eng := a.Engine
+
 	eng.GET("/", func(ctx *inertia.Context) {
 		ctx.Set("message", "Welcome to goapp-template")
 		if err := ctx.Render("Home"); err != nil {
@@ -19,4 +32,6 @@ func registerRoutes(eng *inertia.Engine) {
 			slog.Error("json health", "err", err)
 		}
 	})
+
+	return nil
 }

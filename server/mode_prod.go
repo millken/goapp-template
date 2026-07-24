@@ -16,7 +16,7 @@ var defaultMode = inertia.ModeProduction
 var embeddedDist embed.FS
 
 func loadSSRBundle(_ config.ServerConfig) (string, error) {
-	data, err := embeddedDist.ReadFile("embedded/dist/ssr-render-cjs.js")
+	data, err := embeddedDist.ReadFile("embedded/dist/" + ssrBundleName)
 	if err != nil {
 		return "", err
 	}

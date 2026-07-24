@@ -13,19 +13,28 @@ import (
 	"github.com/millken/inertia/ssr/quickjs"
 )
 
-// ModeName returns a human-readable mode string for logging.
-func ModeName(cfg config.ServerConfig) string {
-	if cfg.SSR {
+// ssrBundleName is the SSR bundle filename, shared between the config default
+// (dev path) and the prod embed. Centralised so the two cannot drift.
+const ssrBundleName = "ssr-render-cjs.js"
+
+// modeName derives the human-readable mode string from the internal mode value.
+// Called once inside New so logs never disagree with the actual engine mode.
+func modeName(m inertia.Mode) string {
+	switch m {
+	case inertia.ModeSSR:
 		return "ssr"
-	}
-	if defaultMode == inertia.ModeDevelopment {
+	case inertia.ModeDevelopment:
 		return "development"
+	default:
+		return "production"
 	}
-	return "production"
 }
 
-// New creates an inertia.Engine from application config and registers routes.
-func New(cfg config.ServerConfig) (*inertia.Engine, error) {
+// New creates and assembles an inertia.Engine from application config.
+// It returns the engine, the derived mode name (single derivation, for
+// logging), and any error. Route registration is NOT done here — routes are
+// attached via the server.Routes Module at app.Use time.
+func New(cfg config.ServerConfig) (*inertia.Engine, string, error) {
 	mode := defaultMode
 	if cfg.SSR {
 		mode = inertia.ModeSSR
@@ -33,7 +42,7 @@ func New(cfg config.ServerConfig) (*inertia.Engine, error) {
 
 	assetsFS, err := staticFS(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("load static assets: %w", err)
+		return nil, "", fmt.Errorf("load static assets: %w", err)
 	}
 
 	opts := []inertia.Option{
@@ -56,29 +65,28 @@ func New(cfg config.ServerConfig) (*inertia.Engine, error) {
 	if mode == inertia.ModeSSR {
 		bundle, err := loadSSRBundle(cfg)
 		if err != nil {
-			return nil, fmt.Errorf("load SSR bundle: %w", err)
+			return nil, "", fmt.Errorf("load SSR bundle: %w", err)
 		}
 		vm, err := quickjs.NewVM(
 			ssr.WithDefaultCache(8),
 			ssr.WithBundlerJS(bundle),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("create SSR VM: %w", err)
+			return nil, "", fmt.Errorf("create SSR VM: %w", err)
 		}
 		opts = append(opts, inertia.WithSSR(vm))
 	}
 
 	eng, err := inertia.New(opts...)
 	if err != nil {
-		return nil, fmt.Errorf("create inertia engine: %w", err)
+		return nil, "", fmt.Errorf("create inertia engine: %w", err)
 	}
 
 	eng.Use(middleware.Gzip(), middleware.Recovery())
 
 	eng.StaticFS("/", assetsFS)
-	registerRoutes(eng)
 
-	return eng, nil
+	return eng, modeName(mode), nil
 }
 
 // rootHTML scans dist for the entry CSS and JS files and builds a root HTML template.

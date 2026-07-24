@@ -82,7 +82,11 @@ func defaults() Config {
 			},
 		},
 		Server: ServerConfig{
-			Addr:          ":8080",
+			Addr: ":8080",
+			// StaticPath / SSRBundlePath are only used in non-prod builds (dev
+			// reads from disk); under the prod build tag they are no-ops since
+			// assets are embedded. The SSR bundle filename must match
+			// server.ssrBundleName.
 			StaticPath:    "frontend/dist",
 			DevAddr:       "http://localhost:5173",
 			SSRBundlePath: "frontend/dist/ssr-render-cjs.js",

@@ -3,8 +3,9 @@ package commands
 import (
 	"fmt"
 	"log/slog"
-	"os"
+	"time"
 
+	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/config"
 	"github.com/millken/goapp-template/server"
 	"github.com/spf13/cobra"
@@ -18,22 +19,17 @@ func newServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the HTTP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			appCfg, ok := configFromContext(cmd.Context())
-			if !ok {
-				return fmt.Errorf("config not found in context: AppInit must run before serve")
-			}
+			// appCfg is populated by AppInit (PersistentPreRunE). Env overrides
+			// (e.g. VITE_DEV_ADDR) are already applied there; this layer only
+			// handles flags.
 			cfg := appCfg.Server
 			if addr != "" {
 				cfg.Addr = addr
 			}
-			// --dev-addr flag takes priority, then VITE_DEV_ADDR env var, then config
-			if devAddr == "" {
-				devAddr = os.Getenv("VITE_DEV_ADDR")
-			}
 			if devAddr != "" {
 				cfg.DevAddr = devAddr
 			}
-			return runServer(cfg)
+			return runServe(cmd, cfg)
 		},
 	}
 	cmd.Flags().StringVarP(&addr, "addr", "a", "", "Listen address (overrides config, e.g. :9090)")
@@ -41,15 +37,32 @@ func newServeCmd() *cobra.Command {
 	return cmd
 }
 
-func runServer(cfg config.ServerConfig) error {
-	eng, err := server.New(cfg)
+// runServe is the composition root for the serve command:
+//
+//	server.New → assemble the engine (mode/SSR/staticFS/rootHTML/middleware)
+//	app.New    → wrap the engine in the lifecycle kernel
+//	app.Use    → register modules (sample routes first; feature modules later)
+//	app.Serve  → Boot → eng.Serve → Shutdown
+func runServe(cmd *cobra.Command, cfg config.ServerConfig) error {
+	eng, mode, err := server.New(cfg)
 	if err != nil {
 		return err
 	}
-	defer eng.Close()
 
-	slog.Info("server starting", "addr", cfg.Addr, "mode", server.ModeName(cfg), "dev_addr", cfg.DevAddr)
-	// eng.Serve owns signal handling (SIGINT/SIGTERM), timeouts, and graceful
-	// shutdown; the deferred Close tears down the SSR VM on exit.
-	return eng.Serve()
+	a, err := app.New(eng, app.WithShutdownTimeout(10*time.Second))
+	if err != nil {
+		return err
+	}
+
+	// Registration order = Boot order. Phase 1 wires only the sample routes
+	// Module; phase 2+ appends feature modules (db, session, admin…) here.
+	if err := a.Use(server.NewRoutes()); err != nil {
+		return fmt.Errorf("register modules: %w", err)
+	}
+
+	slog.Info("server starting", "addr", cfg.Addr, "mode", mode, "dev_addr", cfg.DevAddr)
+	// ctx is main's signal context (SIGINT+SIGTERM), threaded through cobra; it
+	// is consumed by Boot so a slow startup can be interrupted. eng.Serve owns
+	// HTTP signal handling; app.Serve builds a fresh timeout ctx for Shutdown.
+	return a.Serve(cmd.Context())
 }

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,7 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type appConfigKey struct{}
+// appCfg holds the loaded configuration, set by AppInit. It is package-level so
+// that subcommands (serve) can read it without the context.Value ceremony —
+// AppInit runs via PersistentPreRunE before any subcommand's RunE.
+var appCfg config.Config
 
 // AppInit performs shared initialization (env loading, config, logging).
 // Subcommands that define their own PersistentPreRunE must call this explicitly:
@@ -43,7 +45,14 @@ func AppInit(cmd *cobra.Command, args []string) error {
 		cfg.Log.Level = "debug"
 	}
 
-	cmd.SetContext(context.WithValue(cmd.Context(), appConfigKey{}, cfg))
+	// Apply environment overrides (kept out of the command layer): VITE_DEV_ADDR
+	// overrides the configured Vite dev server URL. This is the single place
+	// env→config mapping happens, so serve only deals with flags.
+	if v := os.Getenv("VITE_DEV_ADDR"); v != "" {
+		cfg.Server.DevAddr = v
+	}
+
+	appCfg = cfg
 	setupLogging(cfg.Log)
 	slog.Debug("logging initialized", "level", cfg.Log.Level, "format", cfg.Log.Format)
 	return nil
@@ -56,11 +65,6 @@ func loadConfig(cmd *cobra.Command) (config.Config, error) {
 	}
 	cfg, err := config.Load(cfgPath)
 	return cfg, err
-}
-
-func configFromContext(ctx context.Context) (config.Config, bool) {
-	cfg, ok := ctx.Value(appConfigKey{}).(config.Config)
-	return cfg, ok
 }
 
 func New() *cobra.Command {
