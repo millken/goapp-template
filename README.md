@@ -86,6 +86,17 @@ server:
   dev_addr: http://localhost:5173                       # Vite dev server
   ssr_bundle_path: frontend/dist/ssr-render-cjs.js      # SSR bundle 路径
   ssr: false                                            # true 启用 QuickJS SSR
+
+db:                                                     # 数据库模块（启用 serve 时必须配置）
+  driver: sqlite3                                       # sqlite3 | mysql | pgx
+  dsn: "app.db"                                         # SQLite 文件 / MySQL/PG DSN
+  # max_open: 0
+  # max_idle: 0
+  # conn_max_lifetime: 0s
+  # debug: false
+  migrations:                                           # 出现该段即启用自动迁移
+    table: schema_migrations                            # 默认 migrations
+    service: default                                    # 多服务共享 DB 时隔离用
 ```
 
 ## SSR 工作流

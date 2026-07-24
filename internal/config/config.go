@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/millken/goapp-template/internal/module/db"
 	"gopkg.in/yaml.v3"
 )
 
@@ -12,6 +13,11 @@ import (
 type Config struct {
 	Log    LogConfig    `yaml:"log"`
 	Server ServerConfig `yaml:"server"`
+	// DB holds the database module config. nil when the db module is not used.
+	// config imports the db module here; this is safe from cycles because app
+	// (the lifecycle kernel) never imports config, so config→db→app→inertia
+	// has no back-edge (§4.4).
+	DB *db.Config `yaml:"db"`
 }
 
 // ServerConfig controls the HTTP server.

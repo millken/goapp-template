@@ -3,10 +3,14 @@ github.com/buke/quickjs-go v0.7.7/go.mod h1:C32R9ThDIFSIN8jRdvSkTHBZp/uOfxi5s+/x
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/dnsoa/go/sqldb v0.0.4 h1:Bb1q6ImkEYnnmG6kPAQ24W1Ss8wCuHjx4mN7XB+l9ok=
+github.com/dnsoa/go/sqldb v0.0.4/go.mod h1:aB30eEPS5C77rFyMRbJf9Y3encQ6KE3L/v7RVpL7fk0=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
 github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
+github.com/mattn/go-sqlite3 v1.14.48 h1:7XHIgl0a8HwOaiK4E47ozLkST78rR9+OtNGx27D/TFs=
+github.com/mattn/go-sqlite3 v1.14.48/go.mod h1:6JTjA44L93a0QCyJef5YvlPoKXntQPjzWv5gtm9sB6w=
 github.com/millken/inertia v1.1.0 h1:dWcYusrOj03WGsmFkKjJ+USaUN/eRw40nKLgxIZ9LdY=
 github.com/millken/inertia v1.1.0/go.mod h1:d4ZPkBiXNoXAzI96/kuVzKrvayYba7quU5VFNvVVahc=
 github.com/millken/inertia/middleware v1.1.0 h1:x8ElclYI7VqbULSZZUaskrwWrf5WOTZTohQH66Sh1UA=

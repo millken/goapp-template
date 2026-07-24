@@ -7,8 +7,14 @@ import (
 
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/config"
+	"github.com/millken/goapp-template/internal/module/db"
 	"github.com/millken/goapp-template/server"
 	"github.com/spf13/cobra"
+
+	// Register the database driver(s) used by feature modules. The blank import
+	// lives at the composition root so database/sql has the driver registered
+	// before any module Boots.
+	_ "github.com/millken/goapp-template/internal/driver"
 )
 
 func newServeCmd() *cobra.Command {
@@ -22,14 +28,14 @@ func newServeCmd() *cobra.Command {
 			// appCfg is populated by AppInit (PersistentPreRunE). Env overrides
 			// (e.g. VITE_DEV_ADDR) are already applied there; this layer only
 			// handles flags.
-			cfg := appCfg.Server
+			cfg := appCfg
 			if addr != "" {
-				cfg.Addr = addr
+				cfg.Server.Addr = addr
 			}
 			if devAddr != "" {
-				cfg.DevAddr = devAddr
+				cfg.Server.DevAddr = devAddr
 			}
-			return runServe(cmd, cfg)
+			return runServe(cmd, &cfg)
 		},
 	}
 	cmd.Flags().StringVarP(&addr, "addr", "a", "", "Listen address (overrides config, e.g. :9090)")
@@ -43,8 +49,8 @@ func newServeCmd() *cobra.Command {
 //	app.New    → wrap the engine in the lifecycle kernel
 //	app.Use    → register modules (sample routes first; feature modules later)
 //	app.Serve  → Boot → eng.Serve → Shutdown
-func runServe(cmd *cobra.Command, cfg config.ServerConfig) error {
-	eng, mode, err := server.New(cfg)
+func runServe(cmd *cobra.Command, cfg *config.Config) error {
+	eng, mode, err := server.New(cfg.Server)
 	if err != nil {
 		return err
 	}
@@ -54,13 +60,20 @@ func runServe(cmd *cobra.Command, cfg config.ServerConfig) error {
 		return err
 	}
 
-	// Registration order = Boot order. Phase 1 wires only the sample routes
-	// Module; phase 2+ appends feature modules (db, session, admin…) here.
-	if err := a.Use(server.NewRoutes()); err != nil {
+	// Registration order = Boot order. Construct feature modules here and append
+	// them after the sample routes. db is constructed unconditionally and Use'd;
+	// its Boot enforces the enable-consistency rule (§4.4): a nil [db] section
+	// yields a clear error rather than a silent skip. To disable db, comment out
+	// both the New and the Use entry below.
+	dbMod := db.New(cfg.DB)
+
+	// db is placed before any module that depends on it (session/admin in later
+	// phases) so it Boots first and its middleware/handlers can resolve DB().
+	if err := a.Use(server.NewRoutes(), dbMod); err != nil {
 		return fmt.Errorf("register modules: %w", err)
 	}
 
-	slog.Info("server starting", "addr", cfg.Addr, "mode", mode, "dev_addr", cfg.DevAddr)
+	slog.Info("server starting", "addr", cfg.Server.Addr, "mode", mode, "dev_addr", cfg.Server.DevAddr)
 	// ctx is main's signal context (SIGINT+SIGTERM), threaded through cobra; it
 	// is consumed by Boot so a slow startup can be interrupted. eng.Serve owns
 	// HTTP signal handling; app.Serve builds a fresh timeout ctx for Shutdown.
