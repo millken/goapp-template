@@ -1,11 +1,26 @@
 import { createSSRRender } from './ssr/render'
-import ssrModules from './ssr-modules'
+import type { Component } from 'vue'
 
-const { inertiaRenderComponent, inertiaRenderTemplate } = createSSRRender(ssrModules)
+// Auto-discover page components at build time via Vite's import.meta.glob
+// (eager: the SSR bundle needs the components inlined). Keys are normalized to
+// match the names the Go side passes to RenderComponent, e.g.
+// './pages/Home.vue' -> 'Home', './pages/fund/index.vue' -> 'fund/index'.
+const rawModules = import.meta.glob('./pages/**/*.vue', { eager: true })
 
-// Named exports on the entry point are deterministically retained by esbuild
-// (unaffected by minify/tree-shaking) and compiled to `exports.X = ...` in the
-// CJS bundle, which the Go runtimes read as `module.exports.X` / `exports.X`.
-// Must stay named exports — a `export default { ... }` would land on
-// `exports.default` and the Go side would no longer find the functions.
+function pageKey(p: string): string {
+  const i = p.lastIndexOf('pages/')
+  return (i >= 0 ? p.slice(i + 'pages/'.length) : p).replace(/\.vue$/, '')
+}
+
+const modules: Record<string, Component> = {}
+for (const [path, mod] of Object.entries(rawModules)) {
+  const loaded = mod as { default?: Component }
+  modules[pageKey(path)] = loaded.default ?? (mod as Component)
+}
+
+const { inertiaRenderComponent, inertiaRenderTemplate } = createSSRRender(modules)
+
+// Named exports are compiled to `exports.X = ...` in the CJS bundle, which the
+// Go runtime reads as `module.exports.X`. Keep them named — `export default`
+// would land on `exports.default` and the Go side would no longer find them.
 export { inertiaRenderComponent, inertiaRenderTemplate }

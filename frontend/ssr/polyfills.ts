@@ -1,9 +1,9 @@
 /**
  * QuickJS polyfills for APIs missing from the QuickJS runtime.
  *
- * QuickJS has neither browser nor Node.js globals by default.
- * Vue 3 SSR renderer requires: atob/btoa, TextEncoder/TextDecoder.
- * The `entities` package (Vue SSR dep since Vue 3.5.26) uses atob.
+ * QuickJS has neither browser nor Node.js globals by default. Only Buffer is
+ * polyfilled here (used by Vue SSR and the `entities` dependency); atob/btoa
+ * and TextEncoder/TextDecoder are provided by the quickjs-go runtime itself.
  */
 export const quickjsPolyfills = `
 if (typeof Buffer === 'undefined') {

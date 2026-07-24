@@ -6,6 +6,20 @@ const devPort = Number(process.env.DEV_PORT) || 5173
 
 export default defineConfig({
   plugins: [vue()],
+  // Mirror the Vue production feature flags set by the SSR build
+  // (vite.config.ssr.ts) so the client and server compile Vue identically —
+  // avoids hydration mismatches and shrinks the client bundle.
+  define: {
+    __VUE_OPTIONS_API__: 'false',
+    __VUE_PROD_DEVTOOLS__: 'false',
+    __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
+    __VUE_FEATURE_SUSPENSE__: 'false',
+    __VUE_FEATURE_TELEPORT__: 'false',
+    __VUE_FEATURE_TRANSITION__: 'false',
+    __VUE_FEATURE_KEEP_ALIVE__: 'false',
+    __VUE_FEATURE_SCOPED_SLOT__: 'false',
+    'process.env.NODE_ENV': '"production"',
+  },
   server: {
     host: '127.0.0.1',
     port: devPort,

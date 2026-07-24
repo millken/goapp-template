@@ -8,13 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "run-p type-check \"build-only {@}\" --",
-    "build-only": "vite build",
-    "type-check": "vue-tsc --noEmit",
-    "generate": "tsx scripts/gen-ssr-modules.ts",
-    "build:pages": "tsx scripts/gen-ssr-modules.ts && vite build && tsx ssr-build.ts",
-    "dev:pages": "tsx scripts/gen-ssr-modules.ts && vite build --watch",
-    "build:ssr": "tsx ssr-build.ts"
+    "build": "run-s build:client build:ssr",
+    "build:client": "vite build",
+    "build:ssr": "vite build --config vite.config.ssr.ts",
+    "type-check": "vue-tsc --noEmit"
   },
   "dependencies": {
     "vue": "^3.5.40"
@@ -23,12 +20,9 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
     "@vitejs/plugin-vue": "^6.0.8",
-    "esbuild": "^0.28.1",
-    "millken-esbuild-plugin-vue": "^0.9.4",
     "npm-run-all2": "^9.0.2",
     "postcss": "^8.5.22",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.1",
     "typescript": "~7.0.2",
     "vite": "^8.1.5",
     "vue-tsc": "^3.3.8"

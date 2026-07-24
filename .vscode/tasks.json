@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "pnpm: generate",
+      "label": "frontend: build",
       "type": "shell",
-      "command": "pnpm generate",
+      "command": "pnpm build",
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },
@@ -44,7 +44,7 @@
     {
       "label": "frontend: embed",
       "type": "shell",
-      "command": "pnpm build:pages && rm -rf ${workspaceFolder}/server/embedded/dist && cp -r dist ${workspaceFolder}/server/embedded/dist",
+      "command": "pnpm build && rm -rf ${workspaceFolder}/server/embedded/dist && cp -r dist ${workspaceFolder}/server/embedded/dist",
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },

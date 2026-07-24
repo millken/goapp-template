@@ -24,12 +24,11 @@ build-prod: frontend-build
 	go build -tags prod -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
 
 frontend-build:
-	cd frontend && pnpm build:pages
+	cd frontend && pnpm build
 
 DEV_PORT ?= 5173
 
 dev:
-	cd frontend && pnpm generate && pnpm build:ssr
 	@VITE_PID=""; \
 	cleanup() { [ -n "$$VITE_PID" ] && kill "$$VITE_PID" 2>/dev/null || true; }; \
 	trap cleanup EXIT INT TERM; \
