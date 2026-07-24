@@ -1,0 +1,82 @@
+package session
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"sync"
+	"time"
+)
+
+// MemoryStore is an in-process session store. It is the development default
+// (zero dependencies) but loses all sessions on restart and does not share
+// state across instances — use the db store for production.
+type MemoryStore struct {
+	mu    sync.Mutex
+	sesss map[string]memorySession
+}
+
+type memorySession struct {
+	values    map[string]any
+	expiresAt time.Time
+}
+
+// NewMemoryStore returns an empty in-memory session store.
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{sesss: make(map[string]memorySession)}
+}
+
+func (s *MemoryStore) Load(_ context.Context, id string) (map[string]any, time.Time, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sesss[id]
+	if !ok {
+		return nil, time.Time{}, false, nil
+	}
+	if !sess.expiresAt.IsZero() && time.Now().After(sess.expiresAt) {
+		delete(s.sesss, id)
+		return nil, time.Time{}, false, nil
+	}
+	// Return a copy so callers mutate without holding the lock until Save.
+	out := make(map[string]any, len(sess.values))
+	for k, v := range sess.values {
+		out[k] = v
+	}
+	return out, sess.expiresAt, true, nil
+}
+
+func (s *MemoryStore) Save(_ context.Context, id string, values map[string]any, ttl time.Duration) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if id == "" {
+		id = newID()
+	}
+	// Copy so the caller's map is not retained by reference.
+	stored := make(map[string]any, len(values))
+	for k, v := range values {
+		stored[k] = v
+	}
+	s.sesss[id] = memorySession{
+		values:    stored,
+		expiresAt: time.Now().Add(ttl),
+	}
+	return id, nil
+}
+
+func (s *MemoryStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.sesss, id)
+	return nil
+}
+
+// newID returns a fresh 32-byte hex-encoded random session ID.
+func newID() string {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand should not fail; fall back to time-based uniqueness so a
+		// session can still be created rather than panicking.
+		return hex.EncodeToString([]byte(time.Now().UTC().Format("20060102150405.000000000")))
+	}
+	return hex.EncodeToString(b[:])
+}

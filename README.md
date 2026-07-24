@@ -97,6 +97,17 @@ db:                                                     # 数据库模块（启�
   migrations:                                           # 出现该段即启用自动迁移
     table: schema_migrations                            # 默认 migrations
     service: default                                    # 多服务共享 DB 时隔离用
+
+session:                                                # 会话模块（启用 serve 时必须配置）
+  secret: "change-me"                                   # HMAC 签名密钥（必填）
+  store: memory                                         # memory（开发默认）| db（生产，复用 db）
+  cookie_name: session                                  # 默认 session
+  ttl: 24h                                              # 默认 24h
+  # db_table: sessions                                  # store=db 时的表名，默认 sessions
+  # secure: false                                       # HTTPS-only
+  # same_site: lax                                      # lax | strict | none
+  # path: "/"
+  # domain: ""
 ```
 
 ## SSR 工作流

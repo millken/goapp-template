@@ -8,6 +8,7 @@ import (
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/config"
 	"github.com/millken/goapp-template/internal/module/db"
+	"github.com/millken/goapp-template/internal/module/session"
 	"github.com/millken/goapp-template/server"
 	"github.com/spf13/cobra"
 
@@ -61,15 +62,20 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	}
 
 	// Registration order = Boot order. Construct feature modules here and append
-	// them after the sample routes. db is constructed unconditionally and Use'd;
-	// its Boot enforces the enable-consistency rule (§4.4): a nil [db] section
-	// yields a clear error rather than a silent skip. To disable db, comment out
-	// both the New and the Use entry below.
+	// them after the sample routes. Each module is constructed unconditionally
+	// and Use'd; its Boot enforces the enable-consistency rule (§4.4): a nil
+	// config section yields a clear error rather than a silent skip. To disable
+	// a module, comment out both its New and its Use entry below.
 	dbMod := db.New(cfg.DB)
+	// session depends on db (when store=db), so it is constructed with dbMod and
+	// placed after db in Use order — db Boots first, so session's Boot can
+	// resolve DB(). session's middleware wraps any later module's handlers
+	// (e.g. admin in a future phase) per the §4.2 ordering guarantee.
+	sessMod := session.New(cfg.Session, dbMod)
 
-	// db is placed before any module that depends on it (session/admin in later
-	// phases) so it Boots first and its middleware/handlers can resolve DB().
-	if err := a.Use(server.NewRoutes(), dbMod); err != nil {
+	// Order matters: routes → db → session → (future: admin). Each later module
+	// may depend on earlier ones.
+	if err := a.Use(server.NewRoutes(), dbMod, sessMod); err != nil {
 		return fmt.Errorf("register modules: %w", err)
 	}
 

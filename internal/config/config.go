@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/millken/goapp-template/internal/module/db"
+	"github.com/millken/goapp-template/internal/module/session"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,6 +19,9 @@ type Config struct {
 	// (the lifecycle kernel) never imports config, so config→db→app→inertia
 	// has no back-edge (§4.4).
 	DB *db.Config `yaml:"db"`
+	// Session holds the session module config. nil when not used. session
+	// imports app (not config), so config→session→app→inertia is acyclic.
+	Session *session.Config `yaml:"session"`
 }
 
 // ServerConfig controls the HTTP server.
