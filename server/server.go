@@ -38,6 +38,7 @@ func New(cfg config.ServerConfig) (*inertia.Engine, error) {
 
 	opts := []inertia.Option{
 		inertia.WithMode(mode),
+		inertia.WithAddr(cfg.Addr),
 		inertia.WithDevAddr(cfg.DevAddr),
 		inertia.WithErrorHandler(http.StatusNotFound, func(w http.ResponseWriter, r *http.Request, _ error) {
 			http.Error(w, "404 Not Found", http.StatusNotFound)

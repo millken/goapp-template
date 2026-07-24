@@ -1,13 +1,9 @@
 package commands
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
-	"time"
 
 	"github.com/millken/goapp-template/internal/config"
 	"github.com/millken/goapp-template/server"
@@ -37,7 +33,7 @@ func newServeCmd() *cobra.Command {
 			if devAddr != "" {
 				cfg.DevAddr = devAddr
 			}
-			return runServer(cmd.Context(), cfg)
+			return runServer(cfg)
 		},
 	}
 	cmd.Flags().StringVarP(&addr, "addr", "a", "", "Listen address (overrides config, e.g. :9090)")
@@ -45,33 +41,15 @@ func newServeCmd() *cobra.Command {
 	return cmd
 }
 
-func runServer(ctx context.Context, cfg config.ServerConfig) error {
+func runServer(cfg config.ServerConfig) error {
 	eng, err := server.New(cfg)
 	if err != nil {
 		return err
 	}
-
-	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           eng,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-
-	go func() {
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutCtx); err != nil {
-			slog.Error("server shutdown error", "err", err)
-		}
-	}()
+	defer eng.Close()
 
 	slog.Info("server starting", "addr", cfg.Addr, "mode", server.ModeName(cfg), "dev_addr", cfg.DevAddr)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
+	// eng.Serve owns signal handling (SIGINT/SIGTERM), timeouts, and graceful
+	// shutdown; the deferred Close tears down the SSR VM on exit.
+	return eng.Serve()
 }
