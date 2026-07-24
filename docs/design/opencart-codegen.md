@@ -85,7 +85,6 @@ import (
     "log/slog"
 
     "github.com/dnsoa/go/sqldb"
-    "github.com/millken/goapp-template/internal/config"
     "github.com/millken/goapp-template/internal/service/session"
 )
 
@@ -98,17 +97,16 @@ import (
 // It holds ONLY process-lifetime services (safe to share across goroutines).
 // Per-request state never lives here — it stays on *inertia.Context.
 type Services struct {
-    Cfg     *config.Config
     Log     *slog.Logger
-    DB      *sqldb.DB         // already-opened handle (post-Start), never nil
-    Session *session.Service  // provides Session(ctx) per request
+    DB      *sqldb.DB        // already-opened handle (post-Start), never nil
+    Session *session.Service // provides Session(ctx) per request
 }
 
 // NewServices builds the container from already-Started infrastructure. Because
 // DB is the resolved handle (not a lazy provider), controllers never hit the
 // "DB() before Start" panic path.
-func NewServices(cfg *config.Config, log *slog.Logger, db *sqldb.DB, sess *session.Service) *Services {
-    return &Services{Cfg: cfg, Log: log, DB: db, Session: sess}
+func NewServices(log *slog.Logger, db *sqldb.DB, sess *session.Service) *Services {
+    return &Services{Log: log, DB: db, Session: sess}
 }
 ```
 
@@ -116,7 +114,8 @@ func NewServices(cfg *config.Config, log *slog.Logger, db *sqldb.DB, sess *sessi
 
 1. **加一个服务 = 加一个字段**,编译器强制所有引用处更新;拼错字段名根本编译不过。
 2. **不可变共享**:`Services` 在 Start 后构造完即只读,多 goroutine 共享安全 —— 这是把 OpenCart 那个"进程级 Registry"该有的形态做对了(前一稿把 per-request 的 request/response 塞进共享 map,是数据竞争)。
-3. controller 通过内嵌 `*Services` 拿到 `c.DB` / `c.Log` / `c.Session` / `c.Cfg`,写法和 OpenCart 的 `$this->db` 一样短,但全程 typed。
+3. controller 通过内嵌 `*Services` 拿到 `c.DB` / `c.Log` / `c.Session`,写法和 OpenCart 的 `$this->db` 一样短,但全程 typed。
+4. **不含 `*config.Config`(实现时发现的循环依赖)**:`config` 导入了 feature/service 包(取它们的 `Config` 类型),而 controller 又导入 `app`;若 `app` 再导入 `config` 就成环 `app→config→controller/admin→app`。故 `Services` 只装运行期服务,不装 config;需要具体配置值的 controller 在构造时以 typed 字段传入。
 
 ### 2.2 Controller —— 只有方法
 
@@ -379,8 +378,8 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
     }
     defer func() { _ = sessSvc.Stop(context.Background()) }()
 
-    // 2. typed 容器(从已 Start 的句柄构造,DB 非 nil)。
-    svc := app.NewServices(cfg, log, dbSvc.DB(), sessSvc)
+    // 2. typed 容器(从已 Start 的句柄构造,DB 非 nil;不含 config —— 见 §2.1)。
+    svc := app.NewServices(log, dbSvc.DB(), sessSvc)
 
     // 3. HTTP 引擎(inertia 保留)。
     eng, mode, err := server.New(cfg.Server)
@@ -389,36 +388,48 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
     }
 
     // 4. 全局中间件 + 生成的路由接线。
-    eng.Use(sessSvc.Middleware())          // session 中间件:所有请求
-    controller.MountAll(eng, svc)          // 生成代码:全部 area 一次接线
+    eng.Use(sessSvc.Middleware())  // session 中间件:所有请求
+    controller.MountAll(eng, svc)  // 生成代码:非 admin area 一次接线
 
-    // 5. Serve(inertia owns signals + graceful shutdown)。
+    // 5. admin area(需要自己的 config):校验后带 auth 接线。
+    adm := admin.New(svc, cfg.Admin)
+    if err := adm.Validate(); err != nil {
+        return err
+    }
+    adm.Mount(eng)
+
+    // 绑定监听前把重复路由注册错误暴露出来(inertia 累积,§6.4)。
+    if err := eng.RegistrationError(); err != nil {
+        return fmt.Errorf("route registration: %w", err)
+    }
+
+    // 6. Serve(inertia owns signals + graceful shutdown)。
     slog.Info("server starting", "addr", cfg.Server.Addr, "mode", mode)
-    err = eng.Serve()
+    serveErr := eng.Serve()
     _ = eng.Close()
-    return err
+    return serveErr
 }
 ```
 
 > 相比现状:去掉了 `app.New`/`app.Use(routes, db, session, admin)` 那条 `[]Module` 链。装配从"注册 module 数组"变成"显式构造 + 生成代码接线",更贴近 OpenCart 的一处装配,且没有生命周期接口税。
 > `defer Stop` 是**逆序**(session 先于 db 关闭),Go `defer` 天然保证 —— 无需手写 `shutdownN` 反向循环。若需要"`Start` 失败回滚已成功前缀 + 超时",可保留一个瘦 `app` helper 封装这段(见 §8)。
 
-### 5.1 admin mount + 中间件
+### 5.1 admin mount + 中间件(✅ 已实现)
 
-admin 不再是特殊 Module,而是**一组 controller + 一段 auth 中间件**。inertia 支持 per-route 变参中间件 `eng.GET(path, mw, handler)`,生成器给 admin area 的路由前置 auth:
+admin 不再是特殊 Module,而是 `internal/controller/admin` 里一个 **`Admin` 控制器 + 一段 auth 中间件**。它需要自己的 `*Config`(mount/authKey/usersTable),因此**不走 `MountAll`,而在 serve.go 显式接线**(§5 第 5 步):`admin.New(svc, cfg.Admin)` → `Validate()` → `Mount(eng)`。auth 中间件只挂在受保护路由上(inertia per-route 变参 `eng.GET(path, mw, handler)`),所以**无需再按路径自过滤**;login 路由不挂 auth 即公开:
 
 ```go
-// internal/controller/admin/routes_gen.go  (生成:admin 路由带 authMW)
-func Mount(eng *inertia.Engine, svc *app.Services) {
-    auth := AuthMiddleware(svc)            // session-based guard
-    p := &Post{svc}
-    eng.GET("/admin/post",      auth, p.Index)
-    eng.POST("/admin/post/:id", auth, p.Update)
-    // login/logout/dashboard 为 admin area 内置 controller
+// internal/controller/admin/admin.go —— Admin.Mount 方法
+func (a *Admin) Mount(eng *inertia.Engine) {
+    auth := a.AuthMiddleware()                 // session-based guard
+    eng.GET(a.LoginPath(), a.LoginForm)        // 公开
+    eng.POST(a.LoginPath(), a.LoginSubmit)     // 公开
+    eng.POST(a.mount()+"/logout", auth, a.Logout)
+    eng.GET(a.mount(), auth, a.Dashboard)
 }
 ```
 
-`controller/admin` 与 `controller/blog` 的 controller **完全同构**,只是路径带 `/admin` 前缀、路由前置 `auth`。这比当前"admin 要写 adminHost 接口 + Mount()"显著简化。
+生成的 admin 资源(`goapp gen admin`)以 `Mount(eng, svc, adm *admin.Admin)` 接线:用 `adm.Prefix()` 建路径、`adm.AuthMiddleware()` 守卫、`adm.AddMenuItem(...)` 挂菜单,在 serve.go 里 `adm.Mount(eng)` 之后调用。`config.Admin` 的类型 `admin.Config` 定义在 controller/admin 包,`config` 导入它;controller/admin **不导入 config**(否则 config↔controller/admin 成环)。
 
 ---
 
@@ -538,11 +549,13 @@ func TestNoDuplicateRoutes(t *testing.T) {
    - **inertia 路由查重下沉**(§6.4):`router.go` 加 `ErrDuplicateRoute` + 归一化去重,`engine.go` 加 `regErr`/`RegistrationError()` 且 `Serve()` 绑定前返回错误。全 `-race` 绿,既有测试无回归。
    - **`internal/app/lifecycle.go`**:`Lifecycle` 接口(`Start`/`Stop`)。
    - **注意 `services.go` 不在本步** —— 完整 `Services` 需 `*config.Config`,而当前 `config→db→app`(db 仍 `Register(a *app.App)`)会让 `app→config` 成环;此环在第 2 步 db/session 去掉 `app` 依赖后才消解,故 `services.go` 归入第 2 步。app 侧 `Router`/`RouteRecorder` 已随查重下沉删除。
-2. **db/session 迁 `internal/service/` + 去 `Register` 外壳(断开 `db/session→app`,解环)+ 重命名(`Module`→`Service`、`Boot/Shutdown`→`Start/Stop`);随后新增 `internal/app/services.go`**:serve 里显式调用(旧 `app.Use` 暂并存)。
-3. **写一个新 controller**(如 `controller/blog/post`)+ 手写 `routes_gen.go` + `MountAll`,与旧 Module 并存,验证全链路(含 inertia Render/Param)。
-4. **生成器切换**:新模板产出 controller/model/routes_gen,`goapp gen` 追加 `MountAll`。
-5. **admin 改造**:`AuthMiddleware` + admin controllers,替换旧 admin Module。
-6. **删除 `internal/app/module.go` 与旧 `app.Use` 链**,`serve.go` 收敛到 §5。
+2. **db/session 迁 `internal/service/` + 去 `Register`/`app` 依赖(解环)+ 重命名(`Module`→`Service`、`Boot/Shutdown`→`Start/Stop`);新增 `internal/app/services.go`(`Log`/`DB`/`Session`,不含 config)**(✅ 已完成)。
+3. **`internal/controller/site`**(home + health,替代 `server/routes.go`)+ 生成的 `internal/controller/mount_gen.go`(`MountAll`,带 `gen:mounts` 标记区间)(✅ 已完成)。
+4. **生成器切换**:模板产出 controller(embed `*app.Services` + `Mount`)/ model,输出到 `internal/controller/<pkg>/`;`build_test`/`resource_test`/`admin_test` 更新(✅ 已完成)。**注**:`mount_gen.go` 的自动追加暂**未实现**,生成器改为在 handler 头注释里给出"把 `<pkg>.Mount(eng, svc)` 加进 `MountAll`"的一行提示(避免测试污染真实 `mount_gen.go`);见 §10 #2。
+5. **admin 改造**:`internal/controller/admin`(`Admin` + `AuthMiddleware` + login/logout/dashboard),serve 显式 `New→Validate→Mount(eng)`;端到端登录测试全部移植并通过(✅ 已完成)。
+6. **删除 `internal/app/app.go`+`module.go`+`app_test.go` 与旧 `app.Use` 链、`internal/module/`、`server/routes.go`**;`serve.go` 收敛到 §5(✅ 已完成)。
+
+> **迁移状态:全部完成。** `go build ./...`、`go vet ./...`、`go test -race ./...` 全绿;`gofmt` 干净;`go build .`(二进制)通过。inertia 改动在 `../inertia` 仓库 `feat/route-dup-check` 分支。
 
 ---
 
@@ -593,7 +606,7 @@ func TestNoDuplicateRoutes(t *testing.T) {
 ## 10. 已定决策(§10 原为待确认点,现拍板)
 
 1. **infra 生命周期驱动:先用 `defer`,不预抽 helper。** §5 的纯 `defer` 版最简;基础设施只有 db/session 两个,`defer` 的逆序语义已覆盖"逆序 Stop"。**放弃**"`Start` 失败回滚已成功前缀 + 超时"这项能力——两个服务时收益不抵复杂度。**触发条件**:infra 增至 ≥4 个,或出现"启到一半失败需部分回滚"的真实场景时,再抽 `app.Bootstrap(services ...Lifecycle)`(~30 行,§4 的 `Lifecycle` 接口已备好)。
-2. **`mount_gen.go` 用标记注释区间 + 全量重生成。** 生成器在 `// gen:mounts:begin` / `// gen:mounts:end` 之间全量重写 `MountAll` 体与对应 import,不做 AST 局部改写。天然幂等、无重复行、冲突面最小。区间外的手写内容(如 §6 待定的非 CRUD 路由口子)不受影响。
+2. **`mount_gen.go` 标记注释区间(`// gen:mounts:begin/end`)已就位,但自动追加暂缓。** 落地时发现:生成器若在 `Resource()` 里改写真实 `mount_gen.go`,`build_test`(在真实模块树里生成+编译)会污染该文件、需回滚,复杂且易错。故当前生成器只产文件 + 在 handler 头注释给出"把 `<pkg>.Mount(eng, svc)` 加进 `MountAll` 标记区间"的一行提示(与旧生成器"提示用户接线"一致)。**后续**:实现标记区间的幂等重写(独立于 `build_test` 的生成路径,或加 `Options.RegisterMount`)后再自动化。
 3. **Model 保持显式构造 `&blogmodel.Model{DB: c.DB}`。** 不在 `Services`/controller 上加 `c.Model(...)` 泛型糖——显式构造已是一行、typed、可跳转,泛型糖只会把清晰的构造换成一层间接。
 4. **Redirect 用 stdlib(已核实 `*inertia.Context` 无 `Redirect`)。** 统一 `http.Redirect(ctx.Writer, ctx.Request, url, http.StatusSeeOther)`;POST→GET 用 **303 See Other**(也是 Inertia 协议期望的重定向码)。不新增 helper——stdlib 一行足够,且不引入自定义响应抽象。
 5. **area = Go 包名,`mount_gen.go` 用 import 别名消歧。** `internal/controller/blog` 包名 `blog`;跨 area 同名(`blog.Mount` 与 `admin.Mount`)在 `mount_gen.go` 里靠包路径 + import 别名区分(§2.4 已示范)。

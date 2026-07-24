@@ -1,12 +1,13 @@
 // Package scaffold is the dev-time code generator for the Go + Inertia + Vue
-// CRUD pattern. It is tooling, NOT a runtime app.Module — hence it lives under
-// internal/scaffold, not internal/module.
+// CRUD pattern. It is tooling, not runtime code — hence it lives under
+// internal/scaffold.
 //
 // It provides (1) resource-name normalization (Spec/NewSpec) shared by the
 // generators, (2) Resource(name) — a public CRUD resource scaffolder
 // (`goapp gen resource <name>`), and (3) Admin(name) — an admin CRUD resource
-// scaffolder (`goapp gen admin <name>`). Generated resources are standalone
-// app.Modules wired explicitly in commands/serve.go.
+// scaffolder (`goapp gen admin <name>`). Generated resources are controllers
+// embedding *app.Services with a Mount func, wired via controller.MountAll (or,
+// for admin resources, in commands/serve.go after the admin area).
 package scaffold
 
 import (

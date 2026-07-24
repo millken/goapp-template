@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/millken/goapp-template/internal/module/admin"
-	"github.com/millken/goapp-template/internal/module/db"
-	"github.com/millken/goapp-template/internal/module/session"
+	"github.com/millken/goapp-template/internal/controller/admin"
+	"github.com/millken/goapp-template/internal/service/db"
+	"github.com/millken/goapp-template/internal/service/session"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,16 +15,14 @@ import (
 type Config struct {
 	Log    LogConfig    `yaml:"log"`
 	Server ServerConfig `yaml:"server"`
-	// DB holds the database module config. nil when the db module is not used.
-	// config imports the db module here; this is safe from cycles because app
-	// (the lifecycle kernel) never imports config, so config→db→app→inertia
-	// has no back-edge (§4.4).
+	// DB holds the database service config. nil when db is not used. config
+	// imports the service/controller packages for their Config types; this stays
+	// acyclic because app never imports config (app.Services deliberately holds
+	// no *config.Config), so there is no config→…→config back-edge.
 	DB *db.Config `yaml:"db"`
-	// Session holds the session module config. nil when not used. session
-	// imports app (not config), so config→session→app→inertia is acyclic.
+	// Session holds the session service config. nil when not used.
 	Session *session.Config `yaml:"session"`
-	// Admin holds the admin module config. nil when not used. admin imports
-	// session and app (not config), so the dependency chain is acyclic.
+	// Admin holds the admin area config. nil when not used.
 	Admin *admin.Config `yaml:"admin"`
 }
 

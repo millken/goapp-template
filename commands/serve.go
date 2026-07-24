@@ -1,21 +1,22 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/config"
-	"github.com/millken/goapp-template/internal/module/admin"
-	"github.com/millken/goapp-template/internal/module/db"
-	"github.com/millken/goapp-template/internal/module/session"
+	"github.com/millken/goapp-template/internal/controller"
+	"github.com/millken/goapp-template/internal/controller/admin"
+	"github.com/millken/goapp-template/internal/service/db"
+	"github.com/millken/goapp-template/internal/service/session"
 	"github.com/millken/goapp-template/server"
 	"github.com/spf13/cobra"
 
-	// Register the database driver(s) used by feature modules. The blank import
-	// lives at the composition root so database/sql has the driver registered
-	// before any module Boots.
+	// Register the database driver(s) used by the app. The blank import lives at
+	// the composition root so database/sql has the driver registered before any
+	// service Starts.
 	_ "github.com/millken/goapp-template/internal/driver"
 )
 
@@ -45,52 +46,59 @@ func newServeCmd() *cobra.Command {
 	return cmd
 }
 
-// runServe is the composition root for the serve command:
+// runServe is the composition root for the serve command (the OpenCart-style
+// index.php): it Starts infrastructure in dependency order, builds the typed
+// service container, wires controllers onto the inertia engine, and serves.
 //
-//	server.New → assemble the engine (mode/SSR/staticFS/rootHTML/middleware)
-//	app.New    → wrap the engine in the lifecycle kernel
-//	app.Use    → register modules (sample routes first; feature modules later)
-//	app.Serve  → Boot → eng.Serve → Shutdown
+// There is no Module abstraction: db/session are infrastructure services driven
+// explicitly here; controllers are plain handler methods wired by the generated
+// controller.MountAll (plus the admin area, wired separately because it needs
+// its own config). Stop runs in reverse order via defer.
 func runServe(cmd *cobra.Command, cfg *config.Config) error {
+	log := slog.Default()
+
+	// 1. Infrastructure: construct + Start in dependency order (db before
+	//    session, which may use the db store).
+	dbSvc := db.New(cfg.DB)
+	if err := dbSvc.Start(cmd.Context()); err != nil {
+		return fmt.Errorf("start db: %w", err)
+	}
+	defer func() { _ = dbSvc.Stop(context.Background()) }()
+
+	sessSvc := session.New(cfg.Session, dbSvc)
+	if err := sessSvc.Start(cmd.Context()); err != nil {
+		return fmt.Errorf("start session: %w", err)
+	}
+	defer func() { _ = sessSvc.Stop(context.Background()) }()
+
+	// 2. Typed service container (built from Started infra; DB is non-nil).
+	svc := app.NewServices(log, dbSvc.DB(), sessSvc)
+
+	// 3. HTTP engine (inertia).
 	eng, mode, err := server.New(cfg.Server)
 	if err != nil {
 		return err
 	}
 
-	a, err := app.New(eng, app.WithShutdownTimeout(10*time.Second))
-	if err != nil {
+	// 4. Global middleware + generated route wiring.
+	eng.Use(sessSvc.Middleware()) // session on every request
+	controller.MountAll(eng, svc) // generated non-admin controller areas
+
+	// 5. Admin area (needs its own config): validated, then wired with auth.
+	adm := admin.New(svc, cfg.Admin)
+	if err := adm.Validate(); err != nil {
 		return err
 	}
+	adm.Mount(eng)
 
-	// Registration order = Boot order. Construct feature modules here and append
-	// them after the sample routes. Each module is constructed unconditionally
-	// and Use'd; its Boot enforces the enable-consistency rule (§4.4): a nil
-	// config section yields a clear error rather than a silent skip. To disable
-	// a module, comment out both its New and its Use entry below.
-	dbMod := db.New(cfg.DB)
-	// session depends on db (when store=db), so it is constructed with dbMod and
-	// placed after db in Use order — db Boots first, so session's Boot can
-	// resolve DB(). session's middleware wraps any later module's handlers
-	// (e.g. admin in a future phase) per the §4.2 ordering guarantee.
-	sessMod := session.New(cfg.Session, dbMod)
-	// admin depends on session (auth state) and db (user lookup), so it is placed
-	// after both. Its auth middleware guards the admin mount; login/logout and a
-	// dashboard are built in, and generated admin resources register their routes
-	// (and menu entries) under the mount and are thus protected.
-	adminMod := admin.New(cfg.Admin, sessMod, dbMod)
-
-	// Order matters: routes → db → session → admin → admin resources. Each later
-	// module may depend on earlier ones. Generated admin resources are appended
-	// AFTER adminMod, e.g.:
-	//   adminpostMod := adminpost.New(dbMod, adminMod)
-	//   a.Use(server.NewRoutes(), dbMod, sessMod, adminMod, adminpostMod)
-	if err := a.Use(server.NewRoutes(), dbMod, sessMod, adminMod); err != nil {
-		return fmt.Errorf("register modules: %w", err)
+	// Surface any duplicate-route registration before binding a listener.
+	if err := eng.RegistrationError(); err != nil {
+		return fmt.Errorf("route registration: %w", err)
 	}
 
+	// 6. Serve (inertia owns signals + HTTP graceful shutdown).
 	slog.Info("server starting", "addr", cfg.Server.Addr, "mode", mode, "dev_addr", cfg.Server.DevAddr)
-	// ctx is main's signal context (SIGINT+SIGTERM), threaded through cobra; it
-	// is consumed by Boot so a slow startup can be interrupted. eng.Serve owns
-	// HTTP signal handling; app.Serve builds a fresh timeout ctx for Shutdown.
-	return a.Serve(cmd.Context())
+	serveErr := eng.Serve()
+	_ = eng.Close()
+	return serveErr
 }

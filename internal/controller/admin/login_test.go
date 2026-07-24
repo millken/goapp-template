@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,58 +11,58 @@ import (
 	"time"
 
 	"github.com/millken/goapp-template/internal/app"
-	"github.com/millken/goapp-template/internal/module/db"
-	"github.com/millken/goapp-template/internal/module/session"
+	"github.com/millken/goapp-template/internal/service/db"
+	"github.com/millken/goapp-template/internal/service/session"
 	"github.com/millken/inertia"
 
-	// Register the SQLite driver used by the db module in this test.
+	// Register the SQLite driver used by the db service in this test.
 	_ "github.com/millken/goapp-template/internal/driver"
 )
 
-// loginStack wires the real db + session + admin modules against an in-memory
-// SQLite database (migrations on → users table) with one seeded user
-// (alice / "pw"), booted in the correct order.
-func loginStack(t *testing.T) (*inertia.Engine, *Module) {
+// loginStack wires the real db + session services and the admin controller
+// against an in-memory SQLite database (migrations on → users table) with one
+// seeded user (alice / "pw"), in the same order serve.go uses.
+func loginStack(t *testing.T) (*inertia.Engine, *Admin) {
 	t.Helper()
 	ctx := context.Background()
 	eng := newTestEngine(t)
-	a, err := app.New(eng)
-	if err != nil {
-		t.Fatalf("app.New: %v", err)
-	}
 
 	// MaxOpenConns=1 so migrations, seed, and login queries all hit the same
 	// :memory: connection (a fresh :memory: DB per connection otherwise).
-	dbMod := db.New(&db.Config{
+	dbSvc := db.New(&db.Config{
 		Driver:       "sqlite3",
 		DSN:          ":memory:",
 		MaxOpenConns: 1,
 		Migrations:   &db.Migrations{},
 	})
-	sessMod := session.New(&session.Config{Secret: "test-secret", Store: session.StoreMemory}, dbMod)
-	adminMod := New(&Config{Mount: "/admin"}, sessMod, dbMod)
+	if err := dbSvc.Start(ctx); err != nil {
+		t.Fatalf("start db: %v", err)
+	}
+	t.Cleanup(func() { _ = dbSvc.Stop(ctx) })
 
-	for _, b := range []interface {
-		Boot(context.Context) error
-	}{dbMod, sessMod, adminMod} {
-		if err := b.Boot(ctx); err != nil {
-			t.Fatalf("Boot: %v", err)
-		}
+	sessSvc := session.New(&session.Config{Secret: "test-secret", Store: session.StoreMemory}, dbSvc)
+	if err := sessSvc.Start(ctx); err != nil {
+		t.Fatalf("start session: %v", err)
 	}
-	if err := a.Use(dbMod, sessMod, adminMod); err != nil {
-		t.Fatalf("Use: %v", err)
+	eng.Use(sessSvc.Middleware())
+
+	svc := app.NewServices(slog.Default(), dbSvc.DB(), sessSvc)
+	adm := New(svc, &Config{Mount: "/admin"})
+	if err := adm.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
 	}
+	adm.Mount(eng)
 
 	hash, err := HashPassword("pw")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
-	if _, err := dbMod.DB().ExecContext(ctx,
+	if _, err := dbSvc.DB().ExecContext(ctx,
 		`INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)`,
 		"alice", hash, time.Now().UnixNano()); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
-	return eng, adminMod
+	return eng, adm
 }
 
 func postForm(path string, form url.Values) *http.Request {
@@ -71,7 +72,13 @@ func postForm(path string, form url.Values) *http.Request {
 }
 
 func TestLogin_HappyPath(t *testing.T) {
-	eng, _ := loginStack(t)
+	eng, adm := loginStack(t)
+
+	// A protected probe route guarded by the same auth middleware admin routes
+	// use — this is what verifies auth actually gates access in the new
+	// per-route model.
+	authed := false
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(c *inertia.Context) { authed = true })
 
 	w := httptest.NewRecorder()
 	eng.ServeHTTP(w, postForm("/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}}))
@@ -88,15 +95,30 @@ func TestLogin_HappyPath(t *testing.T) {
 	}
 	signed := cookies[0].Value
 
-	// Follow-up request to a protected route with the cookie must be allowed.
-	authed := false
-	eng.GET("/admin/posts", func(c *inertia.Context) { authed = true })
+	// Follow-up to the protected route with the cookie must reach the handler.
 	w2 := httptest.NewRecorder()
-	r2 := httptest.NewRequest(http.MethodGet, "/admin/posts", nil)
+	r2 := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
 	r2.AddCookie(&http.Cookie{Name: "session", Value: signed})
 	eng.ServeHTTP(w2, r2)
 	if !authed {
 		t.Fatal("expected authenticated follow-up request to reach the protected handler")
+	}
+}
+
+func TestProtectedRoute_RedirectsWhenUnauthenticated(t *testing.T) {
+	eng, adm := loginStack(t)
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(c *inertia.Context) {
+		t.Error("handler must not run for an unauthenticated request")
+	})
+
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/probe", nil))
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302 for unauthenticated request, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/admin/login" {
+		t.Fatalf("expected redirect to /admin/login, got %q", loc)
 	}
 }
 

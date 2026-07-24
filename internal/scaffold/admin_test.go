@@ -14,8 +14,8 @@ func TestAdmin_CreatesAllFiles(t *testing.T) {
 	}
 
 	want := []string{
-		"internal/module/adminblogpost/handler.go",
-		"internal/module/adminblogpost/model.go",
+		"internal/controller/adminblogpost/handler.go",
+		"internal/controller/adminblogpost/model.go",
 		"frontend/pages/admin/blog-post/index.vue",
 		"frontend/pages/admin/blog-post/form.vue",
 	}
@@ -31,7 +31,7 @@ func TestAdmin_HandlerHasAdminRoutes(t *testing.T) {
 	if err := Admin("post", Options{ModuleRoot: root}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
-	handler, err := os.ReadFile(filepath.Join(root, "internal/module/adminpost/handler.go"))
+	handler, err := os.ReadFile(filepath.Join(root, "internal/controller/adminpost/handler.go"))
 	if err != nil {
 		t.Fatalf("read handler: %v", err)
 	}

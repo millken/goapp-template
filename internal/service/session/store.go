@@ -37,7 +37,7 @@ type Session interface {
 // Store is the pluggable session backing. Two implementations ship with the
 // template: memory (development default) and db (production, via db.Provider).
 // Additional backends (Redis…) can satisfy this interface without touching the
-// Module.
+// Service.
 type Store interface {
 	// Load fetches the session data for id, returning the values and whether
 	// the session existed (expired or unknown sessions report exists=false).

@@ -17,7 +17,7 @@ import (
 type session struct {
 	id     string
 	values map[string]any
-	mod    *Module
+	mod    *Service
 	w      http.ResponseWriter // injected by the middleware; nil only if misused outside a request
 }
 

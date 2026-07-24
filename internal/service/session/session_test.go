@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/inertia"
 )
 
@@ -20,10 +19,22 @@ func newTestEngine(t *testing.T) *inertia.Engine {
 	return eng
 }
 
-// TestBoot_NilConfig verifies the enable-consistency rule (§4.4).
-func TestBoot_NilConfig(t *testing.T) {
-	m := New(nil, nil)
-	err := m.Boot(context.Background())
+// installed builds a Started service and installs its middleware on eng, the way
+// serve.go wires it (eng.Use(svc.Middleware())).
+func installed(t *testing.T, eng *inertia.Engine, cfg *Config) *Service {
+	t.Helper()
+	svc := New(cfg, nil)
+	if err := svc.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	eng.Use(svc.Middleware())
+	return svc
+}
+
+// TestStart_NilConfig verifies the enable-consistency rule.
+func TestStart_NilConfig(t *testing.T) {
+	s := New(nil, nil)
+	err := s.Start(context.Background())
 	if err == nil {
 		t.Fatal("expected error for nil config")
 	}
@@ -32,74 +43,60 @@ func TestBoot_NilConfig(t *testing.T) {
 	}
 }
 
-func TestBoot_MissingSecret(t *testing.T) {
-	m := New(&Config{Store: StoreMemory}, nil)
-	err := m.Boot(context.Background())
+func TestStart_MissingSecret(t *testing.T) {
+	s := New(&Config{Store: StoreMemory}, nil)
+	err := s.Start(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "secret is required") {
 		t.Fatalf("expected secret-required error, got %v", err)
 	}
 }
 
-func TestBoot_UnknownStore(t *testing.T) {
-	m := New(&Config{Secret: "k", Store: "redis"}, nil)
-	err := m.Boot(context.Background())
+func TestStart_UnknownStore(t *testing.T) {
+	s := New(&Config{Secret: "k", Store: "redis"}, nil)
+	err := s.Start(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unknown store") {
 		t.Fatalf("expected unknown-store error, got %v", err)
 	}
 }
 
-func TestBoot_DBStoreWithoutProvider(t *testing.T) {
-	m := New(&Config{Secret: "k", Store: StoreDB}, nil)
-	err := m.Boot(context.Background())
+func TestStart_DBStoreWithoutProvider(t *testing.T) {
+	s := New(&Config{Secret: "k", Store: StoreDB}, nil)
+	err := s.Start(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "requires a db.Provider") {
 		t.Fatalf("expected db.Provider-required error, got %v", err)
 	}
 }
 
-func TestBoot_MemoryDefault(t *testing.T) {
+func TestStart_MemoryDefault(t *testing.T) {
 	// Empty store defaults to memory.
-	m := New(&Config{Secret: "k"}, nil)
-	if err := m.Boot(context.Background()); err != nil {
-		t.Fatalf("Boot: %v", err)
+	s := New(&Config{Secret: "k"}, nil)
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
-	if m.store == nil {
+	if s.store == nil {
 		t.Fatal("expected memory store to be set")
 	}
 }
 
-// TestModule_SatisfiesInterfaces asserts the concrete *Module implements the
-// app lifecycle hooks and the Provider contract.
-func TestModule_SatisfiesInterfaces(t *testing.T) {
-	var (
-		_ app.Module     = (*Module)(nil)
-		_ app.Booter     = (*Module)(nil)
-		_ app.Shutdowner = (*Module)(nil)
-		_ Provider       = (*Module)(nil)
-	)
+// TestService_SatisfiesProvider asserts *Service implements Provider. The
+// app.Lifecycle assertion lives with the composition root (commands), not here:
+// app imports session, so an internal test importing app would be a cycle.
+func TestService_SatisfiesProvider(t *testing.T) {
+	var _ Provider = (*Service)(nil)
 }
 
-// TestMiddleware_AutoWritesCookieOnSave is the regression test for the HIGH
-// bug where the session cookie never reached the response. The handler calls
-// Save and THEN writes a body (the normal case: render a page / return JSON) —
+// TestMiddleware_AutoWritesCookieOnSave is the regression test for the HIGH bug
+// where the session cookie never reached the response. The handler calls Save
+// and THEN writes a body (the normal case: render a page / return JSON) —
 // inertia's writer is write-through, so the cookie must be emitted by Save
 // before the body flushes, not after the handler returns. A follow-up request
 // with that cookie must load the saved values.
 func TestMiddleware_AutoWritesCookieOnSave(t *testing.T) {
 	eng := newTestEngine(t)
-	a, err := app.New(eng)
-	if err != nil {
-		t.Fatalf("app.New: %v", err)
-	}
-	mod := New(&Config{Secret: "test-secret", Store: StoreMemory}, nil)
-	if err := mod.Boot(context.Background()); err != nil {
-		t.Fatalf("Boot: %v", err)
-	}
-	if err := a.Use(mod); err != nil {
-		t.Fatalf("Use: %v", err)
-	}
+	svc := installed(t, eng, &Config{Secret: "test-secret", Store: StoreMemory})
 
 	eng.GET("/login", func(c *inertia.Context) {
-		s := mod.Session(c)
+		s := svc.Session(c)
 		s.Set("user", "alice")
 		if _, err := s.Save(c.Request.Context()); err != nil {
 			t.Errorf("Save: %v", err)
@@ -128,7 +125,7 @@ func TestMiddleware_AutoWritesCookieOnSave(t *testing.T) {
 	var loadedUser any
 	var loadedOk bool
 	eng.GET("/whoami", func(c *inertia.Context) {
-		s := mod.Session(c)
+		s := svc.Session(c)
 		loadedUser, loadedOk = s.Get("user")
 	})
 	w2 := httptest.NewRecorder()
@@ -141,20 +138,17 @@ func TestMiddleware_AutoWritesCookieOnSave(t *testing.T) {
 	}
 }
 
-// TestMiddleware_ClearsCookieOnDestroy verifies Destroy causes the middleware
-// to clear the cookie, and that a follow-up request with the stale cookie does
-// not resurrect the destroyed session.
+// TestMiddleware_ClearsCookieOnDestroy verifies Destroy causes the middleware to
+// clear the cookie, and that a follow-up request with the stale cookie does not
+// resurrect the destroyed session.
 func TestMiddleware_ClearsCookieOnDestroy(t *testing.T) {
 	eng := newTestEngine(t)
-	a, _ := app.New(eng)
-	mod := New(&Config{Secret: "test-secret", Store: StoreMemory}, nil)
-	_ = mod.Boot(context.Background())
-	_ = a.Use(mod)
+	svc := installed(t, eng, &Config{Secret: "test-secret", Store: StoreMemory})
 
 	// Seed a session via /login (Save → cookie).
 	var signed string
 	eng.GET("/login", func(c *inertia.Context) {
-		s := mod.Session(c)
+		s := svc.Session(c)
 		s.Set("user", "alice")
 		_, _ = s.Save(c.Request.Context())
 	})
@@ -162,10 +156,10 @@ func TestMiddleware_ClearsCookieOnDestroy(t *testing.T) {
 	eng.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/login", nil))
 	signed = w1.Result().Cookies()[0].Value
 
-	// Destroy it: the cookie must be cleared even though the handler then writes
-	// a body (write-through writer — clear must happen before the flush).
+	// Destroy it: the cookie must be cleared even though the handler then writes a
+	// body (write-through writer — clear must happen before the flush).
 	eng.GET("/logout", func(c *inertia.Context) {
-		_ = mod.Session(c).Destroy(c.Request.Context())
+		_ = svc.Session(c).Destroy(c.Request.Context())
 		_, _ = c.Writer.Write([]byte("bye"))
 	})
 	w2 := httptest.NewRecorder()
@@ -187,7 +181,7 @@ func TestMiddleware_ClearsCookieOnDestroy(t *testing.T) {
 	// Follow-up with the stale cookie: session should be gone from the store.
 	var ok bool
 	eng.GET("/check", func(c *inertia.Context) {
-		_, ok = mod.Session(c).Get("user")
+		_, ok = svc.Session(c).Get("user")
 	})
 	w3 := httptest.NewRecorder()
 	r3 := httptest.NewRequest(http.MethodGet, "/check", nil)
@@ -202,13 +196,10 @@ func TestMiddleware_ClearsCookieOnDestroy(t *testing.T) {
 // set a cookie when the handler never calls Save/Destroy (read-only access).
 func TestMiddleware_NoCookieWhenSessionUntouched(t *testing.T) {
 	eng := newTestEngine(t)
-	a, _ := app.New(eng)
-	mod := New(&Config{Secret: "k", Store: StoreMemory}, nil)
-	_ = mod.Boot(context.Background())
-	_ = a.Use(mod)
+	svc := installed(t, eng, &Config{Secret: "k", Store: StoreMemory})
 
 	eng.GET("/", func(c *inertia.Context) {
-		_ = mod.Session(c) // touch but don't mutate
+		_ = svc.Session(c) // touch but don't mutate
 	})
 	w := httptest.NewRecorder()
 	eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
@@ -221,14 +212,11 @@ func TestMiddleware_NoCookieWhenSessionUntouched(t *testing.T) {
 // empty session rather than loading attacker-controlled data.
 func TestMiddleware_TamperedCookieRejected(t *testing.T) {
 	eng := newTestEngine(t)
-	a, _ := app.New(eng)
-	mod := New(&Config{Secret: "k", Store: StoreMemory}, nil)
-	_ = mod.Boot(context.Background())
-	_ = a.Use(mod)
+	svc := installed(t, eng, &Config{Secret: "k", Store: StoreMemory})
 
 	var ok bool
 	eng.GET("/", func(c *inertia.Context) {
-		_, ok = mod.Session(c).Get("anything")
+		_, ok = svc.Session(c).Get("anything")
 	})
 
 	// A cookie that verifies as tampered.
@@ -243,11 +231,11 @@ func TestMiddleware_TamperedCookieRejected(t *testing.T) {
 	}
 }
 
-// TestShutdown_Noop verifies Shutdown is safe and returns nil.
-func TestShutdown_Noop(t *testing.T) {
-	mod := New(&Config{Secret: "k", Store: StoreMemory}, nil)
-	_ = mod.Boot(context.Background())
-	if err := mod.Shutdown(context.Background()); err != nil {
-		t.Fatalf("Shutdown: %v", err)
+// TestStop_Noop verifies Stop is safe and returns nil.
+func TestStop_Noop(t *testing.T) {
+	svc := New(&Config{Secret: "k", Store: StoreMemory}, nil)
+	_ = svc.Start(context.Background())
+	if err := svc.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop: %v", err)
 	}
 }

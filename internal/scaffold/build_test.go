@@ -8,21 +8,19 @@ import (
 	"testing"
 )
 
-// TestResource_OutputCompilesAndWires generates a public resource into the real
-// module tree and compiles it with a wiring assertion (New((*db.Module)(nil))).
-//
-// A plain build of the generated package is NOT enough: it defines its own
-// dbProvider interface and compiles in isolation even if that interface is
-// wrong. The type mismatch only surfaces where a real *db.Module is passed to
-// New — exactly what the generated wiring hint tells the user to write.
-func TestResource_OutputCompilesAndWires(t *testing.T) {
+// TestResource_OutputCompiles generates a public resource into the real module
+// tree and compiles it. The generated Controller embeds the real *app.Services
+// and its Mount takes the real *inertia.Engine, so a successful build proves the
+// generated code wires against the real types (no provider-interface indirection
+// to get wrong).
+func TestResource_OutputCompiles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skips go build in -short mode")
 	}
 	root := moduleRoot(t)
 
 	const resource = "genwiresmoke"
-	pkgDir := filepath.Join(root, "internal", "module", resource)
+	pkgDir := filepath.Join(root, "internal", "controller", resource)
 	viewDir := filepath.Join(root, "frontend", "pages", resource)
 	t.Cleanup(func() {
 		_ = os.RemoveAll(pkgDir)
@@ -32,14 +30,12 @@ func TestResource_OutputCompilesAndWires(t *testing.T) {
 	if err := Resource(resource, Options{ModuleRoot: root, Force: true}); err != nil {
 		t.Fatalf("Resource: %v", err)
 	}
-	writeWireCheck(t, pkgDir, resource,
-		[]string{"github.com/millken/goapp-template/internal/module/db"},
-		"New((*db.Module)(nil))")
-	goBuild(t, root, "./internal/module/"+resource+"/...")
+	goBuild(t, root, "./internal/controller/"+resource+"/...")
 }
 
-// TestAdmin_OutputCompilesAndWires does the same for an admin resource.
-func TestAdmin_OutputCompilesAndWires(t *testing.T) {
+// TestAdmin_OutputCompiles does the same for an admin resource, which also wires
+// against the real *admin.Admin (Prefix/AuthMiddleware/AddMenuItem).
+func TestAdmin_OutputCompiles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skips go build in -short mode")
 	}
@@ -47,7 +43,7 @@ func TestAdmin_OutputCompilesAndWires(t *testing.T) {
 
 	const resource = "genwiresmoke"
 	pkg := "admin" + resource
-	pkgDir := filepath.Join(root, "internal", "module", pkg)
+	pkgDir := filepath.Join(root, "internal", "controller", pkg)
 	viewDir := filepath.Join(root, "frontend", "pages", "admin", resource)
 	t.Cleanup(func() {
 		_ = os.RemoveAll(pkgDir)
@@ -57,29 +53,7 @@ func TestAdmin_OutputCompilesAndWires(t *testing.T) {
 	if err := Admin(resource, Options{ModuleRoot: root, Force: true}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
-	writeWireCheck(t, pkgDir, pkg,
-		[]string{
-			"github.com/millken/goapp-template/internal/module/db",
-			"github.com/millken/goapp-template/internal/module/admin",
-		},
-		"New((*db.Module)(nil), (*admin.Module)(nil))")
-	goBuild(t, root, "./internal/module/"+pkg+"/...")
-}
-
-// writeWireCheck drops a package-level assertion file that forces the generated
-// New to accept the real module(s) it is meant to be wired with, so a broken
-// provider interface fails the build here instead of in the user's serve.go.
-func writeWireCheck(t *testing.T, pkgDir, pkg string, imports []string, newCall string) {
-	t.Helper()
-	var b strings.Builder
-	b.WriteString("package " + pkg + "\n\nimport (\n")
-	for _, imp := range imports {
-		b.WriteString("\t" + `"` + imp + `"` + "\n")
-	}
-	b.WriteString(")\n\nvar _ = " + newCall + "\n")
-	if err := os.WriteFile(filepath.Join(pkgDir, "zz_wire_check.go"), []byte(b.String()), 0o644); err != nil {
-		t.Fatalf("write wire check: %v", err)
-	}
+	goBuild(t, root, "./internal/controller/"+pkg+"/...")
 }
 
 func goBuild(t *testing.T, dir, pattern string) {
@@ -87,7 +61,7 @@ func goBuild(t *testing.T, dir, pattern string) {
 	cmd := exec.Command("go", "build", pattern)
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("generated package failed to build/wire:\n%s", out)
+		t.Fatalf("generated package failed to build:\n%s", out)
 	}
 }
 

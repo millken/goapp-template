@@ -14,8 +14,8 @@ func TestResource_CreatesAllFiles(t *testing.T) {
 	}
 
 	want := []string{
-		"internal/module/blogpost/handler.go",
-		"internal/module/blogpost/model.go",
+		"internal/controller/blogpost/handler.go",
+		"internal/controller/blogpost/model.go",
 		"frontend/pages/blog-post/index.vue",
 		"frontend/pages/blog-post/form.vue",
 	}
@@ -52,7 +52,7 @@ func TestResource_TemplateContent(t *testing.T) {
 	if err := Resource("post", Options{ModuleRoot: root}); err != nil {
 		t.Fatalf("Resource: %v", err)
 	}
-	model, err := os.ReadFile(filepath.Join(root, "internal/module/post/model.go"))
+	model, err := os.ReadFile(filepath.Join(root, "internal/controller/post/model.go"))
 	if err != nil {
 		t.Fatalf("read model.go: %v", err)
 	}

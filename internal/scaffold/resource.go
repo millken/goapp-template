@@ -6,14 +6,15 @@ import (
 )
 
 // Resource produces a full public CRUD resource scaffold for the given name:
-// a handler + model under internal/module/<pkg>/ and index/form Vue pages under
-// frontend/pages/<viewdir>/. Invoked by `goapp gen resource <name>`.
+// a handler + model under internal/controller/<pkg>/ and index/form Vue pages
+// under frontend/pages/<viewdir>/. Invoked by `goapp gen resource <name>`.
 //
-// No migration is emitted here. Schema changes are event-driven and usually
-// holistic (not one-per-resource), and the db module only embeds and applies
-// internal/module/db/migrations/. A per-resource migrations/ dir would be a dead
-// file that nothing runs. Add versioned migrations by hand under
-// internal/module/db/migrations/ (NNN_name.up.sql / .down.sql); sqldb applies
+// The handler is a controller embedding *app.Services with a Mount(eng, svc)
+// func; wire it once into controller.MountAll (internal/controller/mount_gen.go).
+//
+// No migration is emitted here. Schema changes are usually holistic (not
+// one-per-resource); add versioned migrations by hand under
+// internal/service/db/migrations/ (NNN_name.up.sql / .down.sql); sqldb applies
 // them in filename order and records applied versions.
 func Resource(name string, opts Options) error {
 	spec, err := NewSpec(name)
@@ -23,8 +24,8 @@ func Resource(name string, opts Options) error {
 
 	type out struct{ tmpl, path string }
 	outputs := []out{
-		{"resource/handler.go.tmpl", filepath.Join("internal/module", spec.Package, "handler.go")},
-		{"resource/model.go.tmpl", filepath.Join("internal/module", spec.Package, "model.go")},
+		{"resource/handler.go.tmpl", filepath.Join("internal/controller", spec.Package, "handler.go")},
+		{"resource/model.go.tmpl", filepath.Join("internal/controller", spec.Package, "model.go")},
 		{"resource/index.vue.tmpl", filepath.Join("frontend/pages", spec.ViewDir, "index.vue")},
 		{"resource/form.vue.tmpl", filepath.Join("frontend/pages", spec.ViewDir, "form.vue")},
 	}
