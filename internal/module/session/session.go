@@ -12,6 +12,7 @@
 package session
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -158,7 +159,7 @@ func (m *Module) Shutdown(context.Context) error { return nil }
 
 // cookieName returns the configured cookie name or the default.
 func (m *Module) cookieName() string {
-	return defaultStr(m.cfg.CookieName, "session")
+	return cmp.Or(m.cfg.CookieName, "session")
 }
 
 // ttl returns the configured TTL or the default.
@@ -195,7 +196,7 @@ func (m *Module) setCookie(w http.ResponseWriter, id string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     m.cookieName(),
 		Value:    signCookie(m.cfg.Secret, id),
-		Path:     defaultStr(m.cfg.Path, "/"),
+		Path:     cmp.Or(m.cfg.Path, "/"),
 		Domain:   m.cfg.Domain,
 		MaxAge:   int(m.ttl().Seconds()),
 		Secure:   m.cfg.Secure,
@@ -209,18 +210,11 @@ func (m *Module) clearCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     m.cookieName(),
 		Value:    "",
-		Path:     defaultStr(m.cfg.Path, "/"),
+		Path:     cmp.Or(m.cfg.Path, "/"),
 		Domain:   m.cfg.Domain,
 		MaxAge:   -1,
 		Secure:   m.cfg.Secure,
 		HttpOnly: true,
 		SameSite: m.sameSite(),
 	})
-}
-
-func defaultStr(v, def string) string {
-	if v != "" {
-		return v
-	}
-	return def
 }
