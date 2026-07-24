@@ -6,10 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/dnsoa/go/sqldb"
 )
+
+// tableNameRe restricts session table names to a safe identifier shape so they
+// can be interpolated into DDL/DML without quoting concerns.
+var tableNameRe = regexp.MustCompile(`^[A-Za-z_]\w*$`)
 
 // DBStore persists sessions in the application database via db.Provider. Suitable
 // for production: survives restarts and shares state across instances.
@@ -22,26 +27,32 @@ type DBStore struct {
 }
 
 // NewDBStore wraps a database handle for session storage. table is the sessions
-// table name (default "sessions").
-func NewDBStore(db *sqldb.DB, table string) *DBStore {
+// table name (default "sessions"); it must match ^[A-Za-z_]\w*$.
+func NewDBStore(db *sqldb.DB, table string) (*DBStore, error) {
 	if table == "" {
 		table = "sessions"
 	}
-	return &DBStore{db: db, table: table}
+	if !tableNameRe.MatchString(table) {
+		return nil, fmt.Errorf("session: illegal table name %q", table)
+	}
+	return &DBStore{db: db, table: table}, nil
 }
 
 // ensureTable creates the sessions table if it does not exist. Idempotent.
+// expires_at is BIGINT so it holds UnixNano on all dialects (PostgreSQL/MySQL
+// INTEGER is 32-bit and would overflow).
 func (s *DBStore) ensureTable(ctx context.Context) error {
-	const ddl = `CREATE TABLE IF NOT EXISTS %s (
+	ddl := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     id         TEXT PRIMARY KEY,
     data       TEXT NOT NULL,
-    expires_at INTEGER NOT NULL
-)`
-	if _, err := s.db.ExecContext(ctx, fmt.Sprintf(ddl, s.table)); err != nil {
+    expires_at BIGINT NOT NULL
+)`, s.table)
+	if _, err := s.db.ExecContext(ctx, ddl); err != nil {
 		return fmt.Errorf("session: create table %s: %w", s.table, err)
 	}
 	return nil
 }
+
 func (s *DBStore) Load(ctx context.Context, id string) (map[string]any, time.Time, bool, error) {
 	var (
 		raw       string
@@ -69,38 +80,43 @@ func (s *DBStore) Load(ctx context.Context, id string) (map[string]any, time.Tim
 
 func (s *DBStore) Save(ctx context.Context, id string, values map[string]any, ttl time.Duration) (string, error) {
 	if id == "" {
-		id = newID()
+		newID, err := randomID()
+		if err != nil {
+			return "", fmt.Errorf("session: generate id: %w", err)
+		}
+		id = newID
 	}
 	raw, err := json.Marshal(values)
 	if err != nil {
 		return "", fmt.Errorf("session: encode: %w", err)
 	}
 	expiresAt := time.Now().Add(ttl).UnixNano()
-	// Upsert: insert-or-replace covers SQLite/PostgreSQL (ON CONFLICT) and
-	// MySQL (REPLACE) via the simplest portable form. The data and expiry are
-	// always refreshed.
-	q := fmt.Sprintf(
-		`INSERT INTO %s (id, data, expires_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, expires_at = excluded.expires_at`,
-		s.table,
-	)
+
+	q := s.upsertSQL()
 	if _, err := s.db.ExecContext(ctx, q, id, string(raw), expiresAt); err != nil {
-		// Some drivers/dialects may not support ON CONFLICT; fall back to a
-		// delete+insert so the store still works on MySQL without REPEATABLE.
-		if _, fallbackErr := s.fallbackUpsert(ctx, id, string(raw), expiresAt); fallbackErr != nil {
-			return "", fmt.Errorf("session: save: %w (fallback: %v)", err, fallbackErr)
-		}
+		return "", fmt.Errorf("session: save: %w", err)
 	}
 	return id, nil
 }
 
-// fallbackUpsert handles dialects whose ON CONFLICT syntax differs: delete then
-// insert. Used only when the primary upsert errors.
-func (s *DBStore) fallbackUpsert(ctx context.Context, id, raw string, expiresAt int64) (sql.Result, error) {
-	if _, err := s.delete(ctx, id); err != nil {
-		return nil, err
+// upsertSQL returns the dialect-correct INSERT...ON CONFLICT/DUPLICATE statement
+// for the configured flavor. Both forms take exactly 3 bind args
+// (id, data, expires_at): the UPDATE branch reuses the inserted values via
+// excluded.<col> (SQLite/PostgreSQL) or VALUES(<col>) (MySQL), so no extra
+// placeholders are needed.
+func (s *DBStore) upsertSQL() string {
+	switch s.db.Flavor {
+	case sqldb.MySQL:
+		return fmt.Sprintf(
+			`INSERT INTO %s (id, data, expires_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data), expires_at = VALUES(expires_at)`,
+			s.table,
+		)
+	default: // SQLite and PostgreSQL both support ON CONFLICT ... DO UPDATE.
+		return fmt.Sprintf(
+			`INSERT INTO %s (id, data, expires_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, expires_at = excluded.expires_at`,
+			s.table,
+		)
 	}
-	q := fmt.Sprintf(`INSERT INTO %s (id, data, expires_at) VALUES (?, ?, ?)`, s.table)
-	return s.db.ExecContext(ctx, q, id, raw, expiresAt)
 }
 
 func (s *DBStore) Delete(ctx context.Context, id string) error {

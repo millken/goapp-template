@@ -60,7 +60,6 @@ type Config struct {
 	DBTable    string        `yaml:"db_table"`    // sessions table name when store=db; default "sessions"
 	Secure     bool          `yaml:"secure"`      // cookie Secure flag (HTTPS-only)
 	SameSite   string        `yaml:"same_site"`   // lax | strict | none (default lax)
-	HttpOnly   bool          `yaml:"http_only"`   // default true (zero value means true)
 	Path       string        `yaml:"path"`        // default "/"
 	Domain     string        `yaml:"domain"`
 }
@@ -100,7 +99,10 @@ func (m *Module) Boot(ctx context.Context) error {
 		if m.dbProv == nil {
 			return errors.New("session: store=db requires a db.Provider")
 		}
-		store := NewDBStore(m.dbProv.DB(), m.cfg.DBTable)
+		store, err := NewDBStore(m.dbProv.DB(), m.cfg.DBTable)
+		if err != nil {
+			return err
+		}
 		if err := store.ensureTable(ctx); err != nil {
 			return err
 		}
@@ -114,9 +116,13 @@ func (m *Module) Boot(ctx context.Context) error {
 }
 
 // middleware returns the HandlerFunc that loads/creates the session per request.
+// It injects the response writer into the session so Save/Destroy can emit the
+// cookie synchronously (inertia's writer is write-through; a cookie set after
+// the handler renders would be dropped — see impl.go).
 func (m *Module) middleware() inertia.HandlerFunc {
 	return func(c *inertia.Context) {
 		sess := m.loadOrCreate(c.Request.Context(), c.Request)
+		sess.w = c.Writer
 		c.Set(contextKey, sess)
 		c.Next()
 	}
@@ -170,15 +176,6 @@ func (m *Module) ttl() time.Duration {
 	return 24 * time.Hour
 }
 
-// httpOnlyFlag returns the effective HttpOnly setting. The zero value means
-// true (secure default); users opt out by… there is no opt-out field, so it is
-// always true. Kept as a method for clarity and future extension.
-func (m *Module) httpOnlyFlag() bool {
-	// HttpOnly defaults to true for security; the config field is reserved for
-	// a future explicit override but currently always-on.
-	return true
-}
-
 // sameSite maps the config string to http.SameSite.
 func (m *Module) sameSite() http.SameSite {
 	switch m.cfg.SameSite {
@@ -191,7 +188,9 @@ func (m *Module) sameSite() http.SameSite {
 	}
 }
 
-// setCookie writes the signed session cookie on the response.
+// setCookie writes the signed session cookie on the response. HttpOnly is
+// always on — there is no opt-out; if one is ever needed, add an explicit
+// field rather than a bool whose zero value is ambiguous.
 func (m *Module) setCookie(w http.ResponseWriter, id string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     m.cookieName(),
@@ -200,7 +199,7 @@ func (m *Module) setCookie(w http.ResponseWriter, id string) {
 		Domain:   m.cfg.Domain,
 		MaxAge:   int(m.ttl().Seconds()),
 		Secure:   m.cfg.Secure,
-		HttpOnly: m.httpOnlyFlag(),
+		HttpOnly: true,
 		SameSite: m.sameSite(),
 	})
 }

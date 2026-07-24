@@ -28,8 +28,8 @@ type App struct {
 	// Logger is the process-wide logger (slog.Default by default).
 	Logger *slog.Logger
 
-	mods             []Module
-	shutdownTimeout  time.Duration
+	mods            []Module
+	shutdownTimeout time.Duration
 }
 
 // Option configures the App.
@@ -54,9 +54,9 @@ func New(eng *inertia.Engine, opts ...Option) (*App, error) {
 		return nil, errors.New("app: New requires a non-nil engine")
 	}
 	a := &App{
-		Engine:           eng,
-		Logger:           slog.Default(),
-		shutdownTimeout:  defaultShutdownTimeout,
+		Engine:          eng,
+		Logger:          slog.Default(),
+		shutdownTimeout: defaultShutdownTimeout,
 	}
 	for _, opt := range opts {
 		opt(a)

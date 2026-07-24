@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
+	"maps"
 	"sync"
 	"time"
 )
@@ -39,9 +41,7 @@ func (s *MemoryStore) Load(_ context.Context, id string) (map[string]any, time.T
 	}
 	// Return a copy so callers mutate without holding the lock until Save.
 	out := make(map[string]any, len(sess.values))
-	for k, v := range sess.values {
-		out[k] = v
-	}
+	maps.Copy(out, sess.values)
 	return out, sess.expiresAt, true, nil
 }
 
@@ -49,13 +49,15 @@ func (s *MemoryStore) Save(_ context.Context, id string, values map[string]any, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if id == "" {
-		id = newID()
+		newID, err := randomID()
+		if err != nil {
+			return "", fmt.Errorf("session: generate id: %w", err)
+		}
+		id = newID
 	}
 	// Copy so the caller's map is not retained by reference.
 	stored := make(map[string]any, len(values))
-	for k, v := range values {
-		stored[k] = v
-	}
+	maps.Copy(stored, values)
 	s.sesss[id] = memorySession{
 		values:    stored,
 		expiresAt: time.Now().Add(ttl),
@@ -70,13 +72,13 @@ func (s *MemoryStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-// newID returns a fresh 32-byte hex-encoded random session ID.
-func newID() string {
+// randomID returns a fresh 32-byte hex-encoded random session ID. It returns an
+// error rather than a predictable fallback if the system CSPRNG fails — a
+// guessable session ID is worse than no session.
+func randomID() (string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand should not fail; fall back to time-based uniqueness so a
-		// session can still be created rather than panicking.
-		return hex.EncodeToString([]byte(time.Now().UTC().Format("20060102150405.000000000")))
+		return "", err
 	}
-	return hex.EncodeToString(b[:])
+	return hex.EncodeToString(b[:]), nil
 }

@@ -2,12 +2,27 @@ package session
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/millken/goapp-template/internal/driver"
 	"github.com/dnsoa/go/sqldb"
+	_ "github.com/millken/goapp-template/internal/driver"
 )
+
+// TestUpsertSQL_PlaceholderCount guards the invariant that Save passes exactly
+// 3 bind args: every dialect's upsert must have exactly 3 '?' placeholders (the
+// UPDATE branch reuses inserted values via excluded/VALUES, no extra binds). A
+// mismatch passes on SQLite (lenient) but errors on pq/pgx/MySQL, so assert it
+// here for every flavor rather than discovering it in production.
+func TestUpsertSQL_PlaceholderCount(t *testing.T) {
+	for _, flavor := range []sqldb.Flavor{sqldb.SQLite, sqldb.PostgreSQL, sqldb.MySQL} {
+		s := &DBStore{db: &sqldb.DB{Flavor: flavor}, table: "sessions"}
+		if n := strings.Count(s.upsertSQL(), "?"); n != 3 {
+			t.Errorf("flavor %v: upsert has %d placeholders, want 3 (Save passes 3 args)", flavor, n)
+		}
+	}
+}
 
 // TestMemoryStore_Lifecycle exercises save/load/delete and expiry on the
 // in-memory store.
@@ -88,7 +103,10 @@ func TestDBStore_Lifecycle(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	s := NewDBStore(db, "sessions_test")
+	s, err := NewDBStore(db, "sessions_test")
+	if err != nil {
+		t.Fatalf("NewDBStore: %v", err)
+	}
 	if err := s.ensureTable(ctx); err != nil {
 		t.Fatalf("ensureTable: %v", err)
 	}
@@ -133,7 +151,7 @@ func TestDBStore_Expiry(t *testing.T) {
 	ctx := context.Background()
 	db, _ := sqldb.Open("sqlite3", ":memory:")
 	t.Cleanup(func() { db.Close() })
-	s := NewDBStore(db, "sessions_test")
+	s, _ := NewDBStore(db, "sessions_test")
 	_ = s.ensureTable(ctx)
 
 	id, _ := s.Save(ctx, "", map[string]any{"k": "v"}, 10*time.Millisecond)
@@ -146,4 +164,67 @@ func TestDBStore_Expiry(t *testing.T) {
 	if ok {
 		t.Fatal("expected expired")
 	}
+}
+
+func TestNewDBStore_InvalidTableName(t *testing.T) {
+	db, _ := sqldb.Open("sqlite3", ":memory:")
+	t.Cleanup(func() { db.Close() })
+	cases := []string{
+		"has space",
+		"name;drop--",
+		`quoted"name`,
+	}
+	for _, name := range cases {
+		if _, err := NewDBStore(db, name); err == nil {
+			t.Errorf("expected error for table name %q, got nil", name)
+		}
+	}
+	// Empty defaults to "sessions" and is valid.
+	if _, err := NewDBStore(db, ""); err != nil {
+		t.Errorf("empty name should default, got %v", err)
+	}
+	if _, err := NewDBStore(db, "sessions_test_2"); err != nil {
+		t.Errorf("valid name rejected: %v", err)
+	}
+}
+
+// TestUpsertSQL_PerFlavor verifies the dialect-correct upsert is generated
+// without needing live MySQL/PostgreSQL instances.
+func TestUpsertSQL_PerFlavor(t *testing.T) {
+	db, _ := sqldb.Open("sqlite3", ":memory:")
+	t.Cleanup(func() { db.Close() })
+
+	// SQLite flavor (default from open).
+	s, _ := NewDBStore(db, "sessions")
+	got := s.upsertSQL()
+	if !contains(got, "ON CONFLICT(id)") {
+		t.Fatalf("sqlite upsert: expected ON CONFLICT, got %q", got)
+	}
+
+	// Simulate MySQL flavor.
+	s.db.Flavor = sqldb.MySQL
+	got = s.upsertSQL()
+	if !contains(got, "ON DUPLICATE KEY UPDATE") {
+		t.Fatalf("mysql upsert: expected ON DUPLICATE KEY UPDATE, got %q", got)
+	}
+
+	// PostgreSQL uses the ON CONFLICT branch.
+	s.db.Flavor = sqldb.PostgreSQL
+	got = s.upsertSQL()
+	if !contains(got, "ON CONFLICT(id)") {
+		t.Fatalf("postgres upsert: expected ON CONFLICT, got %q", got)
+	}
+}
+
+func contains(s, sub string) bool {
+	return len(s) >= len(sub) && indexOf(s, sub) >= 0
+}
+
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
 }

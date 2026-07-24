@@ -78,10 +78,13 @@ func TestModule_SatisfiesInterfaces(t *testing.T) {
 	)
 }
 
-// TestMiddleware_LoadsAndCreates exercises the full request flow: a request
-// with no cookie gets a fresh session; after Save the response carries a signed
-// cookie; a follow-up request with that cookie loads the saved values.
-func TestMiddleware_LoadsAndCreates(t *testing.T) {
+// TestMiddleware_AutoWritesCookieOnSave is the regression test for the HIGH
+// bug where the session cookie never reached the response. The handler calls
+// Save and THEN writes a body (the normal case: render a page / return JSON) —
+// inertia's writer is write-through, so the cookie must be emitted by Save
+// before the body flushes, not after the handler returns. A follow-up request
+// with that cookie must load the saved values.
+func TestMiddleware_AutoWritesCookieOnSave(t *testing.T) {
 	eng := newTestEngine(t)
 	a, err := app.New(eng)
 	if err != nil {
@@ -98,22 +101,23 @@ func TestMiddleware_LoadsAndCreates(t *testing.T) {
 	eng.GET("/login", func(c *inertia.Context) {
 		s := mod.Session(c)
 		s.Set("user", "alice")
-		id, err := s.Save(c.Request.Context())
-		if err != nil {
+		if _, err := s.Save(c.Request.Context()); err != nil {
 			t.Errorf("Save: %v", err)
 			return
 		}
-		mod.setCookie(c.Writer, id)
+		// Write a body after Save, as a real handler would. This flushes the
+		// header block; the Set-Cookie must already be on it.
+		_, _ = c.Writer.Write([]byte("<html>ok</html>"))
 	})
 
-	// First request: no cookie → fresh session, saved → Set-Cookie in response.
+	// First request: no cookie → fresh session; Save writes the cookie.
 	w1 := httptest.NewRecorder()
 	r1 := httptest.NewRequest(http.MethodGet, "/login", nil)
 	eng.ServeHTTP(w1, r1)
 
 	cookies := w1.Result().Cookies()
 	if len(cookies) != 1 {
-		t.Fatalf("expected 1 Set-Cookie, got %d", len(cookies))
+		t.Fatalf("expected middleware to set 1 cookie, got %d", len(cookies))
 	}
 	signed := cookies[0].Value
 	if signed == "" {
@@ -134,6 +138,82 @@ func TestMiddleware_LoadsAndCreates(t *testing.T) {
 
 	if !loadedOk || loadedUser != "alice" {
 		t.Fatalf("expected to load user=alice, got ok=%v user=%v", loadedOk, loadedUser)
+	}
+}
+
+// TestMiddleware_ClearsCookieOnDestroy verifies Destroy causes the middleware
+// to clear the cookie, and that a follow-up request with the stale cookie does
+// not resurrect the destroyed session.
+func TestMiddleware_ClearsCookieOnDestroy(t *testing.T) {
+	eng := newTestEngine(t)
+	a, _ := app.New(eng)
+	mod := New(&Config{Secret: "test-secret", Store: StoreMemory}, nil)
+	_ = mod.Boot(context.Background())
+	_ = a.Use(mod)
+
+	// Seed a session via /login (Save → cookie).
+	var signed string
+	eng.GET("/login", func(c *inertia.Context) {
+		s := mod.Session(c)
+		s.Set("user", "alice")
+		_, _ = s.Save(c.Request.Context())
+	})
+	w1 := httptest.NewRecorder()
+	eng.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/login", nil))
+	signed = w1.Result().Cookies()[0].Value
+
+	// Destroy it: the cookie must be cleared even though the handler then writes
+	// a body (write-through writer — clear must happen before the flush).
+	eng.GET("/logout", func(c *inertia.Context) {
+		_ = mod.Session(c).Destroy(c.Request.Context())
+		_, _ = c.Writer.Write([]byte("bye"))
+	})
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest(http.MethodGet, "/logout", nil)
+	r2.AddCookie(&http.Cookie{Name: "session", Value: signed})
+	eng.ServeHTTP(w2, r2)
+
+	clearCookies := w2.Result().Cookies()
+	foundCleared := false
+	for _, ck := range clearCookies {
+		if ck.Name == "session" && ck.MaxAge < 0 {
+			foundCleared = true
+		}
+	}
+	if !foundCleared {
+		t.Fatal("expected middleware to clear cookie on Destroy")
+	}
+
+	// Follow-up with the stale cookie: session should be gone from the store.
+	var ok bool
+	eng.GET("/check", func(c *inertia.Context) {
+		_, ok = mod.Session(c).Get("user")
+	})
+	w3 := httptest.NewRecorder()
+	r3 := httptest.NewRequest(http.MethodGet, "/check", nil)
+	r3.AddCookie(&http.Cookie{Name: "session", Value: signed})
+	eng.ServeHTTP(w3, r3)
+	if ok {
+		t.Fatal("expected destroyed session to be gone")
+	}
+}
+
+// TestMiddleware_NoCookieWhenSessionUntouched verifies the middleware does not
+// set a cookie when the handler never calls Save/Destroy (read-only access).
+func TestMiddleware_NoCookieWhenSessionUntouched(t *testing.T) {
+	eng := newTestEngine(t)
+	a, _ := app.New(eng)
+	mod := New(&Config{Secret: "k", Store: StoreMemory}, nil)
+	_ = mod.Boot(context.Background())
+	_ = a.Use(mod)
+
+	eng.GET("/", func(c *inertia.Context) {
+		_ = mod.Session(c) // touch but don't mutate
+	})
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if len(w.Result().Cookies()) != 0 {
+		t.Fatal("expected no cookie for an untouched session")
 	}
 }
 
