@@ -96,19 +96,26 @@ func New(cfg config.ServerConfig) (*inertia.Engine, string, error) {
 	return eng, modeName(mode), nil
 }
 
+// firstAsset returns the first dist entry matching pattern, or "" after warning.
+// A missing entry is not fatal: the page still renders, just without that tag.
+func firstAsset(distFS fs.FS, pattern string) string {
+	entries, err := fs.Glob(distFS, pattern)
+	if err != nil || len(entries) == 0 {
+		slog.Warn("rootHTML: no dist asset matches", "pattern", pattern)
+		return ""
+	}
+	return entries[0]
+}
+
 // rootHTML scans dist for the entry CSS/JS and builds the root HTML template.
 func rootHTML(distFS fs.FS) string {
 	cssLink := ""
-	if entries, err := fs.Glob(distFS, "assets/main-*.css"); err == nil && len(entries) > 0 {
-		cssLink = fmt.Sprintf(`<link rel="stylesheet" href="/%s">`, entries[0])
-	} else {
-		slog.Warn("rootHTML: no main CSS found in dist assets")
+	if css := firstAsset(distFS, "assets/main-*.css"); css != "" {
+		cssLink = fmt.Sprintf(`<link rel="stylesheet" href="/%s">`, css)
 	}
 	jsTag := ""
-	if entries, err := fs.Glob(distFS, "assets/main-*.js"); err == nil && len(entries) > 0 {
-		jsTag = fmt.Sprintf(`<script type="module" src="/%s"></script>`, entries[0])
-	} else {
-		slog.Warn("rootHTML: no main JS found in dist assets")
+	if js := firstAsset(distFS, "assets/main-*.js"); js != "" {
+		jsTag = fmt.Sprintf(`<script type="module" src="/%s"></script>`, js)
 	}
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">

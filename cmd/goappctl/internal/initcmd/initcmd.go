@@ -41,6 +41,23 @@ const (
 // skipDirs are never walked: VCS metadata and build output.
 var skipDirs = map[string]bool{".git": true, "node_modules": true, "dist": true, "bin": true}
 
+// walkFiles visits every file under root, pruning skipDirs. The passes that
+// rewrite the tree (markers, identity, goimports) all want exactly this.
+func walkFiles(root string, visit func(path string, d fs.DirEntry) error) error {
+	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		return visit(p, d)
+	})
+}
+
 // Options configures a run.
 type Options struct {
 	Root      string   // directory to transform (the cwd)
@@ -65,7 +82,7 @@ func Run(o Options) error {
 		return errors.New("--module is required")
 	}
 	if o.Name == "" {
-		o.Name = path0(o.Module)
+		o.Name = lastSegment(o.Module)
 	}
 	if err := validateName(o.Name); err != nil {
 		return err
@@ -195,8 +212,8 @@ func modulePath(goMod []byte) string {
 	return ""
 }
 
-// validateName rejects names that cannot work as a binary name, and warns about
-// ones that produce an awkward env var (AppName drives <NAME>_HOME).
+// validateName rejects names that cannot work as a binary name. The name also
+// drives buildinfo.AppName and therefore the <NAME>_HOME env var.
 func validateName(name string) error {
 	if strings.ContainsAny(name, `/\ `) {
 		return fmt.Errorf("invalid app name %q: no slashes or spaces", name)
@@ -204,7 +221,9 @@ func validateName(name string) error {
 	return nil
 }
 
-func path0(module string) string {
+// lastSegment returns the final path element of a module path, the default app
+// name (e.g. "github.com/me/myapp" → "myapp").
+func lastSegment(module string) string {
 	parts := strings.Split(strings.TrimSuffix(module, "/"), "/")
 	return parts[len(parts)-1]
 }
@@ -233,16 +252,7 @@ func deletePaths(o Options, paths []string) error {
 func stripMarkers(o Options, off map[string]bool) error {
 	opts := markers.Options{Off: off, Known: components.Known()}
 	total, files := 0, 0
-	err := filepath.WalkDir(o.Root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return fs.SkipDir
-			}
-			return nil
-		}
+	err := walkFiles(o.Root, func(p string, _ fs.DirEntry) error {
 		src, err := os.ReadFile(p)
 		if err != nil {
 			return err
@@ -346,16 +356,7 @@ var appNameFiles = []string{
 func rewriteIdentity(o Options) error {
 	// Module path: everywhere it can appear.
 	changed := 0
-	err := filepath.WalkDir(o.Root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return fs.SkipDir
-			}
-			return nil
-		}
+	err := walkFiles(o.Root, func(p string, d fs.DirEntry) error {
 		if !identityExts[filepath.Ext(p)] && d.Name() != "Makefile" {
 			return nil
 		}
@@ -413,16 +414,7 @@ func rewriteIdentity(o Options) error {
 // go.mod, since cmd/goappctl (its only consumer) was deleted in step 7.
 func formatGoFiles(o Options) error {
 	n := 0
-	err := filepath.WalkDir(o.Root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return fs.SkipDir
-			}
-			return nil
-		}
+	err := walkFiles(o.Root, func(p string, _ fs.DirEntry) error {
 		if filepath.Ext(p) != ".go" {
 			return nil
 		}

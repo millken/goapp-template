@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -167,9 +168,7 @@ log:
 		t.Fatalf("Load(invalid yaml) returned nil error; want a parse error")
 	}
 	// Error must mention the path.
-	var pathErr interface{ Unwrap() []error }
-	_ = pathErr
-	if !contains(err.Error(), "config.yaml") {
+	if !strings.Contains(err.Error(), "config.yaml") {
 		t.Errorf("error %q should contain the config file path", err.Error())
 	}
 	// Returned config still has defaults applied.
@@ -190,7 +189,7 @@ func TestLoad_UnreadableFileReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Load(directory) returned nil error; want a read error")
 	}
-	if !contains(err.Error(), "read config") {
+	if !strings.Contains(err.Error(), "read config") {
 		t.Errorf("error %q should be wrapped as a read error", err.Error())
 	}
 }
@@ -209,13 +208,4 @@ func TestLoad_NotExistIsNotError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(missing file) = error %v; want nil (missing config is normal)", err)
 	}
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

@@ -64,7 +64,7 @@ func (s *DBStore) Load(ctx context.Context, id string) (map[string]any, time.Tim
 	exp := time.Unix(0, expiresAt)
 	if time.Now().After(exp) {
 		// Expired: best-effort delete, treat as absent.
-		_, _ = s.delete(ctx, id)
+		_ = s.Delete(ctx, id)
 		return nil, time.Time{}, false, nil
 	}
 	var values map[string]any
@@ -113,13 +113,9 @@ func (s *DBStore) upsertSQL() string {
 }
 
 func (s *DBStore) Delete(ctx context.Context, id string) error {
-	if _, err := s.delete(ctx, id); err != nil {
+	q := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, s.table)
+	if _, err := s.db.ExecContext(ctx, q, id); err != nil {
 		return fmt.Errorf("session: delete: %w", err)
 	}
 	return nil
-}
-
-func (s *DBStore) delete(ctx context.Context, id string) (sql.Result, error) {
-	q := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, s.table)
-	return s.db.ExecContext(ctx, q, id)
 }

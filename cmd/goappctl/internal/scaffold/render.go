@@ -25,6 +25,32 @@ type Options struct {
 	Module string
 }
 
+// output pairs an embedded template with its destination path.
+type output struct{ tmpl, path string }
+
+// prepareSpec validates opts and derives the spec shared by every scaffolder.
+func prepareSpec(name string, opts Options) (Spec, error) {
+	if opts.Module == "" {
+		return Spec{}, fmt.Errorf("scaffold: Options.Module is required (the target project's module path)")
+	}
+	spec, err := NewSpec(name)
+	if err != nil {
+		return Spec{}, err
+	}
+	spec.Module = opts.Module
+	return spec, nil
+}
+
+// renderAll writes every output, naming the destination on failure.
+func renderAll(outputs []output, spec Spec, opts Options) error {
+	for _, o := range outputs {
+		if err := render(o.tmpl, o.path, spec, opts); err != nil {
+			return fmt.Errorf("scaffold: generate %s: %w", o.path, err)
+		}
+	}
+	return nil
+}
+
 // render parses one embedded template (e.g. "resource/handler.go.tmpl") and
 // writes it to outPath. Templates use [[ .Field ]] delimiters so Vue's {{ }}
 // passes through verbatim.

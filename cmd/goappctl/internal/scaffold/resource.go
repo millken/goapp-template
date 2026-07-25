@@ -1,9 +1,6 @@
 package scaffold
 
-import (
-	"fmt"
-	"path/filepath"
-)
+import "path/filepath"
 
 // Resource produces a public CRUD scaffold: handler + model under
 // internal/controller/<pkg>/ and index/form Vue pages under
@@ -12,26 +9,14 @@ import (
 // No migration is emitted; add versioned migrations by hand under
 // internal/service/db/migrations/ (NNN_name.up.sql / .down.sql).
 func Resource(name string, opts Options) error {
-	if opts.Module == "" {
-		return fmt.Errorf("scaffold: Options.Module is required (the target project's module path)")
-	}
-	spec, err := NewSpec(name)
+	spec, err := prepareSpec(name, opts)
 	if err != nil {
 		return err
 	}
-	spec.Module = opts.Module
-
-	type out struct{ tmpl, path string }
-	outputs := []out{
+	return renderAll([]output{
 		{"resource/handler.go.tmpl", filepath.Join("internal/controller", spec.Package, "handler.go")},
 		{"resource/model.go.tmpl", filepath.Join("internal/controller", spec.Package, "model.go")},
 		{"resource/index.vue.tmpl", filepath.Join("frontend/pages", spec.ViewDir, "index.vue")},
 		{"resource/form.vue.tmpl", filepath.Join("frontend/pages", spec.ViewDir, "form.vue")},
-	}
-	for _, o := range outputs {
-		if err := render(o.tmpl, o.path, spec, opts); err != nil {
-			return fmt.Errorf("scaffold: generate %s: %w", o.path, err)
-		}
-	}
-	return nil
+	}, spec, opts)
 }

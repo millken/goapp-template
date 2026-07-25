@@ -18,7 +18,14 @@ import (
 	"github.com/millken/inertia"
 )
 
-const defaultAuthKey = "admin_user_id"
+// Defaults applied by the accessors below when [admin] is absent or a field is
+// left empty.
+const (
+	defaultMount      = "/admin"
+	defaultLoginLeaf  = "/login"
+	defaultAuthKey    = "admin_user_id"
+	defaultUsersTable = "users"
+)
 
 // tableNameRe restricts the users table name to a safe identifier, since it is
 // interpolated directly into SQL.
@@ -57,8 +64,8 @@ func (a *Admin) Validate() error {
 	if a.cfg == nil {
 		return errors.New("admin: enabled but [admin] config section missing")
 	}
-	if !tableNameRe.MatchString(a.usersTable()) {
-		return fmt.Errorf("admin: illegal users table name %q", a.usersTable())
+	if table := a.usersTable(); !tableNameRe.MatchString(table) {
+		return fmt.Errorf("admin: illegal users table name %q", table)
 	}
 	return nil
 }
@@ -79,16 +86,16 @@ func (a *Admin) Prefix() string { return a.mount() }
 // LoginPath returns the resolved public login route.
 func (a *Admin) LoginPath() string {
 	if a.cfg == nil {
-		return a.mount() + "/login"
+		return a.mount() + defaultLoginLeaf
 	}
-	return cmp.Or(a.cfg.LoginPath, a.mount()+"/login")
+	return cmp.Or(a.cfg.LoginPath, a.mount()+defaultLoginLeaf)
 }
 
 func (a *Admin) mount() string {
 	if a.cfg == nil {
-		return "/admin"
+		return defaultMount
 	}
-	return cmp.Or(a.cfg.Mount, "/admin")
+	return cmp.Or(a.cfg.Mount, defaultMount)
 }
 
 func (a *Admin) authKey() string {
@@ -100,7 +107,7 @@ func (a *Admin) authKey() string {
 
 func (a *Admin) usersTable() string {
 	if a.cfg == nil {
-		return "users"
+		return defaultUsersTable
 	}
-	return cmp.Or(a.cfg.UsersTable, "users")
+	return cmp.Or(a.cfg.UsersTable, defaultUsersTable)
 }

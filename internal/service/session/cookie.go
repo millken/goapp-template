@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"strings"
 )
 
 // The cookie carries only the signed session ID (data lives in the Store).
@@ -20,23 +21,15 @@ func signCookie(secret, id string) string {
 	return enc + "." + tag
 }
 
-// verifyCookie validates a signed cookie value and returns the session ID. The
-// signature is compared in constant time.
 var errInvalidCookie = errors.New("session: invalid or tampered cookie")
 
+// verifyCookie validates a signed cookie value and returns the session ID. The
+// signature is compared in constant time.
 func verifyCookie(secret, raw string) (string, error) {
-	dot := -1
-	for i, b := range []byte(raw) {
-		if b == '.' {
-			dot = i
-			break
-		}
-	}
-	if dot < 0 || dot == len(raw)-1 {
+	enc, tag, ok := strings.Cut(raw, ".")
+	if !ok || tag == "" {
 		return "", errInvalidCookie
 	}
-	enc := raw[:dot]
-	tag := raw[dot+1:]
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(enc))

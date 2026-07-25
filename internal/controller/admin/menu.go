@@ -1,6 +1,9 @@
 package admin
 
-import "sort"
+import (
+	"cmp"
+	"slices"
+)
 
 // MenuItem is a navigation entry; generated admin resources register one via
 // AddMenuItem.
@@ -18,13 +21,12 @@ func (a *Admin) AddMenuItem(item MenuItem) {
 
 // menuItems returns a sorted copy of the menu, injected as a shared prop.
 func (a *Admin) menuItems() []MenuItem {
+	// make+copy rather than slices.Clone: Clone preserves nil, and an empty menu
+	// must reach the frontend as [] rather than null.
 	out := make([]MenuItem, len(a.menu))
 	copy(out, a.menu)
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Order != out[j].Order {
-			return out[i].Order < out[j].Order
-		}
-		return out[i].Title < out[j].Title
+	slices.SortStableFunc(out, func(x, y MenuItem) int {
+		return cmp.Or(cmp.Compare(x.Order, y.Order), cmp.Compare(x.Title, y.Title))
 	})
 	return out
 }

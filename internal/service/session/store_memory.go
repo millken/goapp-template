@@ -13,8 +13,8 @@ import (
 // MemoryStore is an in-process session store: the development default, but
 // loses sessions on restart and does not share state across instances.
 type MemoryStore struct {
-	mu    sync.Mutex
-	sesss map[string]memorySession
+	mu       sync.Mutex
+	sessions map[string]memorySession
 }
 
 type memorySession struct {
@@ -24,18 +24,18 @@ type memorySession struct {
 
 // NewMemoryStore returns an empty in-memory session store.
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{sesss: make(map[string]memorySession)}
+	return &MemoryStore{sessions: make(map[string]memorySession)}
 }
 
 func (s *MemoryStore) Load(_ context.Context, id string) (map[string]any, time.Time, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	sess, ok := s.sesss[id]
+	sess, ok := s.sessions[id]
 	if !ok {
 		return nil, time.Time{}, false, nil
 	}
 	if !sess.expiresAt.IsZero() && time.Now().After(sess.expiresAt) {
-		delete(s.sesss, id)
+		delete(s.sessions, id)
 		return nil, time.Time{}, false, nil
 	}
 	// Return a copy so callers mutate without holding the lock until Save.
@@ -57,7 +57,7 @@ func (s *MemoryStore) Save(_ context.Context, id string, values map[string]any, 
 	// Copy so the caller's map is not retained by reference.
 	stored := make(map[string]any, len(values))
 	maps.Copy(stored, values)
-	s.sesss[id] = memorySession{
+	s.sessions[id] = memorySession{
 		values:    stored,
 		expiresAt: time.Now().Add(ttl),
 	}
@@ -67,7 +67,7 @@ func (s *MemoryStore) Save(_ context.Context, id string, values map[string]any, 
 func (s *MemoryStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.sesss, id)
+	delete(s.sessions, id)
 	return nil
 }
 

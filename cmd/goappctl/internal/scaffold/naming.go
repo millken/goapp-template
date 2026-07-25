@@ -124,9 +124,8 @@ func receiver(pascal string) string {
 		return "m"
 	}
 	r := strings.ToLower(pascal[:1])
-	// Avoid the common predeclared identifiers that read badly as receivers.
 	switch r {
-	case "i", "l", "o": // easily confused with literals
+	case "i", "l", "o":
 		if len(pascal) > 1 {
 			return strings.ToLower(pascal[:2])
 		}

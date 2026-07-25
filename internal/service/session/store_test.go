@@ -201,36 +201,23 @@ func TestUpsertSQL_PerFlavor(t *testing.T) {
 	// SQLite flavor (default from open).
 	s, _ := NewDBStore(db, "sessions")
 	got := s.upsertSQL()
-	if !contains(got, "ON CONFLICT(id)") {
+	if !strings.Contains(got, "ON CONFLICT(id)") {
 		t.Fatalf("sqlite upsert: expected ON CONFLICT, got %q", got)
 	}
 
 	// Simulate MySQL flavor.
 	s.db.Flavor = sqldb.MySQL
 	got = s.upsertSQL()
-	if !contains(got, "ON DUPLICATE KEY UPDATE") {
+	if !strings.Contains(got, "ON DUPLICATE KEY UPDATE") {
 		t.Fatalf("mysql upsert: expected ON DUPLICATE KEY UPDATE, got %q", got)
 	}
 
 	// PostgreSQL uses the ON CONFLICT branch.
 	s.db.Flavor = sqldb.PostgreSQL
 	got = s.upsertSQL()
-	if !contains(got, "ON CONFLICT(id)") {
+	if !strings.Contains(got, "ON CONFLICT(id)") {
 		t.Fatalf("postgres upsert: expected ON CONFLICT, got %q", got)
 	}
-}
-
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && indexOf(s, sub) >= 0
-}
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
 }
 
 //goappctl:end
