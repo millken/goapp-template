@@ -1,0 +1,65 @@
+# Sample configuration — this file is tracked in git; config.yaml is not.
+#
+# Copy it to config.yaml and edit:  cp config.example.yaml config.yaml
+# `make dev` sets MYAPP_HOME=. so the app reads ./config.yaml; otherwise the
+# path is ~/.<appname>/config.yaml (override with MYAPP_HOME or -c).
+#
+# Every key below is optional: a missing config file, or a missing section,
+# falls back to the defaults in internal/config/config.go.
+#
+# The #goappctl:<name> markers delimit optional components for `goappctl init`,
+# which strips the sections you did not select. They are plain YAML comments —
+# harmless to leave in place, safe to delete by hand.
+
+log:
+  level: info # debug | info | warn | error
+  format: text # text | json
+  # file:                        # omit to log to stderr
+  #   path: logs/app.log
+  #   max_size: 104857600        # bytes before rotation (default 100MB)
+  #   max_backups: 7
+  #   local_time: false          # use local time in rotated filenames
+
+server:
+  addr: :8080
+  static_path: frontend/dist # dev mode only; prod embeds dist
+  dev_addr: http://localhost:5173 # Vite dev server (make dev overrides via VITE_DEV_ADDR)
+  #goappctl:ssr
+  ssr_bundle_path: frontend/dist/ssr-render-cjs.js # must match server.ssrBundleName
+  ssr: false # true enables QuickJS SSR (needs a built bundle)
+  #goappctl:end
+
+#goappctl:db
+db:
+  driver: sqlite3 # sqlite3 | mysql | pgx
+  dsn: app.db # SQLite file path, or a MySQL/PostgreSQL DSN
+  # max_open: 0                  # 0 = database/sql default (unlimited)
+  # max_idle: 0
+  # conn_max_lifetime: 0s
+  # debug: false                 # log every statement
+  migrations: # presence of this section enables auto-migration
+    table: schema_migrations # default "migrations"
+    service: default # isolates histories when services share one DB
+#goappctl:end
+
+#goappctl:session
+session:
+  secret: change-me # HMAC signing key — REQUIRED, change before deploying
+  store: memory # memory (dev) | db (production; reuses the db component)
+  cookie_name: session
+  ttl: 24h
+  # db_table: sessions           # table name when store=db
+  # secure: false                # HTTPS-only cookie; enable in production
+  # same_site: lax               # lax | strict | none
+  # path: "/"
+  # domain: ""
+#goappctl:end
+
+#goappctl:admin
+admin:
+  mount: /admin
+  login_path: /admin/login # default <mount>/login
+  auth_key: admin_user_id # session key holding the logged-in admin's id
+  users_table: users # login lookup table; created by the db migrations
+  # Seed the first admin with: myapp admin create-user <username>
+#goappctl:end

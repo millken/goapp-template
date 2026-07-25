@@ -217,8 +217,7 @@ occurrences: `commands/serve.go:19`, and any `_ "…/internal/driver"` in test f
 ### 5.3 Reserved name: `tooling`
 
 `tooling` is a reserved pseudo-component that is **always** stripped — it marks the template's own
-generator wiring, which no generated project keeps. Its only current use is the `gen` command
-registration in `commands/root.go`:
+generator and template-maintenance code, which no generated project keeps:
 
 ```go
 //goappctl:tooling
@@ -226,7 +225,18 @@ root.AddCommand(newGenCmd())
 //goappctl:end
 ```
 
-It is not selectable via `--with` and does not appear in the interactive checklist.
+It is not selectable via `--with` and does not appear in the interactive checklist. Current uses:
+the `gen` command registration in `commands/root.go`, and
+`TestExampleConfig_MarkersAreWellFormed` in `internal/config/example_test.go` — a test that asserts
+every component still has a marker block, i.e. exactly what `init` removes.
+
+### 5.4 Blank-line hygiene
+
+Stripping a block leaves the blank lines that surrounded it, and `gofmt` does not collapse them
+(it tolerates a blank line before a closing brace). Verified on
+`internal/config/example_test.go`. So the stripper must, after removing a block, collapse a run of
+blank lines at the seam down to at most one — otherwise every stripped component leaves a visible
+scar in the generated project.
 
 ## 6. Components (hardcoded)
 
@@ -255,7 +265,8 @@ This is the authoritative inventory — the prerequisite PRs in §7 add exactly 
 | `config.example.yaml` | db, session, admin, ssr | the config sections |
 | `README.md` | db, session, admin, ssr, `tooling` | see §7.6 |
 | `frontend/package.json` | — | JSON edit, scripts only (§4a) |
-| test files (§7.5) | db, session | cross-component fixtures and blank driver imports |
+| `internal/config/example_test.go` | db, session, admin, ssr, `tooling` | per-section assertions; the template-only marker-hygiene test |
+| other test files (§7.5) | db, session | cross-component fixtures and blank driver imports |
 
 Deliberately *not* a marker site: `frontend/tsconfig.node.json`, whose `include` array lists
 `ssr-esm-render.ts` / `ssr/**/*` (plus two files that don't even exist today). TypeScript ignores
@@ -278,12 +289,20 @@ build tags. Budget accordingly; it is the one most likely to need a second pass.
 
 Small PRs against the template itself, in this order.
 
-### 7.1 Add `config.example.yaml` (blocking — do this first)
+### 7.1 Add `config.example.yaml` (blocking — do this first) — ✅ landed
 
 `config.yaml` is listed in `.gitignore` and is **not tracked**, so a fresh clone does not contain
 it. Add a tracked `config.example.yaml` carrying the full annotated config with `#goappctl:<name>`
 markers; keep `config.yaml` gitignored. `config.Load` already tolerates a missing file, so this is
 additive and breaks nothing. This unblocks §4 step 5 and the `config.example.yaml` row of §6.2.
+
+Shipped with two guards in `internal/config/example_test.go`, so the example cannot rot silently:
+
+- `TestExampleConfig_Parses` — every section must still unmarshal into `Config` (a renamed yaml tag
+  would otherwise turn a documented key into a no-op). Per-component assertions are inside marker
+  blocks so the test survives stripping.
+- `TestExampleConfig_MarkersAreWellFormed` — enforces §5.1 (no unclosed, nested, unknown or
+  duplicate blocks) and requires all four components to be present. Wrapped in `tooling` (§5.3).
 
 ### 7.2 Add the markers
 
