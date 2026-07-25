@@ -1,0 +1,32 @@
+# Template-only CI: verifies `goappctl init` produces a project that builds.
+# `goappctl init` deletes this file, so it never runs in a generated project.
+name: goappctl
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  init-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Runs init over four component combinations in throwaway copies of the
+      # repo, each verified with go build + vet + test. GOAPPCTL_E2E enables the
+      # matrix, which is skipped by default because it is slow.
+      #
+      # The copies contain only git-tracked files, so go.work is excluded: it
+      # points at local sibling checkouts and would mask a project that cannot
+      # actually build from a clean clone.
+      - name: init matrix
+        run: go test ./cmd/goappctl/... -timeout 20m
+        env:
+          GOAPPCTL_E2E: "1"

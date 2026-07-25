@@ -6,10 +6,13 @@
 #
 # Every key below is optional: a missing config file, or a missing section,
 # falls back to the defaults in internal/config/config.go.
+#goappctl:tooling
 #
-# The #goappctl:<name> markers delimit optional components for `goappctl init`,
-# which strips the sections you did not select. They are plain YAML comments —
-# harmless to leave in place, safe to delete by hand.
+# The goappctl marker comments below delimit optional components for
+# `goappctl init`, which strips the sections you did not select. They are plain
+# YAML comments — harmless to leave in place, safe to delete by hand. This
+# paragraph is itself marked, so a generated project does not carry it.
+#goappctl:end
 
 log:
   level: info # debug | info | warn | error

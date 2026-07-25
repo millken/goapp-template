@@ -187,11 +187,36 @@ bundle 文件名在 Go 侧是 `server.ssrBundleName` 常量，dev 模式的 `ser
 <!--goappctl:tooling-->
 ## 自定义为新项目
 
-1. 改 `go.mod` 的 module 名（并全局替换代码里的 import 路径）
-2. 改 [Makefile](Makefile) `BINARY := myapp`
-3. 改 [internal/buildinfo](internal/buildinfo/) 的 `AppName` —— 它同时决定 `MYAPP_HOME` 环境变量名和 `~/.myapp` 目录
-4. `cp config.example.yaml config.yaml` 并改掉 `session.secret`
-5. 删示例页面 `frontend/pages/Home.vue` 和 [internal/controller/site/site.go](internal/controller/site/site.go) 里的 `/` 路由
+用 `goappctl init` 一步完成：它就地裁剪当前目录 —— 删掉未选的组件、剥掉它们的接线、改写 module
+路径和应用名，最后跑 `go build` / `vet` / `test` 验证结果。
+
+```bash
+git clone <goapp-template> myapp && cd myapp
+
+# 先看它打算做什么（不写任何文件）
+go run ./cmd/goappctl init --module github.com/me/myapp --with db,session,admin --dry-run
+
+# 实际执行；省略 --with 会进入交互勾选
+go run ./cmd/goappctl init --module github.com/me/myapp --with db,session,admin --git-reinit
+```
+
+| 参数 | 作用 |
+|---|---|
+| `--module` | 新 module 路径（必填） |
+| `--name` | 应用名 / 二进制名，默认取 module 末段；决定 `<NAME>_HOME` 和 `~/.<name>` |
+| `--with` | 逗号分隔的组件；`admin` 会自动带上 `session` + `db` |
+| `--dry-run` | 只打印计划 |
+| `--force` | git 工作区不干净也继续 |
+| `--git-reinit` | 丢弃模板的 git 历史，重新 `git init` |
+
+它会拒绝在非模板目录运行（检查 module 路径），所以重复执行不会二次破坏。
+
+生成的项目**不含生成器**：`cmd/goappctl`、`internal/scaffold`、`commands/gen.go`、`docs/`、`go.work`
+都会被删掉。之后要给项目加资源，用装好的二进制：
+`go install github.com/millken/goapp-template/cmd/goappctl@latest`。
+
+需要手动收尾的只剩：改掉 `config.yaml` 里的 `session.secret`，以及按需删除示例页面
+`frontend/pages/Home.vue` 和 [internal/controller/site/site.go](internal/controller/site/site.go) 里的 `/` 路由。
 
 ## 本地依赖（开发者）
 

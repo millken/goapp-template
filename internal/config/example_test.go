@@ -116,7 +116,13 @@ func TestExampleConfig_MarkersAreWellFormed(t *testing.T) {
 		openPrefix = "#goappctl:"
 		endMarker  = "#goappctl:end"
 	)
-	known := map[string]bool{"db": true, "session": true, "admin": true, "ssr": true}
+	// components must each have exactly one block; "tooling" is the reserved
+	// always-stripped name and may appear anywhere, including not at all.
+	components := map[string]bool{"db": true, "session": true, "admin": true, "ssr": true}
+	known := map[string]bool{"tooling": true}
+	for name := range components {
+		known[name] = true
+	}
 
 	open := ""
 	openLine := 0
@@ -156,7 +162,7 @@ func TestExampleConfig_MarkersAreWellFormed(t *testing.T) {
 	if open != "" {
 		t.Errorf("block %q opened at line %d is never closed with %q", open, openLine, endMarker)
 	}
-	for name := range known {
+	for name := range components {
 		if !seen[name] {
 			t.Errorf("component %q has no marker block; init could not strip its config section", name)
 		}

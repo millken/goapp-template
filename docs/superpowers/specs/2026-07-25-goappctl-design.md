@@ -478,25 +478,47 @@ must be absent from the tidied `go.mod` when db is off, `buke/quickjs-go` when s
 That's it — no 16-combo matrix, no boot smoke, no frontend build. Just enough to catch broken
 marker stripping and deletion lists.
 
-**Status:** all four combos pass against the markered template — no workspace, no workarounds —
-verified with a standalone simulator that implements steps 3/4/4a/5/7/8/9 (strip → delete → copy
-config → goimports → tidy → build/vet/test → go.mod dep assertions). It lives outside the repo for
-now; the `goappctl.yml` workflow replaces it once `cmd/goappctl` exists.
+**Status:** ✅ implemented and passing. `TestRun_Combos` in
+`cmd/goappctl/internal/initcmd/initcmd_test.go` runs the real `initcmd.Run` over all four combos in
+throwaway copies containing only git-tracked files (so `go.work` cannot leak in and mask an
+unbuildable project). Verification is `Run`'s own step 9, so a passing test means the transformed
+project built, vetted and tested clean. Each combo additionally asserts: the cgo deps above,
+`golang.org/x/tools` dropped from the generated `go.mod` (§11's self-healing claim), no surviving
+markers anywhere, the tooling paths gone, and `config.yaml` created.
+
+The matrix is gated behind `GOAPPCTL_E2E=1` so a plain `go test ./...` stays fast;
+`.github/workflows/goappctl.yml` sets it.
 
 ## 10. Internal package layout
 
 ```
 cmd/goappctl/
-  main.go            # cobra root: init, gen, version
+  main.go            # cobra root: init, version (+ gen, pending)
   internal/
     initcmd/         # pipeline steps 1–9 (guardrails, selection, delete, strip, config,
-                     # identity, remove, tidy, verify)
-    markers/         # find/strip goappctl blocks (Go//TS `//`, YAML `#`, MD `<!-- -->`) + JSON edit
-    components/      # the hardcoded four: names, deps, owned paths, marker sites
-    scaffold/        # moved from internal/scaffold (gen)
+                     # identity, remove, tidy, verify) + the combo matrix test
+    markers/         # find/strip goappctl blocks (Go/TS `//`, YAML `#`, MD `<!-- -->`) + JSON edit
+    components/      # the hardcoded four: names, deps, owned paths
+    scaffold/        # moved from internal/scaffold (gen) — pending
 ```
 
 Keep it flat; no interfaces until the 5th component forces the registry extraction.
+
+### 10.1 Implementation status
+
+| Piece | State |
+|---|---|
+| §7 template prerequisites (7.1–7.6) | ✅ landed |
+| `markers` | ✅ with tests for all four forms, the §5.1 error cases, seam collapsing, and the package.json edit |
+| `components` | ✅ incl. a drift guard asserting every owned path still exists |
+| `initcmd` (steps 1–9) | ✅ incl. `--dry-run`, guardrails, interactive checklist |
+| §9 combo matrix + `goappctl.yml` | ✅ 4/4 passing |
+| §8 `gen` (move `internal/scaffold`, add auto-mount) | ⬜ pending — the only remaining v1 work |
+
+Until `gen` lands, `commands/gen.go` remains the generator and is deleted from generated projects
+(as specified), so a generated project temporarily has no scaffolding path. `internal/scaffold` and
+`commands/gen.go` are already in `components.ToolingPaths`, so no deletion-list change is needed
+when `gen` moves.
 
 ## 11. Open questions / risks
 
