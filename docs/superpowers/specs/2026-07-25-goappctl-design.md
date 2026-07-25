@@ -371,11 +371,14 @@ markers, a generated project ships documentation for features it does not have: 
 a generator that was deleted, an SSR workflow for a stripped component, and a `go.work` guide for a
 deleted file.
 
-**Prerequisite before markering: the README is already stale.** It still documents the pre-`22cd24d`
-architecture — `app.Module`, `internal/module/{db,session,admin}/` (now `internal/service/`),
-`server/routes.go`, `frontend/ssr-build.ts`, `ssr-modules.ts`, `frontend/scripts/`, `pnpm generate`
-— none of which exist. Markering a stale README just makes init strip lies faithfully. Fix the
-README against the current tree *first*, in its own PR, then add markers.
+**Prerequisite before markering: the README is already stale.** — ✅ landed. It documented the
+pre-`22cd24d` architecture (`app.Module`, `internal/module/{db,session,admin}/`, `server/routes.go`,
+`frontend/ssr-build.ts`, `ssr-modules.ts`, `frontend/scripts/`, `pnpm generate` — none of which
+exist) and an esbuild-based SSR pipeline that is now Vite + `import.meta.glob`. Markering a stale
+README would just make init strip lies faithfully, so it was fixed against the current tree first.
+The 配置 section already points at `config.example.yaml` per the simplification below; the
+「自定义为新项目」section still lists the manual steps and gets its `go run ./cmd/goappctl init`
+pointer when the tool actually exists.
 
 Marker plan (section granularity except where noted):
 
@@ -414,9 +417,14 @@ goappctl gen resource <Name> [--admin] [--no-mount]
 - Detects module path from `go.mod`; detects project shape by directory presence (no marker file).
 - Emits: controller embedding `*app.Services` + `Mount(...)`, model, Vue pages into
   `internal/controller/<pkg>/` and `frontend/pages/<pkg>/`.
-- Auto-edits the `gen:mounts` region in `internal/controller/mount_gen.go`; idempotent (re-running
-  doesn't duplicate — the router's `ErrDuplicateRoute` / `Engine.RegistrationError()` is the
-  runtime backstop). `--no-mount` skips the edit.
+- **New behavior, not a port:** auto-edits the `gen:mounts` region in
+  `internal/controller/mount_gen.go`. Today's `internal/scaffold` does *not* touch that file — it
+  only prints the `Mount` line for the developer to paste (verified: no reference to `gen:mounts`
+  anywhere under `internal/scaffold/`). So this is net-new work in v1, and `--no-mount` is only
+  meaningful once it exists. Must be idempotent (re-running doesn't duplicate — the router's
+  `ErrDuplicateRoute` / `Engine.RegistrationError()` is the runtime backstop).
+- Admin resources mount inside `serve.go` after `adm.Mount(eng)`, not in the `gen:mounts` region;
+  auto-editing that seam is out of scope for v1 (keep printing the line for admin resources).
 - `--admin` targets the admin area; errors clearly if `internal/controller/admin/` is absent.
 - **db-less projects:** the scaffolder writes migrations to `internal/service/db/migrations/`,
   which does not exist when db was stripped. If that directory is absent, skip migration emission
