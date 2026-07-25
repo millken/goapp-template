@@ -13,6 +13,10 @@ type Session interface {
 	Get(key string) (any, bool)
 	Set(key string, value any)
 	Delete(key string)
+	// Flash stores a one-shot message under kind ("success", "error", …). It is
+	// injected as the `flash` prop on the next request and removed as it is
+	// read. Like Set, it only stages the value — call Save afterwards.
+	Flash(kind, message string)
 	// Save persists the session; if new, the Store assigns and returns the ID.
 	Save(ctx context.Context) (string, error)
 	// Destroy deletes the session from the Store (the caller clears the cookie).

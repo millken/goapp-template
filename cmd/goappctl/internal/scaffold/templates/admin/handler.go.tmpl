@@ -69,6 +69,7 @@ func (ct *Controller) Create(c *inertia.Context) {
 	// TODO: bind fields from the form and insert, e.g.:
 	//   _ = ct.DB.Table("[[.Table]]").Insert(&item)
 	_ = item
+	ct.flash(c, "success", "[[.Type]] created")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
 }
 
@@ -88,6 +89,7 @@ func (ct *Controller) Edit(c *inertia.Context) {
 func (ct *Controller) Update(c *inertia.Context) {
 	id, _ := c.Params.GetInt64("id")
 	_ = id
+	ct.flash(c, "success", "[[.Type]] updated")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
 }
 
@@ -96,5 +98,17 @@ func (ct *Controller) Delete(c *inertia.Context) {
 	id, _ := c.Params.GetInt64("id")
 	// TODO: _ = ct.DB.Exec("DELETE FROM [[.Table]] WHERE id = ?", id)
 	_ = id
+	ct.flash(c, "success", "[[.Type]] deleted")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
+}
+
+// flash stages a one-shot message for the page we are about to redirect to. The
+// session middleware injects it as the `flash` prop on the next request and
+// clears it, so it shows exactly once.
+func (ct *Controller) flash(c *inertia.Context, kind, message string) {
+	sess := ct.Session.Session(c)
+	sess.Flash(kind, message)
+	if _, err := sess.Save(c.Request.Context()); err != nil {
+		slog.Error("flash admin [[.Package]]", "err", err)
+	}
 }

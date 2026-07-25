@@ -18,9 +18,19 @@ const props = defineProps<{
   user?: unknown
   mount?: string
   loginPath?: string
+  flash?: Record<string, string>
 }>()
 
 const base = computed(() => props.mount || '/admin')
+
+// One-shot messages staged by the server before a redirect (sess.Flash), keyed
+// by kind. The session middleware consumes them, so they vanish on the next
+// navigation — no dismiss button needed.
+const flashClass = (kind: string) =>
+  ({
+    success: 'bg-green-50 text-green-800 border-green-200',
+    error: 'bg-red-50 text-red-800 border-red-200',
+  })[kind] ?? 'bg-gray-50 text-gray-700 border-gray-200'
 </script>
 
 <template>
@@ -44,6 +54,12 @@ const base = computed(() => props.mount || '/admin')
       </form>
     </aside>
     <main class="flex-1 p-8">
+      <div
+        v-for="(message, kind) in flash || {}"
+        :key="kind"
+        class="mb-4 border rounded px-4 py-3 text-sm"
+        :class="flashClass(kind)"
+      >{{ message }}</div>
       <slot />
     </main>
   </div>

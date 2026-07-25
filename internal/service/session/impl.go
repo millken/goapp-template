@@ -34,6 +34,10 @@ func (s *session) Delete(key string) {
 	delete(s.values, key)
 }
 
+func (s *session) Flash(kind, message string) {
+	s.Set(flashPrefix+kind, message)
+}
+
 // Save persists the session and writes the signed cookie. Call before the
 // handler writes its body so Set-Cookie lands before the header flushes.
 func (s *session) Save(ctx context.Context) (string, error) {

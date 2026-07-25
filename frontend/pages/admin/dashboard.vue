@@ -9,11 +9,18 @@ defineProps<{
   adminUser?: unknown
   adminMount?: string
   loginPath?: string
+  flash?: Record<string, string>
 }>()
 </script>
 
 <template>
-  <AdminLayout :menu="adminMenu" :user="adminUser" :mount="adminMount" :login-path="loginPath">
+  <AdminLayout
+    :menu="adminMenu"
+    :user="adminUser"
+    :mount="adminMount"
+    :login-path="loginPath"
+    :flash="flash"
+  >
     <h1 class="text-2xl font-bold text-gray-900 mb-2">Dashboard</h1>
     <p class="text-gray-500">Signed in as {{ adminUser }}.</p>
     <p class="text-gray-400 mt-4 text-sm">

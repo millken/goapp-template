@@ -103,6 +103,21 @@ func (s *Service) Middleware() inertia.HandlerFunc {
 		sess := s.loadOrCreate(c.Request.Context(), c.Request)
 		sess.w = c.Writer
 		c.Set(contextKey, sess)
+
+		// Consume any staged flash before the handler runs: the removal has to be
+		// persisted or the message repeats forever, and saving here lands the
+		// cookie ahead of the body flush.
+		if flash := sess.takeFlash(); len(flash) > 0 {
+			if _, err := sess.Save(c.Request.Context()); err != nil {
+				// The store still holds the flash. Withholding it costs one
+				// delayed message; injecting it would repeat it on every request
+				// until the store recovers.
+				slog.Warn("session: persisting flash consumption failed", "err", err)
+			} else {
+				c.Set("flash", flash)
+			}
+		}
+
 		c.Next()
 	}
 }

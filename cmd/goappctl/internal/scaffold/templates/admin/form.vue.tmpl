@@ -11,11 +11,19 @@ defineProps<{
   adminUser?: unknown
   adminMount?: string
   loginPath?: string
+  // One-shot messages staged by the handlers before their redirects:
+  flash?: Record<string, string>
 }>()
 </script>
 
 <template>
-  <AdminLayout :menu="adminMenu" :user="adminUser" :mount="adminMount" :login-path="loginPath">
+  <AdminLayout
+    :menu="adminMenu"
+    :user="adminUser"
+    :mount="adminMount"
+    :login-path="loginPath"
+    :flash="flash"
+  >
     <h1 class="text-2xl font-bold text-gray-900 mb-6">{{ item.id ? 'Edit' : 'New' }} [[.Type]]</h1>
     <form
       :action="item.id ? `${basePath}/${item.id}` : basePath"
