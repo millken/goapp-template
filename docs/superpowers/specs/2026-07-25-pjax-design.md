@@ -181,8 +181,19 @@ Do not intercept when:
 Multipart forms **are** intercepted: `FormData` + `fetch` handles them correctly as long as
 `Content-Type` is left unset. GET forms are serialized into the query string and visited as a GET.
 
-Progressive enhancement is automatic: `href` and `action`/`method` are untouched, so the site works
-with JavaScript disabled or broken.
+**Progressive enhancement — corrected after testing the running app.** The draft claimed the site
+"works with JavaScript disabled" because `href` and `action`/`method` are untouched. That is only
+half true, and the half that matters depends on SSR:
+
+| Mode | Served HTML | Without JavaScript |
+|---|---|---|
+| default (`ssr: false`) | `<div id="app"></div>` and two script tags — **zero** `<form>` or `<input>` | blank page; nothing to degrade to |
+| `ssr: true` | the real markup, `<form action="/admin/login" method="post">` included | the form posts normally and the server responds with a full page |
+
+Both verified with `curl` against the running app. So the honest claim is narrower: **PJAX does not
+take progressive enhancement away** — it leaves the attributes alone and only intercepts when
+JavaScript is running — but the template is not progressively enhanced in the first place unless
+SSR is on. That is a property of the rendering mode, not of this change.
 
 ## 5. Bugs this fixes
 
@@ -261,10 +272,31 @@ embeds only `frontend/dist`. A build-output assertion pins this.
 Server side: a Go test that one handler returns `{redirect}` under `X-Pjax: true` and a 302 without
 it, plus `Vary: X-Pjax` on both.
 
-Manual checklist (things unit tests will not catch): login failure keeps the typed username; login
-success lands on the dashboard with the URL at `/admin`; back returns to `/admin/login` and the
-server bounces to the dashboard; Cmd-click opens a new tab; rapid double-clicks render the second
-target; disabling JavaScript leaves every link and form working.
+### 7.1 Verified against the running app
+
+Checked with the app actually running (`make dev`), not only in unit tests.
+
+Server protocol, via `curl` — 9/9: plain GET yields HTML and a PJAX GET yields JSON, both carrying
+`Vary: X-Pjax`; an unauthenticated `/admin` is a 302 normally and `{"redirect":"/admin/login"}` under
+PJAX; a failed login re-renders `admin/login` with the error; a successful one returns
+`{"redirect":"/admin"}` **with the session cookie already set on that response**; revisiting the
+login page with that cookie returns `{"redirect":"/admin"}`.
+
+Browser behavior, via headless Chrome driven over CDP (node's built-in WebSocket, no Playwright) —
+14/14: a failed login shows the error with the document never reloading, the URL unchanged and
+`history.length` **unchanged** (replace, not push); a successful login lands on `/admin` with
+`history.length` up by one and still no reload; pressing Back returns to the login entry, the server
+bounces it, and the address bar ends at `/admin` matching the dashboard on screen — the §4.2
+`popstate` + redirect row, live; a meta-click leaves the event uncancelled while a plain click
+cancels it.
+
+Two things this exercise caught that the unit tests could not: the progressive-enhancement claim
+above was wrong, and the SSR path — which §9 of the goappctl spec notes CI never builds — renders
+and serves correctly with `ssr: true`.
+
+Still unverified: rapid double-clicks against a slow network (the abort path is covered by a unit
+test but not observed live), and the progress bar, which never appears against a local server
+because every navigation beats its 100ms threshold.
 
 ## 8. Rollout order
 
