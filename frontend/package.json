@@ -11,7 +11,9 @@
     "build": "run-s build:client build:ssr",
     "build:client": "vite build",
     "build:ssr": "vite build --config vite.config.ssr.ts",
-    "type-check": "vue-tsc --build --noEmit"
+    "type-check": "vue-tsc --build --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "vue": "^3.5.40"
@@ -20,11 +22,13 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
     "@vitejs/plugin-vue": "^6.0.8",
+    "happy-dom": "^20.11.1",
     "npm-run-all2": "^9.0.2",
     "postcss": "^8.5.22",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "vite": "^8.1.5",
+    "vitest": "^4.1.10",
     "vue-tsc": "^3.3.8"
   }
 }

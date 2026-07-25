@@ -120,6 +120,21 @@ Two invariants fall out, and both are worth asserting in tests: after any `visit
 address bar equals the URL whose content is mounted; and no navigation ever leaves two consecutive
 identical entries.
 
+**Implementation note (refinement found while building it).** The nine rows collapse to three lines,
+because most of them are really one fact — *did the URL change?*:
+
+```
+if (trigger === 'boot')     return 'replace'
+if (trigger === 'popstate') return redirected ? 'replace' : 'none'
+return targetUrl === currentUrl ? 'replace' : 'push'
+```
+
+That is not merely shorter, it is more correct than the table it replaces. The `form + rendered →
+replace` row is true only because a failed POST re-renders the URL it was posted from; keying on the
+trigger would also force `replace` on a **GET search form**, which lands on `/search?q=…` and should
+push so Back returns to the previous page. Keying on the URL gets both right. The table stays as the
+statement of intent and as the test matrix; the rule above is how it is derived.
+
 A redirect chain is followed at most 5 times before falling back to a hard navigation, so a
 server-side redirect loop cannot hang the client.
 

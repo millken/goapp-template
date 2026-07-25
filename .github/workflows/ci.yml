@@ -67,5 +67,18 @@ jobs:
       - name: Type check
         run: pnpm type-check
 
+      - name: Test
+        run: pnpm test
+
       - name: Build
         run: pnpm build
+
+      # The test runner must never reach a user's browser. Vite only bundles
+      # what its entries reach, so this should be impossible — which is exactly
+      # why it is worth pinning rather than assuming.
+      - name: Test deps stay out of the bundle
+        run: |
+          if grep -rlE 'vitest|happy-dom' dist/; then
+            echo "test dependencies leaked into dist/" >&2
+            exit 1
+          fi

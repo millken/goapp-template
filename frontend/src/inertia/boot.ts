@@ -1,11 +1,11 @@
 import { initModules, mountView, type InitModulesOptions } from './view-loader'
-import { enablePjax } from './pjax-loader'
+import { enablePjax } from './pjax'
 import { INERTIA_DATA_PLACEHOLDER, INERTIA_VIEW_KEY } from './constants'
 
 export interface BootOptions extends InitModulesOptions {
   /** Mount target. Defaults to #app, then document.body. */
   el?: HTMLElement | null
-  /** Disable PJAX navigation listener. Defaults to enabled. */
+  /** Opt out of PJAX navigation entirely. Defaults to enabled. */
   pjax?: boolean
 }
 
@@ -23,7 +23,15 @@ export function boot(
   initModules(modules, { setup: options.setup })
 
   if (typeof document === 'undefined') return
-  if (options.pjax !== false) enablePjax()
+  // Enabled before the first view mounts so the entry the page loaded on is
+  // seeded with history state; otherwise the first Back has nothing to act on.
+  if (options.pjax !== false) {
+    enablePjax({
+      mount: async (view, props) => {
+        await mountView(view, props)
+      },
+    })
+  }
 
   void mountInitialView(options.el)
 }

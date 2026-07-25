@@ -1,5 +1,5 @@
 {
-  "include": ["vite.config.*", "ssr-esm-render.ts", "ssr/**/*", "scripts/**/*"],
+  "include": ["vite.config.*", "vitest.config.ts", "ssr-esm-render.ts", "ssr/**/*", "scripts/**/*"],
   "compilerOptions": {
     // Keep the incremental cache out of the working tree; tsconfig.app.json
     // does the same. Without it, `vue-tsc --build` drops a .tsbuildinfo here.
