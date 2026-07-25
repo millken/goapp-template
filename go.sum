@@ -13,6 +13,8 @@ github.com/mattn/go-sqlite3 v1.14.48 h1:7XHIgl0a8HwOaiK4E47ozLkST78rR9+OtNGx27D/
 github.com/mattn/go-sqlite3 v1.14.48/go.mod h1:6JTjA44L93a0QCyJef5YvlPoKXntQPjzWv5gtm9sB6w=
 github.com/millken/inertia v1.1.0 h1:dWcYusrOj03WGsmFkKjJ+USaUN/eRw40nKLgxIZ9LdY=
 github.com/millken/inertia v1.1.0/go.mod h1:d4ZPkBiXNoXAzI96/kuVzKrvayYba7quU5VFNvVVahc=
+github.com/millken/inertia v1.1.1 h1:LCtsgUwZo4kG3jbZLYJ5/avby25KaNPzuvMrAoZ75zw=
+github.com/millken/inertia v1.1.1/go.mod h1:d4ZPkBiXNoXAzI96/kuVzKrvayYba7quU5VFNvVVahc=
 github.com/millken/inertia/middleware v1.1.0 h1:x8ElclYI7VqbULSZZUaskrwWrf5WOTZTohQH66Sh1UA=
 github.com/millken/inertia/middleware v1.1.0/go.mod h1:y9yaY37tAfmAXM+pkRb2juKinDYb/EvTTYuEaY7nbd4=
 github.com/millken/inertia/ssr v1.1.0 h1:rNIoWzx+V0XgDGIRWXbMbUfdeAybrOwyUsR/05KTtZI=

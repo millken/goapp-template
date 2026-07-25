@@ -478,11 +478,10 @@ must be absent from the tidied `go.mod` when db is off, `buke/quickjs-go` when s
 That's it — no 16-combo matrix, no boot smoke, no frontend build. Just enough to catch broken
 marker stripping and deletion lists.
 
-**Status:** all four combos already pass against the markered template, verified with a standalone
-simulator that implements steps 3/4/4a/5/7/8/9 (strip → delete → copy config → goimports → tidy →
-build/vet/test → go.mod dep assertions). It lives outside the repo for now; the goappctl.yml
-workflow replaces it once `cmd/goappctl` exists. Caveat: it must re-inject a workspace to get past
-the `RegistrationError` blocker in §11.
+**Status:** all four combos pass against the markered template — no workspace, no workarounds —
+verified with a standalone simulator that implements steps 3/4/4a/5/7/8/9 (strip → delete → copy
+config → goimports → tidy → build/vet/test → go.mod dep assertions). It lives outside the repo for
+now; the `goappctl.yml` workflow replaces it once `cmd/goappctl` exists.
 
 ## 10. Internal package layout
 
@@ -501,16 +500,14 @@ Keep it flat; no interfaces until the 5th component forces the registry extracti
 
 ## 11. Open questions / risks
 
-- **BLOCKER — the template does not build from a clean clone.** `commands/serve.go` calls
-  `inertia.Engine.RegistrationError()`, which exists only in the local `../inertia` checkout
-  (commit `96a294a`, unreleased — newest tag is `v1.1.0`, which `go.mod` requires). So the repo
-  compiles only through the gitignored `go.work`; `git archive HEAD` + `go build ./...` fails with
-  `eng.RegistrationError undefined`. This predates goappctl but blocks it completely: §9's CI must
-  exclude `go.work` (step 7 deletes it), so *every* combo would fail for this reason alone, and any
-  user running `init` would get a project that cannot build. Fix before goappctl v1 — release
-  inertia with `RegistrationError`, or drop the call from the template until it ships. The 4-combo
-  verification described in §9 currently passes only with a workspace re-injected as a deliberate
-  workaround.
+- **~~BLOCKER — the template does not build from a clean clone.~~** ✅ resolved. `commands/serve.go`
+  calls `inertia.Engine.RegistrationError()`, which was unreleased, so the repo compiled only
+  through the gitignored `go.work` and every generated project would have failed to build. Fixed by
+  releasing `inertia v1.1.1` and bumping `go.mod`; the submodules (`middleware`, `ssr`,
+  `ssr/quickjs`) stay at `v1.1.0` since the API is in the root module. Verified: a tracked-files-only
+  copy with no `go.work` passes build/vet/test, and §9's four combos pass without any workspace
+  workaround. **Keep this constraint in mind** — the template must only use released dependency
+  APIs, because `go.work` is deleted by init and cannot cover for it.
 - **Marker rot:** nothing enforces markers stay correct as the template evolves; the 4-combo CI is
   the only guard. Acceptable for v1 (a `lint-template` check is an explicit non-goal). The §7.3
   `svc.Session` rule is the specific thing most likely to rot.
