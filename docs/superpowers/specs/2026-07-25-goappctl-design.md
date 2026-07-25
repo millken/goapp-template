@@ -9,7 +9,8 @@ Date: 2026-07-25 · Status: Draft (rev 2, post-review) · Scope: deliberately sm
 > markers because goimports cannot drop them (§5); the app *name* is separated from the module
 > path (§4 step 6); `go.work` / `docs/` / tooling command registration are added to the delete
 > list; verification is `build + vet + test` over 4 combos (§9); package.json dependency editing
-> is dropped entirely (§4 step 4).
+> is dropped entirely (§4 step 4); `README.md` becomes a marker site with a Markdown comment form,
+> after being fixed against the current tree (§5, §7.6).
 
 ## 1. Goal & Summary
 
@@ -95,9 +96,13 @@ Pipeline (all steps operate on cwd, in order):
    - *Module path*: global replace `github.com/millken/goapp-template` → `--module` across
      `*.go`, `go.mod`, `Makefile`, `*.md`, `.vscode/*.json`.
    - *App name*: replace the app name `myapp` / env prefix `MYAPP` → `--name` / `upper(--name)` in
-     `internal/buildinfo/buildinfo.go` (`AppName`, which derives the `MYAPP_HOME` env var — see
-     `commands/paths.go`), `Makefile` (`BINARY`), `.vscode/launch.json` (`MYAPP_HOME`, two
-     occurrences), `commands/paths_test.go`, and `frontend/package.json` (`name`).
+     `internal/buildinfo/buildinfo.go` (`AppName` — the single source of truth; `commands/paths.go`
+     derives `MYAPP_HOME` and `~/.myapp` from it at runtime, so no logic there needs rewriting,
+     only its doc comments), `Makefile` (`BINARY`), `.vscode/launch.json` (`MYAPP_HOME`, two
+     occurrences), and `frontend/package.json` (`name`).
+     **Not** `commands/paths_test.go`: its `{"myapp", "MYAPP_HOME"}` entries are a table-driven test
+     of the name→env-var function that sets `buildinfo.AppName` itself, so the literals are
+     intentional and must stay.
    These are separate because the binary name is not necessarily the module's last segment; the
    default just makes it so.
 7. **Remove template-only files.** Delete:
@@ -148,9 +153,19 @@ unwrap the block".
 //goappctl:end
 ```
 
-Go and TS files use `//goappctl:<name>`; YAML uses `#goappctl:<name>`. `frontend/package.json` is
-not markered (§4a). The existing `// gen:mounts:begin/end` region in `mount_gen.go` keeps its
-current name (used by `gen`, not `init`).
+Three comment forms, one per file type:
+
+| File type | Form |
+|---|---|
+| Go, TS | `//goappctl:<name>` … `//goappctl:end` |
+| YAML | `#goappctl:<name>` … `#goappctl:end` |
+| Markdown | `<!--goappctl:<name>-->` … `<!--goappctl:end-->` |
+
+`frontend/package.json` is not markered (§4a). The existing `// gen:mounts:begin/end` region in
+`mount_gen.go` keeps its current name (used by `gen`, not `init`).
+
+Markdown markers are HTML comments, so they are invisible in rendered output — marker density in
+`README.md` costs the reader nothing (§7.6).
 
 Go (`commands/serve.go`):
 
@@ -238,6 +253,7 @@ This is the authoritative inventory — the prerequisite PRs in §7 add exactly 
 | `server/mode_dev.go` | ssr | `loadSSRBundle` (build tag `!prod`) |
 | `server/mode_prod.go` | ssr | `loadSSRBundle` (build tag `prod`) |
 | `config.example.yaml` | db, session, admin, ssr | the config sections |
+| `README.md` | db, session, admin, ssr, `tooling` | see §7.6 |
 | `frontend/package.json` | — | JSON edit, scripts only (§4a) |
 | test files (§7.5) | db, session | cross-component fixtures and blank driver imports |
 
@@ -329,6 +345,45 @@ splitting files. Known cases:
 - `internal/controller/admin/*_test.go` — no action: they live in an admin-owned directory and
   admin's closure guarantees db+session.
 
+### 7.6 Marker `README.md` (and fix it first)
+
+Identity rewriting (§4 step 6) only swaps names inside `README.md` — it deletes nothing. Without
+markers, a generated project ships documentation for features it does not have: a whole section on
+a generator that was deleted, an SSR workflow for a stripped component, and a `go.work` guide for a
+deleted file.
+
+**Prerequisite before markering: the README is already stale.** It still documents the pre-`22cd24d`
+architecture — `app.Module`, `internal/module/{db,session,admin}/` (now `internal/service/`),
+`server/routes.go`, `frontend/ssr-build.ts`, `ssr-modules.ts`, `frontend/scripts/`, `pnpm generate`
+— none of which exist. Markering a stale README just makes init strip lies faithfully. Fix the
+README against the current tree *first*, in its own PR, then add markers.
+
+Marker plan (section granularity except where noted):
+
+| README location | Name |
+|---|---|
+| `- **SSR**：QuickJS…` bullet in the intro | ssr |
+| 项目结构 tree — per-component line groups (`internal/driver/`, `internal/service/db/`, `…/session/`, `…/controller/admin/`, `frontend/ssr*`) | db / session / admin / ssr |
+| 项目结构 tree — `commands/gen.go`, `internal/scaffold/` lines | `tooling` |
+| CLI block — `gen resource` / `gen admin` lines | `tooling` |
+| CLI block — `admin create-user` line | admin |
+| 「登录需要一个 admin 用户」note | admin |
+| 「脚手架生成器」section (whole) | `tooling` |
+| 「SSR 工作流」section (whole) | ssr |
+| 「Build tags」section — the SSR bundle sentence only | ssr |
+| 「自定义为新项目」section (whole) | `tooling` |
+| 「本地依赖（开发者）」section (whole) | `tooling` |
+
+Two simplifications that remove marker clusters rather than adding them:
+
+- **The 配置 section should not inline the YAML.** It currently duplicates the full config, which
+  would need db/session/admin/ssr markers a second time and would drift from
+  `config.example.yaml`. Replace the inline YAML with a pointer to `config.example.yaml` (§7.1);
+  one marked copy of the config, not two.
+- **「自定义为新项目」is obsoleted by goappctl itself** — its four manual steps are exactly what
+  `init` automates. In the template, rewrite it to point at `go run ./cmd/goappctl init`; in a
+  generated project it is meaningless, hence `tooling`.
+
 ## 8. `goappctl gen`
 
 ```
@@ -375,7 +430,7 @@ cmd/goappctl/
   internal/
     initcmd/         # pipeline steps 1–9 (guardrails, selection, delete, strip, config,
                      # identity, remove, tidy, verify)
-    markers/         # find/strip //goappctl:<name> blocks (Go//YAML#/TS//), + JSON edit
+    markers/         # find/strip goappctl blocks (Go//TS `//`, YAML `#`, MD `<!-- -->`) + JSON edit
     components/      # the hardcoded four: names, deps, owned paths, marker sites
     scaffold/        # moved from internal/scaffold (gen)
 ```
