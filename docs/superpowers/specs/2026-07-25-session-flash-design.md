@@ -258,7 +258,28 @@ from diverging, so that invariant needs a test guarding it.
 No frontend test: a `v-for` plus a class lookup table is presentation, and the table is its own
 specification. Deliberate, not an omission.
 
-## 10. Files touched
+## 10. Live verification
+
+Run against `go run . serve` with a temporary `sess.Flash` in `LoginSubmit` (reverted afterwards),
+because no shipped handler flashes — only generated ones do.
+
+`POST /admin/login` with `X-Pjax` returned `{"redirect":"/admin"}`; the following
+`GET /admin` payload carried the message, and the next identical request did not:
+
+```json
+{ "_ViEW_": "admin/dashboard", "adminUser": 99,
+  "flash": { "success": "LIVE CHECK: signed in" }, ... }
+```
+
+So the middleware's `c.Set("flash", …)` does reach the rendered props, and delivery is read-once
+against a real server — the two claims the unit tests approximate through `c.Get`.
+
+Unrelated observation, recorded rather than fixed: that payload also contains `"session": {}`. The
+middleware stores the session under the context key `session`, and every `c.Set` value becomes a
+prop, so the session object is serialized on every render. It marshals to `{}` today because all its
+fields are unexported, but an exported field would leak straight into the page. Out of scope here.
+
+## 11. Files touched
 
 | File | Change |
 |---|---|
