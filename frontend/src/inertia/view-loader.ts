@@ -3,9 +3,9 @@ import { createApp, createSSRApp, type App, type Component } from 'vue'
 type ModulesMap = Record<string, () => Promise<any>>
 
 const cache = new Map<string, Component>()
+let registry: ModulesMap = {}
+let setupHook: ((app: App) => void) | undefined
 let currentApp: App | null = null
-let _modules: ModulesMap = {}
-let _setup: ((app: App) => void) | undefined
 
 export interface InitModulesOptions {
   /** Hook invoked on every Vue App created by the loader (plugins, globals). */
@@ -14,21 +14,24 @@ export interface InitModulesOptions {
 
 /** Initialize the view loader with a modules map. Call once at app startup. */
 export function initModules(modules: ModulesMap, opts: InitModulesOptions = {}): void {
-  _modules = modules
-  _setup = opts.setup
+  registry = modules
+  setupHook = opts.setup
 }
 
 export function hasView(name: string): boolean {
-  return !!_modules[name]
+  return !!registry[name]
 }
 
 export async function loadView(name: string): Promise<Component> {
-  if (!_modules[name]) {
+  const loader = registry[name]
+  if (!loader) {
     throw new Error(`View ${name} not found`)
   }
+
   const cached = cache.get(name)
   if (cached) return cached
-  const mod = await _modules[name]()
+
+  const mod = await loader()
   const component = ((mod as any).default || mod) as Component
   cache.set(name, component)
   return component
@@ -48,30 +51,19 @@ export async function mountView(
   targetElement: HTMLElement | null = null,
   opts: MountViewOptions = {},
 ): Promise<App> {
-  if (!hasView(viewName)) {
-    throw new Error(`View ${viewName} not found`)
-  }
-
   const component = await loadView(viewName)
   const target = targetElement || document.getElementById('app') || document.body
 
-  if (currentApp) {
-    currentApp.unmount()
-    currentApp = null
-  }
+  unmountCurrentApp()
 
-  if (opts.hydrate && target.firstChild) {
-    const app = createSSRApp(component, props)
-    if (_setup) _setup(app)
-    app.mount(target, true)
-    currentApp = app
-    return app
-  }
+  // Hydration only makes sense when the target already holds server-rendered
+  // markup; an empty target means the client renders from scratch.
+  const hydrate = Boolean(opts.hydrate && target.firstChild)
+  if (!hydrate) target.innerHTML = ''
 
-  target.innerHTML = ''
-  const app = createApp(component, props)
-  if (_setup) _setup(app)
-  app.mount(target)
+  const app = hydrate ? createSSRApp(component, props) : createApp(component, props)
+  setupHook?.(app)
+  app.mount(target, hydrate)
   currentApp = app
   return app
 }
@@ -81,10 +73,9 @@ export function getCurrentApp(): App | null {
 }
 
 export function unmountCurrentApp(): void {
-  if (currentApp) {
-    currentApp.unmount()
-    currentApp = null
-  }
+  if (!currentApp) return
+  currentApp.unmount()
+  currentApp = null
 }
 
 /** Drop cached components. Useful for HMR or long-running SPAs. */

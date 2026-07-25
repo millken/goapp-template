@@ -1,12 +1,5 @@
 {
-  "include": [
-    "vite.config.*",
-    "ssr-build.ts",
-    "ssr-esm-render.ts",
-    "ssr-modules.ts",
-    "ssr/**/*",
-    "scripts/**/*"
-  ],
+  "include": ["vite.config.*", "ssr-esm-render.ts", "ssr/**/*", "scripts/**/*"],
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -15,6 +8,7 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["node"]
+    // vite/client supplies `import.meta.glob`, used by ssr-esm-render.ts.
+    "types": ["node", "vite/client"]
   }
 }

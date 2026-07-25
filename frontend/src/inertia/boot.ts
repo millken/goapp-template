@@ -25,28 +25,29 @@ export function boot(
   if (typeof document === 'undefined') return
   if (options.pjax !== false) enablePjax()
 
-  void (async () => {
-    const target: HTMLElement =
-      options.el || document.getElementById('app') || document.body
+  void mountInitialView(options.el)
+}
 
-    const raw: string =
-      target?.dataset?.page ?? ((window as any).__INERTIA_PAGE_DATA__ || '{}')
+async function mountInitialView(el?: HTMLElement | null): Promise<void> {
+  const target = el || document.getElementById('app') || document.body
+  const page = parsePageData(target.dataset.page ?? (window as any).__INERTIA_PAGE_DATA__)
+  const { [INERTIA_VIEW_KEY]: viewName = 'App', ...props } = page
 
-    let page: Record<string, any> = {}
-    if (raw && raw !== INERTIA_DATA_PLACEHOLDER) {
-      try {
-        page = JSON.parse(raw) || {}
-      } catch (e) {
-        console.error('Failed to parse page JSON:', e)
-      }
-    }
+  try {
+    await mountView(viewName as string, props, target, { hydrate: true })
+  } catch (error) {
+    console.error(`Error loading view ${viewName}`, error)
+  }
+}
 
-    const { [INERTIA_VIEW_KEY]: viewName = 'App', ...props } = page
+function parsePageData(raw: unknown): Record<string, any> {
+  // The placeholder is what the server leaves in the HTML when it has no page data.
+  if (typeof raw !== 'string' || raw === '' || raw === INERTIA_DATA_PLACEHOLDER) return {}
 
-    try {
-      await mountView(viewName as string, props, target, { hydrate: true })
-    } catch (error) {
-      console.error(`Error loading view ${viewName}`, error)
-    }
-  })()
+  try {
+    return JSON.parse(raw) || {}
+  } catch (error) {
+    console.error('Failed to parse page JSON:', error)
+    return {}
+  }
 }

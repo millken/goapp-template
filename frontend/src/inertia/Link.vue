@@ -22,9 +22,9 @@ const linkEl = ref<HTMLElement | null>(null)
 let cleanup: { destroy(): void } | undefined
 
 onMounted(() => {
-  const el = linkEl.value
-  if (el && el instanceof HTMLAnchorElement) {
-    cleanup = pjaxClick(el)
+  // PJAX can only intercept real anchors; a custom `tag` renders inert.
+  if (linkEl.value instanceof HTMLAnchorElement) {
+    cleanup = pjaxClick(linkEl.value)
   }
 })
 

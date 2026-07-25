@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import AdminLayout from '@/components/AdminLayout.vue'
 
-interface MenuItem {
-  title: string
-  path: string
-  order?: number
-}
+interface MenuItem { title: string; path: string; order?: number }
 
 // Shared props injected by the admin auth middleware on authenticated requests.
 defineProps<{

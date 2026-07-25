@@ -12,11 +12,12 @@ function pageKey(p: string): string {
   return (i >= 0 ? p.slice(i + 'pages/'.length) : p).replace(/\.vue$/, '')
 }
 
-const modules: Record<string, Component> = {}
-for (const [path, mod] of Object.entries(rawModules)) {
-  const loaded = mod as { default?: Component }
-  modules[pageKey(path)] = loaded.default ?? (mod as Component)
-}
+const modules: Record<string, Component> = Object.fromEntries(
+  Object.entries(rawModules).map(([path, mod]) => [
+    pageKey(path),
+    (mod as { default?: Component }).default ?? (mod as Component),
+  ]),
+)
 
 const { inertiaRenderComponent, inertiaRenderTemplate } = createSSRRender(modules)
 
