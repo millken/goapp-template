@@ -96,8 +96,8 @@ func TestOwnedPathsExist(t *testing.T) {
 		}
 	}
 	// Tooling paths that must exist in the template (the rest are optional
-	// build artifacts or generated files).
-	for _, p := range []string{"cmd/goappctl", "internal/scaffold", "commands/gen.go", "docs"} {
+	// build artifacts, workspace files, or CI config).
+	for _, p := range []string{"cmd/goappctl", "docs", ".github/workflows/goappctl.yml"} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Errorf("tooling path %q does not exist: %v", p, err)
 		}

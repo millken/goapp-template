@@ -12,10 +12,14 @@ import (
 // No migration is emitted; add versioned migrations by hand under
 // internal/service/db/migrations/ (NNN_name.up.sql / .down.sql).
 func Resource(name string, opts Options) error {
+	if opts.Module == "" {
+		return fmt.Errorf("scaffold: Options.Module is required (the target project's module path)")
+	}
 	spec, err := NewSpec(name)
 	if err != nil {
 		return err
 	}
+	spec.Module = opts.Module
 
 	type out struct{ tmpl, path string }
 	outputs := []out{

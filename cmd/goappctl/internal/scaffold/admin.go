@@ -11,10 +11,14 @@ import (
 // resource registers itself in the admin menu. Wire Mount(eng, svc, adm) in
 // serve.go after the admin area. No migration is emitted (see Resource).
 func Admin(name string, opts Options) error {
+	if opts.Module == "" {
+		return fmt.Errorf("scaffold: Options.Module is required (the target project's module path)")
+	}
 	spec, err := NewSpec(name)
 	if err != nil {
 		return err
 	}
+	spec.Module = opts.Module
 	// Prefix with "admin" so the package name matches its directory
 	// (internal/controller/admin<name>); Package feeds both the dir and the
 	// template's `package` decl.

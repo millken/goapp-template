@@ -106,8 +106,8 @@ Pipeline (all steps operate on cwd, in order):
    These are separate because the binary name is not necessarily the module's last segment; the
    default just makes it so.
 7. **Remove template-only files.** Delete:
-   - Tooling: `cmd/goappctl/`, `internal/scaffold/`, `commands/gen.go` (the `newGenCmd()`
-     registration in `commands/root.go` is removed by the `tooling` marker in step 4).
+   - Tooling: `cmd/goappctl/`. (`internal/scaffold/` and `commands/gen.go` no longer exist — the
+     generator moved into the tool, see §10.1 — so they left the list.)
    - Workspace: `go.work`, `go.work.sum` — they point at local sibling checkouts
      (`../../dnsoa/go/sqldb`, `../inertia`) and would break any build outside the author's machine.
    - Template docs: `docs/` (the template's own design specs are not the user's).
@@ -226,9 +226,10 @@ root.AddCommand(newGenCmd())
 ```
 
 It is not selectable via `--with` and does not appear in the interactive checklist. Current uses:
-the `gen` command registration in `commands/root.go`, and
-`TestExampleConfig_MarkersAreWellFormed` in `internal/config/example_test.go` — a test that asserts
-every component still has a marker block, i.e. exactly what `init` removes.
+`TestExampleConfig_MarkersAreWellFormed` in `internal/config/example_test.go` (a test asserting every
+component still has a marker block — exactly what `init` removes), the marker-syntax paragraph in
+`config.example.yaml`'s header, the `cmd/goappctl/` line in README's tree, and README's
+「自定义为新项目」/「本地依赖」sections.
 
 ### 5.4 Markers cannot live inside string literals
 
@@ -280,7 +281,7 @@ This is the authoritative inventory — the prerequisite PRs in §7 add exactly 
 | File | Marked names | What the blocks cover |
 |---|---|---|
 | `commands/serve.go` | db, session, admin | infra construct/Start/Stop, `svc.*` assignment, `eng.Use(session middleware)`, `admin.New/Validate/Mount`; **blank driver import** (§5.2) |
-| `commands/root.go` | admin, `tooling` | `newAdminCmd()` registration; `newGenCmd()` registration |
+| `commands/root.go` | admin | `newAdminCmd()` registration |
 | `internal/app/services.go` | session | the `Session *session.Service` field + its import (§7.3 — *not* `DB`) |
 | `internal/config/config.go` | db, session, admin, ssr | `Config.DB/.Session/.Admin` fields + imports; `ServerConfig.SSR` / `.SSRBundlePath`; the SSR entries in `defaults()` |
 | `server/server.go` | ssr | `inertia/ssr` + `ssr/quickjs` imports, `ssrBundleName` const, `cfg.SSR`→`ModeSSR` branch, the `quickjs.NewVM` block, the `ModeSSR` arm of `modeName` |
@@ -416,7 +417,7 @@ Marker plan (section granularity except where noted):
 | CLI block — `gen resource` / `gen admin` lines | `tooling` |
 | CLI block — `admin create-user` line | admin |
 | 「登录需要一个 admin 用户」note | admin |
-| 「脚手架生成器」section (whole) | `tooling` |
+| ~~「脚手架生成器」section (whole)~~ | **not marked** — corrected below |
 | 「SSR 工作流」section (whole) | ssr |
 | 「Build tags」section — the SSR bundle sentence only | ssr |
 | 「自定义为新项目」section (whole) | `tooling` |
@@ -428,6 +429,11 @@ Two simplifications that remove marker clusters rather than adding them:
   would need db/session/admin/ssr markers a second time and would drift from
   `config.example.yaml`. Replace the inline YAML with a pointer to `config.example.yaml` (§7.1);
   one marked copy of the config, not two.
+- **The 「脚手架生成器」section stays in generated projects.** Marking it `tooling` assumed the
+  capability disappeared with `myapp gen`. It does not: `goappctl gen` works against generated
+  projects (`go install …/cmd/goappctl@latest`), so the section is rewritten for that invocation and
+  kept. Only the `myapp gen …` lines in the CLI list were removed, since that subcommand no longer
+  exists in either the template or a generated project.
 - **「自定义为新项目」is obsoleted by goappctl itself** — its four manual steps are exactly what
   `init` automates. In the template, rewrite it to point at `go run ./cmd/goappctl init`; in a
   generated project it is meaningless, hence `tooling`.
@@ -452,10 +458,16 @@ goappctl gen resource <Name> [--admin] [--no-mount]
 - Admin resources mount inside `serve.go` after `adm.Mount(eng)`, not in the `gen:mounts` region;
   auto-editing that seam is out of scope for v1 (keep printing the line for admin resources).
 - `--admin` targets the admin area; errors clearly if `internal/controller/admin/` is absent.
-- **db-less projects:** the scaffolder writes migrations to `internal/service/db/migrations/`,
-  which does not exist when db was stripped. If that directory is absent, skip migration emission
-  with a visible warning (the generated handler compiles fine — its `ct.DB` usages are commented
-  TODOs), and note in the warning that `svc.DB` is nil at runtime.
+- **db-less projects:** ~~skip migration emission~~ — corrected: the scaffolder never emits
+  migrations at all (`Resource`'s doc comment says so; schema changes are hand-written under
+  `internal/service/db/migrations/`), so there is nothing to skip. What it does instead: warn that
+  `internal/service/db/` is absent and therefore `svc.DB` is nil at runtime, so the generated CRUD
+  cannot query anything. The generated handler still compiles — its query lines are commented TODOs.
+- **Generated code must import the target project, not the template.** The handler templates
+  hardcoded `github.com/millken/goapp-template/internal/app`, which compiled inside the template repo
+  and broke in every project produced from it. `Options.Module` (from the project's `go.mod`) is now
+  required and threaded into `Spec.Module`, and the templates use `[[ .Module ]]`. Caught by the
+  init→gen integration test, guarded by a unit test that generates with a foreign module path.
 
 ## 9. Correctness (v1)
 
@@ -493,13 +505,15 @@ The matrix is gated behind `GOAPPCTL_E2E=1` so a plain `go test ./...` stays fas
 
 ```
 cmd/goappctl/
-  main.go            # cobra root: init, version (+ gen, pending)
+  main.go            # cobra root: init, version
+  gen.go             # gen resource / gen admin
   internal/
     initcmd/         # pipeline steps 1–9 (guardrails, selection, delete, strip, config,
                      # identity, remove, tidy, verify) + the combo matrix test
     markers/         # find/strip goappctl blocks (Go/TS `//`, YAML `#`, MD `<!-- -->`) + JSON edit
     components/      # the hardcoded four: names, deps, owned paths
-    scaffold/        # moved from internal/scaffold (gen) — pending
+    scaffold/        # moved from internal/scaffold; + project detection and the
+                     # gen:mounts auto-edit
 ```
 
 Keep it flat; no interfaces until the 5th component forces the registry extraction.
@@ -513,12 +527,14 @@ Keep it flat; no interfaces until the 5th component forces the registry extracti
 | `components` | ✅ incl. a drift guard asserting every owned path still exists |
 | `initcmd` (steps 1–9) | ✅ incl. `--dry-run`, guardrails, interactive checklist |
 | §9 combo matrix + `goappctl.yml` | ✅ 4/4 passing |
-| §8 `gen` (move `internal/scaffold`, add auto-mount) | ⬜ pending — the only remaining v1 work |
+| §8 `gen` (move `internal/scaffold`, add auto-mount) | ✅ landed |
 
-Until `gen` lands, `commands/gen.go` remains the generator and is deleted from generated projects
-(as specified), so a generated project temporarily has no scaffolding path. `internal/scaffold` and
-`commands/gen.go` are already in `components.ToolingPaths`, so no deletion-list change is needed
-when `gen` moves.
+`internal/scaffold` moved to `cmd/goappctl/internal/scaffold` and `commands/gen.go` was deleted, so
+the app binary no longer carries a generator and both paths left `ToolingPaths` (they no longer
+exist to delete). Scaffolding a generated project now means installing the tool:
+`go install github.com/millken/goapp-template/cmd/goappctl@latest`.
+
+v1 is feature-complete.
 
 ## 11. Open questions / risks
 

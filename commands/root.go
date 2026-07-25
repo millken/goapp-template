@@ -78,9 +78,6 @@ func New() *cobra.Command {
 
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newServeCmd())
-	//goappctl:tooling
-	root.AddCommand(newGenCmd())
-	//goappctl:end
 	//goappctl:admin
 	root.AddCommand(newAdminCmd())
 	//goappctl:end

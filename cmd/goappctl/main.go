@@ -7,6 +7,9 @@
 //
 //	git clone <goapp-template> myapp && cd myapp
 //	go run ./cmd/goappctl init --module github.com/me/myapp --with db,session,admin,ssr
+//
+// `gen` then scaffolds resources into an initialized project, including one it
+// did not create — project shape is detected from the directory layout.
 package main
 
 import (
@@ -38,7 +41,7 @@ func newRootCmd() *cobra.Command {
 		DisableAutoGenTag: true,
 	}
 	root.CompletionOptions.HiddenDefaultCmd = true
-	root.AddCommand(newInitCmd(), newVersionCmd())
+	root.AddCommand(newInitCmd(), newGenCmd(), newVersionCmd())
 	return root
 }
 

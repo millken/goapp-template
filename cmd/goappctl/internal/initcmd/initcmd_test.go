@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/millken/goapp-template/cmd/goappctl/internal/scaffold"
 )
 
 // repoRoot is four levels up from this package.
@@ -223,6 +225,65 @@ func TestRun_Combos(t *testing.T) {
 				t.Errorf("config.yaml was not created: %v", err)
 			}
 		})
+	}
+}
+
+// TestRun_ThenGen is the handoff between the two commands: a project that init
+// produced must be one that gen can extend, and the result must still compile.
+// It also covers the auto-mount edit against a real (stripped) mount_gen.go
+// rather than the fixture used by the scaffold unit tests.
+func TestRun_ThenGen(t *testing.T) {
+	if os.Getenv("GOAPPCTL_E2E") == "" {
+		t.Skip("set GOAPPCTL_E2E=1 to run init+gen end to end (slow)")
+	}
+	root := copyTemplate(t)
+	var log bytes.Buffer
+	if err := Run(Options{
+		Root: root, Module: "github.com/me/demo", With: []string{"admin"},
+		Force: true, Out: &log,
+	}); err != nil {
+		t.Fatalf("init: %v\n%s", err, log.String())
+	}
+
+	p, err := scaffold.Detect(root)
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if p.Module != "github.com/me/demo" {
+		t.Errorf("Module = %q, want the rewritten path", p.Module)
+	}
+	if !p.HasDB || !p.HasAdmin {
+		t.Fatalf("expected db+admin present after --with admin closure, got %+v", p)
+	}
+
+	if err := scaffold.Resource("post", scaffold.Options{ModuleRoot: root, Module: p.Module}); err != nil {
+		t.Fatalf("gen resource: %v", err)
+	}
+	added, err := scaffold.AddMount(root, p.Module, "post")
+	if err != nil {
+		t.Fatalf("AddMount: %v", err)
+	}
+	if !added {
+		t.Error("AddMount reported no change on a fresh resource")
+	}
+	if err := scaffold.Admin("post", scaffold.Options{ModuleRoot: root, Module: p.Module}); err != nil {
+		t.Fatalf("gen admin: %v", err)
+	}
+
+	mount, err := os.ReadFile(filepath.Join(root, scaffold.MountGenPath))
+	if err != nil {
+		t.Fatalf("read mount_gen.go: %v", err)
+	}
+	if !bytes.Contains(mount, []byte("post.Mount(eng, svc)")) {
+		t.Errorf("mount region missing the new resource:\n%s", mount)
+	}
+
+	// The generated code must compile against the trimmed project, including
+	// the admin resource, which is generated but mounted by hand.
+	cmd := exec.Command("go", "build", "./...")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build after gen:\n%s", out)
 	}
 }
 

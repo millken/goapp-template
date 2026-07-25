@@ -63,8 +63,6 @@ var All = []Component{
 // sibling checkouts and would break any build elsewhere.
 var ToolingPaths = []string{
 	"cmd/goappctl",
-	"internal/scaffold",
-	"commands/gen.go",
 	"docs",
 	".github/workflows/goappctl.yml",
 	"go.work",

@@ -9,7 +9,7 @@ import (
 
 func TestAdmin_CreatesAllFiles(t *testing.T) {
 	root := t.TempDir()
-	if err := Admin("blog-post", Options{ModuleRoot: root}); err != nil {
+	if err := Admin("blog-post", Options{ModuleRoot: root, Module: testModule}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
 
@@ -28,7 +28,7 @@ func TestAdmin_CreatesAllFiles(t *testing.T) {
 
 func TestAdmin_HandlerHasAdminRoutes(t *testing.T) {
 	root := t.TempDir()
-	if err := Admin("post", Options{ModuleRoot: root}); err != nil {
+	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
 	handler, err := os.ReadFile(filepath.Join(root, "internal/controller/adminpost/handler.go"))
@@ -45,10 +45,10 @@ func TestAdmin_HandlerHasAdminRoutes(t *testing.T) {
 
 func TestAdmin_RefusesOverwrite(t *testing.T) {
 	root := t.TempDir()
-	if err := Admin("post", Options{ModuleRoot: root}); err != nil {
+	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
 		t.Fatalf("first Admin: %v", err)
 	}
-	if err := Admin("post", Options{ModuleRoot: root}); err == nil {
+	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err == nil {
 		t.Fatal("expected overwrite error, got nil")
 	}
 }

@@ -25,7 +25,7 @@ func TestResource_OutputCompiles(t *testing.T) {
 		_ = os.RemoveAll(viewDir)
 	})
 
-	if err := Resource(resource, Options{ModuleRoot: root, Force: true}); err != nil {
+	if err := Resource(resource, Options{ModuleRoot: root, Module: testModule, Force: true}); err != nil {
 		t.Fatalf("Resource: %v", err)
 	}
 	goBuild(t, root, "./internal/controller/"+resource+"/...")
@@ -48,7 +48,7 @@ func TestAdmin_OutputCompiles(t *testing.T) {
 		_ = os.RemoveAll(viewDir)
 	})
 
-	if err := Admin(resource, Options{ModuleRoot: root, Force: true}); err != nil {
+	if err := Admin(resource, Options{ModuleRoot: root, Module: testModule, Force: true}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
 	goBuild(t, root, "./internal/controller/"+pkg+"/...")

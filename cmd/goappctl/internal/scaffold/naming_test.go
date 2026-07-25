@@ -61,3 +61,8 @@ func TestNewSpec_Invalid(t *testing.T) {
 		}
 	}
 }
+
+// testModule is the module path the generator threads into generated imports.
+// Tests that compile the output (build_test.go) must use the real module, since
+// the generated code imports <module>/internal/app.
+const testModule = "github.com/millken/goapp-template"

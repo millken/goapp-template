@@ -19,6 +19,10 @@ type Spec struct {
 	Route    string // URL path prefix (e.g. "blog-posts")
 	FileBase string // snake_case migration stem (e.g. "blog_post")
 	ViewDir  string // frontend pages subdir (e.g. "blog-post")
+	// Module is the target project's module path, used for the generated
+	// imports. It comes from the project's go.mod, not from this package —
+	// generated code must import the project it lands in, not the template.
+	Module string
 }
 
 // NewSpec derives all identifier forms from a resource name (snake_case,

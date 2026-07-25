@@ -17,12 +17,12 @@ Go + Vue 3 + Inertia.js 应用模板。
 ```
 .
 ├── main.go                      # 入口（signal ctx + cobra）
+<!--goappctl:tooling-->
+├── cmd/goappctl/                # 模板工具：init（裁剪）+ gen（脚手架），非运行时
+<!--goappctl:end-->
 ├── commands/                    # cobra 子命令 + composition root
 ├── commands/root.go             #   根命令 + AppInit（env/config/logging）
 ├── commands/serve.go            #   composition root：Start 基础设施 → 填 Services → 挂路由
-<!--goappctl:tooling-->
-├── commands/gen.go              #   gen resource / gen admin（脚手架，工具层）
-<!--goappctl:end-->
 <!--goappctl:admin-->
 ├── commands/admin_user.go       #   admin create-user（播种首个用户）
 <!--goappctl:end-->
@@ -33,9 +33,6 @@ Go + Vue 3 + Inertia.js 应用模板。
 ├── internal/config/             # YAML 配置加载
 <!--goappctl:db-->
 ├── internal/driver/             # blank-import DB 驱动（默认 sqlite3）
-<!--goappctl:end-->
-<!--goappctl:tooling-->
-├── internal/scaffold/           # 代码生成器（工具层，非运行时）
 <!--goappctl:end-->
 <!--goappctl:db-->
 ├── internal/service/db/         # sqldb 连接池 + 迁移（migrations/*.sql）
@@ -96,12 +93,6 @@ make build-prod
 ```bash
 myapp serve [-a :8080] [--dev-addr http://localhost:5173] [-c config.yaml]
 ```
-<!--goappctl:tooling-->
-```bash
-myapp gen resource <name>          # 生成 CRUD 资源（别名 gen mvc）
-myapp gen admin <name>             # 生成 admin 资源
-```
-<!--goappctl:end-->
 <!--goappctl:admin-->
 ```bash
 myapp admin create-user <username> # 创建 admin 登录用户（bcrypt）
@@ -126,38 +117,44 @@ myapp -v ...           # 全局 verbose（debug 日志）
   `db: service enabled but [db] config section missing` 这类错误，而不是静默降级。
 - 查找顺序：`-c <path>` → `$MYAPP_HOME/config.yaml` → `~/.myapp/config.yaml`。
 
-<!--goappctl:tooling-->
-## 脚手架生成器（`myapp gen`）
+## 脚手架生成器（`goappctl gen`）
 
-生成 CRUD 脚手架，减少手写样板。生成器是开发期工具（`internal/scaffold`），不连 DB、不加载配置。
-**不生成迁移** —— schema 变更手写在 `internal/service/db/migrations/`（版本化 `NNN_*.up/down.sql`）。
+生成 CRUD 脚手架，减少手写样板。生成器在 `goappctl` 里，不在应用二进制里 —— 它是开发期工具，
+不连 DB、不加载配置。**不生成迁移** —— schema 变更手写在 `internal/service/db/migrations/`
+（版本化 `NNN_*.up/down.sql`）。
 
 ```bash
-# 生成一个 public CRUD 资源（handler + model + Vue 页面）
-myapp gen resource post
-myapp gen resource blog-post     # 资源名支持 snake/kebab/CamelCase
-myapp gen mvc post               # mvc 是 gen resource 的别名（沿用旧习惯）
+# 模板仓库内
+go run ./cmd/goappctl gen resource post
 
-# 生成一个 admin 资源（鉴权保护，路由挂 admin mount 下，页面套 AdminLayout）
-myapp gen admin post
-
-# 覆盖已存在文件
-myapp gen resource post --force
+# 已生成的项目里（先装一次）
+go install github.com/millken/goapp-template/cmd/goappctl@latest
+goappctl gen resource post
+goappctl gen resource blog-post   # 资源名支持 snake/kebab/CamelCase
+goappctl gen mvc post             # mvc 是 gen resource 的别名
+goappctl gen admin post           # admin 资源（鉴权保护，页面套 AdminLayout）
+goappctl gen resource post --force        # 覆盖已存在文件
+goappctl gen resource post --no-mount     # 不改 mount_gen.go，只打印接线行
+goappctl gen resource post -C ../other    # 指定项目根目录
 ```
 
 产物：
 
 - `gen resource post` → `internal/controller/post/{handler,model}.go` + `frontend/pages/post/{index,form}.vue`
-- `gen admin post` → `internal/controller/adminpost/{handler,model}.go` + `frontend/pages/admin/post/{index,form}.vue`（依赖 `db` + `admin`，自动注册进 admin 菜单）
+- `gen admin post` → `internal/controller/adminpost/{handler,model}.go` + `frontend/pages/admin/post/{index,form}.vue`
 
-生成的是普通 controller（结构体嵌入 `*app.Services`，一个 `Mount` 函数），**接线要手动加一行**：
+接线：
 
-- resource → [internal/controller/mount_gen.go](internal/controller/mount_gen.go) 的 `gen:mounts` 区块里加 `post.Mount(eng, svc)`
-- admin resource → [commands/serve.go](commands/serve.go) 里 `adm.Mount(eng)` 之后加 `adminpost.Mount(eng, svc, adm)`
+- **resource 自动接线** —— 直接改 [internal/controller/mount_gen.go](internal/controller/mount_gen.go)
+  的 `gen:mounts` 区块（加 import + `post.Mount(eng, svc)`，按名排序）。重复执行不会产生重复项。
+- **admin resource 需手动一行** —— admin 区域挂在 [commands/serve.go](commands/serve.go) 里而非
+  `gen:mounts` 区块，所以命令会把 `adminpost.Mount(eng, svc, adm)` 打印出来让你粘贴。
 
-生成的代码是普通文件，可随意修改；生成器不锁死、不接管已写代码。重复路由会在 `eng.RegistrationError()`
-处启动前报错，不会静默覆盖。
-<!--goappctl:end-->
+项目形态靠目录探测（没有 marker 文件）：module 路径读 `go.mod`；缺 `internal/controller/admin/` 时
+`gen admin` 直接报错；缺 `internal/service/db/` 时会警告 `svc.DB` 为 nil。
+
+生成的代码是普通文件，可随意修改；生成器不锁死、不接管已写代码。重复路由会在
+`eng.RegistrationError()` 处启动前报错，不会静默覆盖。
 
 <!--goappctl:ssr-->
 ## SSR 工作流
@@ -211,8 +208,8 @@ go run ./cmd/goappctl init --module github.com/me/myapp --with db,session,admin 
 
 它会拒绝在非模板目录运行（检查 module 路径），所以重复执行不会二次破坏。
 
-生成的项目**不含生成器**：`cmd/goappctl`、`internal/scaffold`、`commands/gen.go`、`docs/`、`go.work`
-都会被删掉。之后要给项目加资源，用装好的二进制：
+生成的项目**不含生成器**：`cmd/goappctl/`、`docs/`、`go.work` 和模板自己的 CI 都会被删掉。
+之后要给项目加资源，用装好的二进制（见上面的「脚手架生成器」一节）：
 `go install github.com/millken/goapp-template/cmd/goappctl@latest`。
 
 需要手动收尾的只剩：改掉 `config.yaml` 里的 `session.secret`，以及按需删除示例页面

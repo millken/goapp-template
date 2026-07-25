@@ -19,6 +19,10 @@ type Options struct {
 	// ModuleRoot is the repo root containing internal/ and frontend/; empty means
 	// paths are relative to the cwd.
 	ModuleRoot string
+	// Module is the target project's module path (from its go.mod). Required:
+	// the generated handlers import <Module>/internal/app, so a wrong or empty
+	// value produces code that cannot compile.
+	Module string
 }
 
 // render parses one embedded template (e.g. "resource/handler.go.tmpl") and
