@@ -11,16 +11,24 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the top-level application configuration.
+// Config is the top-level application configuration. Each optional component
+// contributes one nil-able section; a nil section means "not configured", which
+// the component's Start reports as an error rather than degrading silently.
 type Config struct {
 	Log    LogConfig    `yaml:"log"`
 	Server ServerConfig `yaml:"server"`
+	//goappctl:db
 	// DB holds the database service config. nil when db is not used.
 	DB *db.Config `yaml:"db"`
+	//goappctl:end
+	//goappctl:session
 	// Session holds the session service config. nil when not used.
 	Session *session.Config `yaml:"session"`
+	//goappctl:end
+	//goappctl:admin
 	// Admin holds the admin area config. nil when not used.
 	Admin *admin.Config `yaml:"admin"`
+	//goappctl:end
 }
 
 // ServerConfig controls the HTTP server.
@@ -31,10 +39,12 @@ type ServerConfig struct {
 	StaticPath string `yaml:"static_path"`
 	// DevAddr is the Vite dev server URL used by the dev proxy.
 	DevAddr string `yaml:"dev_addr"`
+	//goappctl:ssr
 	// SSRBundlePath is the path to the SSR bundle JS (SSR mode only).
 	SSRBundlePath string `yaml:"ssr_bundle_path"`
 	// SSR enables server-side rendering via QuickJS (default: false).
 	SSR bool `yaml:"ssr"`
+	//goappctl:end
 }
 
 // LogConfig controls logging behaviour.
@@ -92,9 +102,11 @@ func defaults() Config {
 			Addr: ":8080",
 			// StaticPath / SSRBundlePath are dev-only (prod embeds assets); the
 			// SSR bundle filename must match server.ssrBundleName.
-			StaticPath:    "frontend/dist",
-			DevAddr:       "http://localhost:5173",
+			StaticPath: "frontend/dist",
+			DevAddr:    "http://localhost:5173",
+			//goappctl:ssr
 			SSRBundlePath: "frontend/dist/ssr-render-cjs.js",
+			//goappctl:end
 		},
 	}
 }

@@ -14,9 +14,13 @@ import (
 	"github.com/millken/goapp-template/server"
 	"github.com/spf13/cobra"
 
-	// Register the database driver(s) at the composition root so database/sql
-	// has them before any service Starts.
+	//goappctl:db
+	// Register the database driver(s) at the composition root so database/sql has
+	// them before any service Starts. Blank imports must stay inside this marker:
+	// goimports cannot drop them, so removing the db component would otherwise
+	// leave an import of a deleted package.
 	_ "github.com/millken/goapp-template/internal/driver"
+	//goappctl:end
 )
 
 func newServeCmd() *cobra.Command {
@@ -44,52 +48,70 @@ func newServeCmd() *cobra.Command {
 }
 
 // runServe is the composition root: it Starts infrastructure in dependency
-// order, builds the service container, wires controllers onto the engine, and
-// serves. db/session are driven explicitly here; controllers are wired by the
-// generated controller.MountAll (plus the admin area, which needs its own
-// config). Stop runs in reverse order via defer.
+// order, fills the service container, wires controllers onto the engine, and
+// serves. Stop runs in reverse order via defer.
+//
+// Composition is deliberately one component per block: the container is built
+// empty and each component assigns its own field, so a component reads only
+// fields (svc.DB, svc.Session) and never another component's local variable.
+// That is what makes an optional component removable as a contiguous block.
 func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	log := slog.Default()
 
-	// 1. Infrastructure: construct + Start in dependency order (db before session).
+	// Service container: empty, then filled by the infrastructure blocks below.
+	// Comments here are deliberately unnumbered — an optional block may be
+	// absent, and numbered steps would read as if one went missing.
+	svc := app.NewServices(log)
+
+	//goappctl:db
+	// Infrastructure is constructed and Started in dependency order: db first,
+	// since session may store sessions in it.
 	dbSvc := db.New(cfg.DB)
 	if err := dbSvc.Start(cmd.Context()); err != nil {
 		return fmt.Errorf("start db: %w", err)
 	}
 	defer func() { _ = dbSvc.Stop(context.Background()) }()
+	svc.DB = dbSvc.DB()
+	//goappctl:end
 
-	sessSvc := session.New(cfg.Session, dbSvc)
+	//goappctl:session
+	// svc.DB is nil without the db component, which is exactly the memory-store
+	// fallback — no reference to the db block's dbSvc escapes it.
+	sessSvc := session.New(cfg.Session, svc.DB)
 	if err := sessSvc.Start(cmd.Context()); err != nil {
 		return fmt.Errorf("start session: %w", err)
 	}
 	defer func() { _ = sessSvc.Stop(context.Background()) }()
+	svc.Session = sessSvc
+	//goappctl:end
 
-	// 2. Typed service container (built from Started infra).
-	svc := app.NewServices(log, dbSvc.DB(), sessSvc)
-
-	// 3. HTTP engine (inertia).
+	// HTTP engine (inertia).
 	eng, mode, err := server.New(cfg.Server)
 	if err != nil {
 		return err
 	}
 
-	// 4. Global middleware + generated route wiring.
+	// Global middleware, then generated route wiring.
+	//goappctl:session
 	eng.Use(sessSvc.Middleware()) // session on every request
+	//goappctl:end
 	controller.MountAll(eng, svc) // generated non-admin areas
 
-	// 5. Admin area (needs its own config): validate, then mount with auth.
+	//goappctl:admin
+	// Admin area (needs its own config): validate, then mount with auth.
 	adm := admin.New(svc, cfg.Admin)
 	if err := adm.Validate(); err != nil {
 		return err
 	}
 	adm.Mount(eng)
+	//goappctl:end
 
 	// Surface duplicate-route registration before binding a listener.
 	if err := eng.RegistrationError(); err != nil {
 		return fmt.Errorf("route registration: %w", err)
 	}
 
-	// 6. Serve (inertia owns signals + HTTP graceful shutdown).
+	// Serve (inertia owns signals + HTTP graceful shutdown).
 	slog.Info("server starting", "addr", cfg.Server.Addr, "mode", mode, "dev_addr", cfg.Server.DevAddr)
 	serveErr := eng.Serve()
 	_ = eng.Close()

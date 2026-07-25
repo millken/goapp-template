@@ -4,61 +4,78 @@ Go + Vue 3 + Inertia.js 应用模板。
 
 - **后端**：Go 1.26 + [cobra](https://github.com/spf13/cobra) + [millken/inertia](https://github.com/millken/inertia) + [phuslu/log](https://github.com/phuslu/log)
 - **前端**：Vue 3 + Vite + Tailwind CSS 4
+<!--goappctl:ssr-->
 - **SSR**：QuickJS（cgo，Actor 模式跨 goroutine 安全）
+<!--goappctl:end-->
 - **构建**：dev/prod 双模式，prod 通过 `//go:build prod` 把前端 dist embed 进二进制
 
 ## 项目结构
 
+路径写成扁平形式、每项统一用 `├──`：这样删掉任意一行都不会留下悬空的树枝
+（`goappctl init` 会按所选组件删行）。
+
 ```
 .
-├── main.go                     # 入口（signal ctx + cobra）
-├── commands/                   # cobra 子命令 + composition root
-│   ├── root.go                 # 根命令 + AppInit（env/config/logging）
-│   ├── serve.go                # composition root：Start 基础设施 → 建 Services → 挂路由 → Serve
-│   ├── gen.go                  # gen resource / gen admin（脚手架，工具层）
-│   ├── admin_user.go           # admin create-user（播种首个用户）
-│   ├── version.go
-│   └── paths.go                # ~/.myapp 路径辅助（MYAPP_HOME）
-├── internal/
-│   ├── app/
-│   │   ├── services.go         # Services：进程级服务容器（Log / DB / Session）
-│   │   └── lifecycle.go        # Lifecycle 接口（Start/Stop），仅基础设施实现
-│   ├── buildinfo/              # 版本信息（ldflags 注入）
-│   ├── config/                 # YAML 配置加载
-│   ├── driver/                 # blank-import DB 驱动（默认 sqlite3）
-│   ├── scaffold/               # 代码生成器（工具层，非运行时）
-│   ├── service/                # 基础设施服务（实现 Lifecycle，由 serve.go 显式驱动）
-│   │   ├── db/                 #   sqldb 连接池 + 迁移（migrations/*.sql）
-│   │   └── session/            #   签名 cookie + memory/db store
-│   └── controller/             # HTTP 控制器（嵌入 *app.Services，无生命周期）
-│       ├── mount_gen.go        #   MountAll：非 admin 区域的路由挂载（gen:mounts 区块）
-│       ├── site/               #   公开路由（/ 和 /api/health）
-│       └── admin/              #   后台：auth + login/logout + dashboard + menu + users
-├── server/
-│   ├── server.go               # inertia.Engine 构造（含 SSR VM）
-│   ├── mode_dev.go             # !prod：从磁盘读 dist
-│   ├── mode_prod.go            # prod： 从 embed 读 dist
-│   └── embedded/               # build-prod 时 dist 复制到此
-├── frontend/
-│   ├── pages/                  # Vue 页面（SSR 构建用 import.meta.glob 自动发现）
-│   │   ├── Home.vue
-│   │   └── admin/              #   login / dashboard
-│   ├── src/
-│   │   ├── inertia/            # 客户端 boot / pjax / view-loader
-│   │   ├── components/         # AdminLayout.vue
-│   │   └── styles/main.css
-│   ├── ssr/polyfills.ts        # QuickJS 缺失的最小 polyfill（打包时注入 banner）
-│   ├── ssr-esm-render.ts       # SSR bundle 入口（导出 inertiaRender*）
-│   ├── vite.config.ts          # 客户端构建
-│   └── vite.config.ssr.ts      # SSR 构建（产出 dist/ssr-render-cjs.js）
-├── config.example.yaml         # 配置样板（复制成 config.yaml 使用）
+├── main.go                      # 入口（signal ctx + cobra）
+├── commands/                    # cobra 子命令 + composition root
+├── commands/root.go             #   根命令 + AppInit（env/config/logging）
+├── commands/serve.go            #   composition root：Start 基础设施 → 填 Services → 挂路由
+<!--goappctl:tooling-->
+├── commands/gen.go              #   gen resource / gen admin（脚手架，工具层）
+<!--goappctl:end-->
+<!--goappctl:admin-->
+├── commands/admin_user.go       #   admin create-user（播种首个用户）
+<!--goappctl:end-->
+├── commands/paths.go            #   ~/.myapp 路径辅助（MYAPP_HOME）
+├── internal/app/services.go     # Services：进程级服务容器，由 serve.go 逐组件填充
+├── internal/app/lifecycle.go    # Lifecycle 接口（Start/Stop），仅基础设施实现
+├── internal/buildinfo/          # 版本信息（ldflags 注入）
+├── internal/config/             # YAML 配置加载
+<!--goappctl:db-->
+├── internal/driver/             # blank-import DB 驱动（默认 sqlite3）
+<!--goappctl:end-->
+<!--goappctl:tooling-->
+├── internal/scaffold/           # 代码生成器（工具层，非运行时）
+<!--goappctl:end-->
+<!--goappctl:db-->
+├── internal/service/db/         # sqldb 连接池 + 迁移（migrations/*.sql）
+<!--goappctl:end-->
+<!--goappctl:session-->
+├── internal/service/session/    # 签名 cookie + memory/db store
+<!--goappctl:end-->
+├── internal/controller/         # HTTP 控制器（嵌入 *app.Services，无生命周期）
+├── internal/controller/mount_gen.go  #   MountAll：非 admin 区域路由挂载（gen:mounts 区块）
+├── internal/controller/site/    #   公开路由（/ 和 /api/health）
+<!--goappctl:admin-->
+├── internal/controller/admin/   #   后台：auth + login/logout + dashboard + menu + users
+<!--goappctl:end-->
+├── server/server.go             # inertia.Engine 构造
+├── server/mode_dev.go           # !prod：从磁盘读 dist
+├── server/mode_prod.go          # prod： 从 embed 读 dist
+├── server/embedded/             # build-prod 时 dist 复制到此
+├── frontend/pages/Home.vue      # 示例页面
+<!--goappctl:admin-->
+├── frontend/pages/admin/        # login / dashboard
+├── frontend/src/components/     # AdminLayout.vue
+<!--goappctl:end-->
+├── frontend/src/inertia/        # 客户端 boot / pjax / view-loader
+├── frontend/src/styles/main.css
+<!--goappctl:ssr-->
+├── frontend/ssr/polyfills.ts    # QuickJS 缺失的最小 polyfill（打包时注入 banner）
+├── frontend/ssr-esm-render.ts   # SSR bundle 入口（导出 inertiaRender*）
+<!--goappctl:end-->
+├── frontend/vite.config.ts      # 客户端构建
+<!--goappctl:ssr-->
+├── frontend/vite.config.ssr.ts  # SSR 构建（产出 dist/ssr-render-cjs.js）
+<!--goappctl:end-->
+├── config.example.yaml          # 配置样板（复制成 config.yaml 使用）
 └── Makefile
 ```
 
 ## 快速开始
 
 ```bash
-# 配置（必须：没有 config.yaml 时 serve 会因缺少 [db] 段直接报错）
+# 配置（必须：没有 config.yaml 时 serve 会因缺少组件配置段直接报错）
 cp config.example.yaml config.yaml
 
 # 依赖
@@ -78,9 +95,19 @@ make build-prod
 
 ```bash
 myapp serve [-a :8080] [--dev-addr http://localhost:5173] [-c config.yaml]
+```
+<!--goappctl:tooling-->
+```bash
 myapp gen resource <name>          # 生成 CRUD 资源（别名 gen mvc）
 myapp gen admin <name>             # 生成 admin 资源
+```
+<!--goappctl:end-->
+<!--goappctl:admin-->
+```bash
 myapp admin create-user <username> # 创建 admin 登录用户（bcrypt）
+```
+<!--goappctl:end-->
+```bash
 myapp version
 myapp -v ...           # 全局 verbose（debug 日志）
 ```
@@ -95,10 +122,11 @@ myapp -v ...           # 全局 verbose（debug 日志）
 配置项、默认值和说明都在 [config.example.yaml](config.example.yaml) 里（单一来源，不在此重复）。
 
 - 配置文件可以完全不存在 —— 缺失的文件或段落都回落到 [internal/config/config.go](internal/config/config.go) 的默认值。
-- 但 `db` / `session` / `admin` 三段**在启用对应组件时必填**：`serve` 会在 Start 阶段报
-  `db: service enabled but [db] config section missing` 这类错误而不是静默降级。
+- 但**已启用组件的配置段是必填的**：`serve` 会在 Start 阶段报
+  `db: service enabled but [db] config section missing` 这类错误，而不是静默降级。
 - 查找顺序：`-c <path>` → `$MYAPP_HOME/config.yaml` → `~/.myapp/config.yaml`。
 
+<!--goappctl:tooling-->
 ## 脚手架生成器（`myapp gen`）
 
 生成 CRUD 脚手架，减少手写样板。生成器是开发期工具（`internal/scaffold`），不连 DB、不加载配置。
@@ -129,7 +157,9 @@ myapp gen resource post --force
 
 生成的代码是普通文件，可随意修改；生成器不锁死、不接管已写代码。重复路由会在 `eng.RegistrationError()`
 处启动前报错，不会静默覆盖。
+<!--goappctl:end-->
 
+<!--goappctl:ssr-->
 ## SSR 工作流
 
 启用 SSR（`server.ssr: true`）时：
@@ -145,14 +175,16 @@ QuickJS 不带 Node.js globals，[frontend/ssr/polyfills.ts](frontend/ssr/polyfi
 
 bundle 文件名在 Go 侧是 `server.ssrBundleName` 常量，dev 模式的 `server.ssr_bundle_path`
 配置项必须与之一致。
+<!--goappctl:end-->
 
 ## Build tags
 
-- 默认（`!prod`）：从磁盘读 `frontend/dist/`，热改 SSR bundle 直接生效
+- 默认（`!prod`）：从磁盘读 `frontend/dist/`，改前端产物无需重编 Go
 - `-tags prod`：`//go:embed embedded/dist`，全部资源 embed，单二进制部署
 
 `make build-prod` 自动 `cp -r frontend/dist server/embedded/dist`，构建完成后清理。
 
+<!--goappctl:tooling-->
 ## 自定义为新项目
 
 1. 改 `go.mod` 的 module 名（并全局替换代码里的 import 路径）
@@ -173,3 +205,4 @@ parent/
 └── goapp-template/
     └── go.work    # use ../inertia/... ../../dnsoa/go/sqldb
 ```
+<!--goappctl:end-->

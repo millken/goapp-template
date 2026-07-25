@@ -36,12 +36,14 @@ func TestDefaults(t *testing.T) {
 		if d.Server.DevAddr != "http://localhost:5173" {
 			t.Errorf("Server.DevAddr = %q, want %q", d.Server.DevAddr, "http://localhost:5173")
 		}
+		//goappctl:ssr
 		if d.Server.SSRBundlePath != "frontend/dist/ssr-render-cjs.js" {
 			t.Errorf("Server.SSRBundlePath = %q, want %q", d.Server.SSRBundlePath, "frontend/dist/ssr-render-cjs.js")
 		}
 		if d.Server.SSR {
 			t.Errorf("Server.SSR = true, want false")
 		}
+		//goappctl:end
 	})
 }
 
@@ -66,7 +68,6 @@ log:
     path: /tmp/app.log
 server:
   addr: ":9090"
-  ssr: true
 `
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
@@ -90,10 +91,38 @@ server:
 	if cfg.Server.Addr != ":9090" {
 		t.Errorf("Server.Addr = %q, want %q", cfg.Server.Addr, ":9090")
 	}
+}
+
+//goappctl:ssr
+
+// TestLoad_SSRKeys is separate from TestLoad_ValidYAML because a marker comment
+// cannot live inside a raw string literal: the ssr keys need their own YAML so
+// this whole test can be stripped as one block.
+func TestLoad_SSRKeys(t *testing.T) {
+	const yaml = `
+server:
+  ssr: true
+  ssr_bundle_path: dist/custom-bundle.js
+`
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
 	if !cfg.Server.SSR {
 		t.Errorf("Server.SSR = false, want true")
 	}
+	if cfg.Server.SSRBundlePath != "dist/custom-bundle.js" {
+		t.Errorf("Server.SSRBundlePath = %q, want %q", cfg.Server.SSRBundlePath, "dist/custom-bundle.js")
+	}
 }
+
+//goappctl:end
 
 // TestLoad_PartialFileKeepsDefaults verifies yaml.v3 merges at field level: a
 // partial config must not clobber default MaxSize/MaxBackups.

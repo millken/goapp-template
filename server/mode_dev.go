@@ -12,6 +12,8 @@ import (
 
 var defaultMode = inertia.ModeDevelopment
 
+//goappctl:ssr
+
 func loadSSRBundle(cfg config.ServerConfig) (string, error) {
 	data, err := os.ReadFile(cfg.SSRBundlePath)
 	if err != nil {
@@ -19,6 +21,8 @@ func loadSSRBundle(cfg config.ServerConfig) (string, error) {
 	}
 	return string(data), nil
 }
+
+//goappctl:end
 
 func staticFS(cfg config.ServerConfig) (fs.FS, error) {
 	return os.DirFS(cfg.StaticPath), nil

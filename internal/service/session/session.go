@@ -27,18 +27,12 @@ type Provider interface {
 	Session(c *inertia.Context) Session
 }
 
-// DBProvider is the db-service dependency, satisfied by *db.Service without
-// session importing the db package.
-type DBProvider interface {
-	DB() *sqldb.DB
-}
-
 // StoreKind selects the backing store.
 type StoreKind string
 
 const (
 	StoreMemory StoreKind = "memory" // default; development
-	StoreDB     StoreKind = "db"     // production; requires DBProvider
+	StoreDB     StoreKind = "db"     // production; requires a non-nil *sqldb.DB
 )
 
 // Config configures the session service.
@@ -56,15 +50,18 @@ type Config struct {
 
 // Service is the session infrastructure service.
 type Service struct {
-	cfg    *Config
-	store  Store
-	dbProv DBProvider
+	cfg   *Config
+	store Store
+	db    *sqldb.DB
 }
 
-// New constructs the session service. dbProv is required only when Store=db; the
-// store itself is resolved in Start (db needs its post-Start handle).
-func New(cfg *Config, dbProv DBProvider) *Service {
-	return &Service{cfg: cfg, dbProv: dbProv}
+// New constructs the session service. db is used only when Store=db and may be
+// nil otherwise — passing nil is how a db-less build falls back to the memory
+// store. It takes the handle rather than a provider interface so this package
+// depends on no other component; the caller passes the post-Start handle
+// (app.Services.DB), which is why the store is resolved in Start.
+func New(cfg *Config, db *sqldb.DB) *Service {
+	return &Service{cfg: cfg, db: db}
 }
 
 // Start resolves the store. For store=db the db service must Start first.
@@ -78,10 +75,10 @@ func (s *Service) Start(ctx context.Context) error {
 
 	switch s.cfg.Store {
 	case StoreDB:
-		if s.dbProv == nil {
-			return errors.New("session: store=db requires a db.Provider")
+		if s.db == nil {
+			return errors.New("session: store=db but no database handle (is the db component enabled and Started first?)")
 		}
-		store, err := NewDBStore(s.dbProv.DB(), s.cfg.DBTable)
+		store, err := NewDBStore(s.db, s.cfg.DBTable)
 		if err != nil {
 			return err
 		}

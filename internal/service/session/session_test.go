@@ -59,14 +59,20 @@ func TestStart_UnknownStore(t *testing.T) {
 	}
 }
 
-func TestStart_DBStoreWithoutProvider(t *testing.T) {
+// TestStart_DBStoreWithoutHandle covers store=db in a build with no database:
+// New takes the handle directly, so a nil one must fail loudly here rather than
+// panic on first use.
+func TestStart_DBStoreWithoutHandle(t *testing.T) {
 	s := New(&Config{Secret: "k", Store: StoreDB}, nil)
 	err := s.Start(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "requires a db.Provider") {
-		t.Fatalf("expected db.Provider-required error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no database handle") {
+		t.Fatalf("expected no-database-handle error, got %v", err)
 	}
 }
 
+// TestStart_MemoryDefault is the memory fallback the composition root relies on:
+// a nil handle plus no explicit store must yield a working memory store, which
+// is what makes this package usable without the db component.
 func TestStart_MemoryDefault(t *testing.T) {
 	// Empty store defaults to memory.
 	s := New(&Config{Secret: "k"}, nil)

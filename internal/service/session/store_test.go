@@ -7,7 +7,13 @@ import (
 	"time"
 
 	"github.com/dnsoa/go/sqldb"
+
+	//goappctl:db
+	// The DB-store tests below open a real SQLite connection, so they need the
+	// driver registered. Blank imports must stay inside a marker — goimports
+	// cannot drop them.
 	_ "github.com/millken/goapp-template/internal/driver"
+	//goappctl:end
 )
 
 // TestUpsertSQL_PlaceholderCount guards that every dialect's upsert has exactly
@@ -89,6 +95,8 @@ func TestMemoryStore_LoadUnknown(t *testing.T) {
 		t.Fatalf("expected not-found (ok=false, err=nil), got ok=%v err=%v", ok, err)
 	}
 }
+
+//goappctl:db
 
 // TestDBStore_Lifecycle exercises save/load/delete on the db store.
 func TestDBStore_Lifecycle(t *testing.T) {
@@ -224,3 +232,5 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+//goappctl:end

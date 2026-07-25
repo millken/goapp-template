@@ -39,13 +39,18 @@ func loginStack(t *testing.T) (*inertia.Engine, *Admin) {
 	}
 	t.Cleanup(func() { _ = dbSvc.Stop(ctx) })
 
-	sessSvc := session.New(&session.Config{Secret: "test-secret", Store: session.StoreMemory}, dbSvc)
+	// Assemble the container the way serve.go does: empty, then one field per
+	// component after its Start.
+	svc := app.NewServices(slog.Default())
+	svc.DB = dbSvc.DB()
+
+	sessSvc := session.New(&session.Config{Secret: "test-secret", Store: session.StoreMemory}, svc.DB)
 	if err := sessSvc.Start(ctx); err != nil {
 		t.Fatalf("start session: %v", err)
 	}
+	svc.Session = sessSvc
 	eng.Use(sessSvc.Middleware())
 
-	svc := app.NewServices(slog.Default(), dbSvc.DB(), sessSvc)
 	adm := New(svc, &Config{Mount: "/admin"})
 	if err := adm.Validate(); err != nil {
 		t.Fatalf("validate: %v", err)

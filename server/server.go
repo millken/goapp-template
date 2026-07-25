@@ -13,15 +13,21 @@ import (
 	"github.com/millken/inertia/ssr/quickjs"
 )
 
+//goappctl:ssr
+
 // ssrBundleName is the SSR bundle filename, shared between the dev config path
 // and the prod embed so the two cannot drift.
 const ssrBundleName = "ssr-render-cjs.js"
 
+//goappctl:end
+
 // modeName maps the internal mode to a human-readable string.
 func modeName(m inertia.Mode) string {
 	switch m {
+	//goappctl:ssr
 	case inertia.ModeSSR:
 		return "ssr"
+	//goappctl:end
 	case inertia.ModeDevelopment:
 		return "development"
 	default:
@@ -33,9 +39,11 @@ func modeName(m inertia.Mode) string {
 // mode name (for logging). Route registration is done by the caller.
 func New(cfg config.ServerConfig) (*inertia.Engine, string, error) {
 	mode := defaultMode
+	//goappctl:ssr
 	if cfg.SSR {
 		mode = inertia.ModeSSR
 	}
+	//goappctl:end
 
 	assetsFS, err := staticFS(cfg)
 	if err != nil {
@@ -59,6 +67,7 @@ func New(cfg config.ServerConfig) (*inertia.Engine, string, error) {
 		opts = append(opts, inertia.WithRootHTML(rootHTML(assetsFS)))
 	}
 
+	//goappctl:ssr
 	if mode == inertia.ModeSSR {
 		bundle, err := loadSSRBundle(cfg)
 		if err != nil {
@@ -73,6 +82,7 @@ func New(cfg config.ServerConfig) (*inertia.Engine, string, error) {
 		}
 		opts = append(opts, inertia.WithSSR(vm))
 	}
+	//goappctl:end
 
 	eng, err := inertia.New(opts...)
 	if err != nil {

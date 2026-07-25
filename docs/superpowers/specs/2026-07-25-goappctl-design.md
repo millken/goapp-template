@@ -230,7 +230,31 @@ the `gen` command registration in `commands/root.go`, and
 `TestExampleConfig_MarkersAreWellFormed` in `internal/config/example_test.go` — a test that asserts
 every component still has a marker block, i.e. exactly what `init` removes.
 
-### 5.4 Blank-line hygiene
+### 5.4 Markers cannot live inside string literals
+
+A marker is a comment, so it cannot appear inside a raw string — which matters because tests embed
+config as string literals. `internal/config/config_test.go` originally asserted `ssr: true` inside
+`TestLoad_ValidYAML`'s YAML literal; that key had to move to its own `TestLoad_SSRKeys` so the whole
+test could be one strippable block. Rule: **when a test's fixture text contains
+component-specific content, give that component its own test function** rather than trying to mark
+lines inside the literal.
+
+### 5.5 Marked content must be position-independent
+
+Anything whose correctness depends on its neighbours surviving will break when a block between them
+is stripped. Found and fixed in practice:
+
+- **Numbered step comments.** `serve.go`'s `// 1.` … `// 6.` became `1,2,3,4,6` in the minimal
+  combo, reading as if a step went missing. Use unnumbered descriptive comments.
+- **Section headers with no unconditional content.** `// 2. Infrastructure:` was left hanging over
+  nothing once both db and session were stripped. Fold such headers into the first block they
+  describe.
+- **ASCII-art trees.** In `README.md`, box-drawing trees break twice over: stripping the last child
+  leaves the previous sibling with `├──` where `└──` belongs, and stripping every child of a
+  directory leaves an empty parent. Fixed by writing the tree as flat paths with a uniform `├──`
+  (only the always-present last line uses `└──`).
+
+### 5.6 Blank-line hygiene
 
 Stripping a block leaves the blank lines that surrounded it, and `gofmt` does not collapse them
 (it tolerates a blank line before a closing brace). Verified on
@@ -266,7 +290,9 @@ This is the authoritative inventory — the prerequisite PRs in §7 add exactly 
 | `README.md` | db, session, admin, ssr, `tooling` | see §7.6 |
 | `frontend/package.json` | — | JSON edit, scripts only (§4a) |
 | `internal/config/example_test.go` | db, session, admin, ssr, `tooling` | per-section assertions; the template-only marker-hygiene test |
-| other test files (§7.5) | db, session | cross-component fixtures and blank driver imports |
+| `internal/config/config_test.go` | ssr | the SSR default assertions and `TestLoad_SSRKeys` (§5.4) |
+| `internal/app/services_test.go` | session | the `svc.Session == nil` assertion |
+| `internal/service/session/store_test.go` | db | the DB-store tests, their helpers, and the blank driver import |
 
 Deliberately *not* a marker site: `frontend/tsconfig.node.json`, whose `include` array lists
 `ssr-esm-render.ts` / `ssr/**/*` (plus two files that don't even exist today). TypeScript ignores
@@ -304,13 +330,13 @@ Shipped with two guards in `internal/config/example_test.go`, so the example can
 - `TestExampleConfig_MarkersAreWellFormed` — enforces §5.1 (no unclosed, nested, unknown or
   duplicate blocks) and requires all four components to be present. Wrapped in `tooling` (§5.3).
 
-### 7.2 Add the markers
+### 7.2 Add the markers — ✅ landed
 
 Add `//goappctl:<name>` … `//goappctl:end` blocks per the §6.2 inventory, and make composition
 **line-oriented**: one component per line/block in `serve.go` (no `db+session+admin` crammed onto
 one line), so whole-line stripping works. Wrap blank imports per §5.2.
 
-### 7.3 The linchpin: cross-component references go through `app.Services`
+### 7.3 The linchpin: cross-component references go through `app.Services` — ✅ landed
 
 **Cross-component references in shared files go ONLY through `app.Services` fields, never through
 another component's local variable or package.** This is what lets single-name markers work with
@@ -352,7 +378,7 @@ after construction), and `session.New` takes `*sqldb.DB` directly (nil-tolerant)
 
 The generator region name stays as-is; `init` never touches it.
 
-### 7.5 Make tests survive component removal
+### 7.5 Make tests survive component removal — ✅ landed
 
 `go test ./...` is part of verification (§4 step 9), so cross-component test files must be handled
 rather than ignored. Markers work in `_test.go` files at no extra cost, so prefer markers over
@@ -364,7 +390,7 @@ splitting files. Known cases:
 - `internal/controller/admin/*_test.go` — no action: they live in an admin-owned directory and
   admin's closure guarantees db+session.
 
-### 7.6 Marker `README.md` (and fix it first)
+### 7.6 Marker `README.md` (and fix it first) — ✅ landed
 
 Identity rewriting (§4 step 6) only swaps names inside `README.md` — it deletes nothing. Without
 markers, a generated project ships documentation for features it does not have: a whole section on
@@ -446,8 +472,17 @@ non-existent sibling checkouts** — runs `init`, and requires `go build ./...`,
    scattered (four Go files, two build tags) and this is the only combo that strips db+session
    while keeping ssr.
 
+Each combo additionally asserts that cgo dependencies track their component: `mattn/go-sqlite3`
+must be absent from the tidied `go.mod` when db is off, `buke/quickjs-go` when ssr is off.
+
 That's it — no 16-combo matrix, no boot smoke, no frontend build. Just enough to catch broken
 marker stripping and deletion lists.
+
+**Status:** all four combos already pass against the markered template, verified with a standalone
+simulator that implements steps 3/4/4a/5/7/8/9 (strip → delete → copy config → goimports → tidy →
+build/vet/test → go.mod dep assertions). It lives outside the repo for now; the goappctl.yml
+workflow replaces it once `cmd/goappctl` exists. Caveat: it must re-inject a workspace to get past
+the `RegistrationError` blocker in §11.
 
 ## 10. Internal package layout
 
@@ -466,6 +501,16 @@ Keep it flat; no interfaces until the 5th component forces the registry extracti
 
 ## 11. Open questions / risks
 
+- **BLOCKER — the template does not build from a clean clone.** `commands/serve.go` calls
+  `inertia.Engine.RegistrationError()`, which exists only in the local `../inertia` checkout
+  (commit `96a294a`, unreleased — newest tag is `v1.1.0`, which `go.mod` requires). So the repo
+  compiles only through the gitignored `go.work`; `git archive HEAD` + `go build ./...` fails with
+  `eng.RegistrationError undefined`. This predates goappctl but blocks it completely: §9's CI must
+  exclude `go.work` (step 7 deletes it), so *every* combo would fail for this reason alone, and any
+  user running `init` would get a project that cannot build. Fix before goappctl v1 — release
+  inertia with `RegistrationError`, or drop the call from the template until it ships. The 4-combo
+  verification described in §9 currently passes only with a workspace re-injected as a deliberate
+  workaround.
 - **Marker rot:** nothing enforces markers stay correct as the template evolves; the 4-combo CI is
   the only guard. Acceptable for v1 (a `lint-template` check is an explicit non-goal). The §7.3
   `svc.Session` rule is the specific thing most likely to rot.

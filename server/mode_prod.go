@@ -15,6 +15,8 @@ var defaultMode = inertia.ModeProduction
 //go:embed embedded/dist
 var embeddedDist embed.FS
 
+//goappctl:ssr
+
 func loadSSRBundle(_ config.ServerConfig) (string, error) {
 	data, err := embeddedDist.ReadFile("embedded/dist/" + ssrBundleName)
 	if err != nil {
@@ -22,6 +24,8 @@ func loadSSRBundle(_ config.ServerConfig) (string, error) {
 	}
 	return string(data), nil
 }
+
+//goappctl:end
 
 func staticFS(_ config.ServerConfig) (fs.FS, error) {
 	return fs.Sub(embeddedDist, "embedded/dist")
