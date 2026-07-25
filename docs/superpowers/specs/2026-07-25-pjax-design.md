@@ -62,8 +62,9 @@ it runs only from the client entry (`main.ts`), so the guard can go.
 
 ### 4.1 Navigation flow
 
-Every path funnels through one function, `visit(url, {method, body, history})`, where `history` is
-`'push' | 'replace' | 'none'`:
+Every path funnels through one function, `visit(url, {method, body, trigger})`, where `trigger` is
+`'link' | 'form' | 'popstate' | 'boot'`. The trigger says what happened; §4.2 turns it plus the
+response into a history operation. `visit` is never told which history call to make:
 
 ```
 click <a>  ─┐
@@ -88,24 +89,41 @@ popstate   ─┘                                        │
 
 ### 4.2 History semantics
 
-The existing code always calls `pushState`, which builds a wrong history stack. Per case:
+The existing code always calls `pushState`, which builds a wrong history stack.
 
-| Case | Action |
-|---|---|
-| Link click | `pushState` |
-| Form POST re-rendering the same URL (e.g. failed login) | `replaceState` — still on `/admin/login`; a second entry would be wrong |
-| Form POST → soft redirect to a new URL (successful login) | `pushState` the target, matching native POST+302 |
-| `popstate` (back/forward) | `'none'` — the entry already exists |
-| **`boot()`** | `replaceState` to seed the first entry |
+**The history mode is decided by the outcome, not by the caller.** An earlier draft had the caller
+pass a mode that a redirect then "inherited"; that cannot work. A form submit must pick its mode
+before the response exists, and neither choice survives both outcomes — `push` wrongly duplicates
+the URL on a failed login, `replace` wrongly swallows the entry on a successful one. So `visit()`
+takes *what triggered it* (`'link' | 'form' | 'popstate' | 'boot'`), and chooses the history
+operation once the response is classified:
 
-A `{redirect}` response triggers a nested `visit` of the target. It inherits the triggering visit's
-`history` mode, with one override: if the target URL equals the current URL, it degrades to
-`'replace'`. That single rule produces the right result for every case above — a link click to a
-protected page pushes the login URL, a failed login replaces itself, a successful login pushes the
-dashboard. A redirect chain is followed at most 5 times before falling back to a hard navigation, so
-a server-side redirect loop cannot hang the client.
+| Trigger | Outcome | Action |
+|---|---|---|
+| `boot` | initial page | `replaceState` — seeds the first entry |
+| `link` | rendered | `pushState` |
+| `link` | redirect to a different URL | `pushState` the target |
+| `link` | redirect to the same URL | `replaceState` |
+| `form` | rendered (failed login re-renders `/admin/login`) | `replaceState` — you submitted *from* this URL |
+| `form` | redirect to a different URL (successful login) | `pushState` the target, matching native POST+302 |
+| `form` | redirect to the same URL | `replaceState` |
+| `popstate` | rendered | none — the entry already exists |
+| `popstate` | redirect | `replaceState` the target |
 
-The last row fixes the broken back button: nothing in the codebase calls `replaceState` today, so
+The `popstate` + redirect row is not a detail: it is the one path §6.2 and §7's checklist depend on
+(back to `/admin/login` while logged in → server redirects to the dashboard). Writing nothing there
+would leave the URL at `/admin/login` showing the dashboard — exactly the URL/content mismatch that
+bug 4 is about. `replaceState` rather than `pushState` because the user pressed Back; they should
+not gain a forward entry for a page they never chose.
+
+Two invariants fall out, and both are worth asserting in tests: after any `visit` settles, the
+address bar equals the URL whose content is mounted; and no navigation ever leaves two consecutive
+identical entries.
+
+A redirect chain is followed at most 5 times before falling back to a hard navigation, so a
+server-side redirect loop cannot hang the client.
+
+The `boot` row fixes the broken back button: nothing in the codebase calls `replaceState` today, so
 the initial entry's `state` is `null` and `onPopState` returns on its first line. Back after a PJAX
 navigation silently reverts the URL while leaving the previous DOM mounted.
 
@@ -164,6 +182,20 @@ with JavaScript disabled or broken.
 5. **Safari history-state overflow** (§4.3).
 6. **Cache-busting hack.** The client appends `_t=Date.now()` because one URL serves both HTML and
    JSON. `Vary: X-Pjax` (§6.1) is the correct fix; the hack goes.
+7. **`Content-Type: application/json` on a GET.** `pjax-loader.ts` sets it on every request, but a
+   GET has no body, so the header describes something that does not exist. Harmless today — it is a
+   same-origin request, and same-origin requests are never preflighted — but it becomes a real
+   preflight trigger the moment anything goes cross-origin. The rewrite sends `Accept:
+   application/json` instead, which is what was actually meant. `X-Requested-With: XMLHttpRequest`
+   also goes: the server reads only `X-Pjax`, so it is noise.
+
+### 5.1 Request headers
+
+One spelling, stated once so implementers do not have to guess which one the server matches:
+**`X-Pjax: true`**. The existing client sends `X-PJAX` and the server compares against `X-Pjax`;
+both work, because HTTP header names are case-insensitive and Go canonicalizes `X-PJAX` to `X-Pjax`
+before comparison. The new modules use `X-Pjax` throughout for consistency with the server, and the
+server must keep matching case-insensitively (Go's `Header.Get` does this for free).
 
 ## 6. Server changes
 
@@ -205,7 +237,9 @@ embeds only `frontend/dist`. A build-output assertion pins this.
 | Module | Coverage |
 |---|---|
 | `intercept.ts` | Every row of the §4.4 table, especially modifier-clicks and `data-no-pjax` inheritance |
-| `navigate.ts` | Injected fake fetch: ok / not-ok / `{redirect}` / missing `_ViEW_` / abort; asserts which of push/replace/neither ran |
+| `navigate.ts` | Injected fake fetch: ok / not-ok / `{redirect}` / missing `_ViEW_` / abort / redirect loop hits the 5-hop cap |
+| `navigate.ts` history | **Every row of the §4.2 table**, since that table is where the first design was wrong. Table-driven over (trigger × outcome), asserting which of push/replace/neither ran and with what URL. `popstate` + redirect gets its own case: it must `replaceState` the target, never leave the URL behind |
+| invariants | After any settled `visit`: the address bar equals the mounted page's URL, and no two consecutive history entries are identical |
 | `scroll.ts` | Offset saved on leave, restored on popstate |
 | `progress.ts` | Hidden before 100ms, shown after, removed on completion and on error |
 
