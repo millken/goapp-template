@@ -97,6 +97,61 @@ func TestGeneratedImportsTargetModule(t *testing.T) {
 	}
 }
 
+// TestGeneratedWriteHandlersValidate covers both generators, because a write
+// handler that redirects without validating is the gap this exists to close. The
+// re-render must pass `item` back — that is what repopulates the inputs, and it
+// is why there is no `old` prop.
+func TestGeneratedWriteHandlersValidate(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		gen     func(string, Options) error
+		handler string
+		form    string
+	}{
+		{"resource", Resource, "internal/controller/post/handler.go", "frontend/pages/post/form.vue"},
+		{"admin", Admin, "internal/controller/adminpost/handler.go", "frontend/pages/admin/post/form.vue"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := c.gen("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+
+			handler, err := os.ReadFile(filepath.Join(root, c.handler))
+			if err != nil {
+				t.Fatalf("read %s: %v", c.handler, err)
+			}
+			for _, want := range []string{
+				`"` + testModule + `/internal/validate"`,
+				`validate.Required`,
+				// Create passes 0; Update passes the row's own id so the
+				// uniqueness rule skips it.
+				`ct.validateItem(ctx, item, 0)`,
+				`ct.validateItem(ctx, item, id)`,
+				`ct.renderForm(c, item, v.Errors())`,
+			} {
+				if !strings.Contains(string(handler), want) {
+					t.Errorf("%s missing %q:\n%s", c.handler, want, handler)
+				}
+			}
+
+			form, err := os.ReadFile(filepath.Join(root, c.form))
+			if err != nil {
+				t.Fatalf("read %s: %v", c.form, err)
+			}
+			for _, want := range []string{
+				`errors?: Record<string, string>`,
+				`errors?.name`,
+				`:value="item.name"`,
+			} {
+				if !strings.Contains(string(form), want) {
+					t.Errorf("%s missing %q:\n%s", c.form, want, form)
+				}
+			}
+		})
+	}
+}
+
 // TestGenerateRequiresModule: an empty module would silently emit `"/internal/app"`.
 func TestGenerateRequiresModule(t *testing.T) {
 	for name, gen := range map[string]func(string, Options) error{"resource": Resource, "admin": Admin} {

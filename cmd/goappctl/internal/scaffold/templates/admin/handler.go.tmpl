@@ -12,11 +12,14 @@
 package [[.Package]]
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"[[ .Module ]]/internal/app"
 	"[[ .Module ]]/internal/controller/admin"
+	"[[ .Module ]]/internal/validate"
 	"github.com/millken/inertia"
 )
 
@@ -56,19 +59,23 @@ func (ct *Controller) Index(c *inertia.Context) {
 
 // New renders the create form.
 func (ct *Controller) New(c *inertia.Context) {
-	c.Set("item", [[.Type]]{})
-	c.Set("basePath", ct.base)
-	if err := c.Render("admin/[[.ViewDir]]/form"); err != nil {
-		slog.Error("render admin [[.Package]] form", "err", err)
-	}
+	ct.renderForm(c, [[.Type]]{}, nil)
 }
 
 // Create stores a new [[.Type]].
 func (ct *Controller) Create(c *inertia.Context) {
-	item := [[.Type]]{}
-	// TODO: bind fields from the form and insert, e.g.:
-	//   _ = ct.DB.Table("[[.Table]]").Insert(&item)
-	_ = item
+	ctx := c.Request.Context()
+	item := [[.Type]]{
+		Name: c.PostForm("name"),
+		// TODO: bind the rest of your fields here.
+	}
+
+	if v := ct.validateItem(ctx, item, 0); !v.OK() {
+		ct.renderForm(c, item, v.Errors())
+		return
+	}
+
+	// TODO: _ = ct.DB.Table("[[.Table]]").Insert(&item)
 	ct.flash(c, "success", "[[.Type]] created")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
 }
@@ -78,17 +85,27 @@ func (ct *Controller) Edit(c *inertia.Context) {
 	id, _ := c.Params.GetInt64("id")
 	item := [[.Type]]{ID: id}
 	// TODO: load the row: _ = ct.DB.Table("[[.Table]]").Where("id","=",id).Limit(1).Scan(&item)
-	c.Set("item", item)
-	c.Set("basePath", ct.base)
-	if err := c.Render("admin/[[.ViewDir]]/form"); err != nil {
-		slog.Error("render admin [[.Package]] form", "err", err)
-	}
+	ct.renderForm(c, item, nil)
 }
 
 // Update modifies an existing [[.Type]].
 func (ct *Controller) Update(c *inertia.Context) {
+	ctx := c.Request.Context()
 	id, _ := c.Params.GetInt64("id")
-	_ = id
+	item := [[.Type]]{
+		ID:   id,
+		Name: c.PostForm("name"),
+		// TODO: bind the rest of your fields here.
+	}
+
+	// id is excluded from the uniqueness check so the row doesn't collide with
+	// its own current value.
+	if v := ct.validateItem(ctx, item, id); !v.OK() {
+		ct.renderForm(c, item, v.Errors())
+		return
+	}
+
+	// TODO: _ = ct.DB.Table("[[.Table]]").Where("id","=",id).Update(map[string]any{...})
 	ct.flash(c, "success", "[[.Type]] updated")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
 }
@@ -100,6 +117,60 @@ func (ct *Controller) Delete(c *inertia.Context) {
 	_ = id
 	ct.flash(c, "success", "[[.Type]] deleted")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
+}
+
+// validateItem checks one submitted [[.Type]]. exceptID is the row being
+// updated, or 0 when creating, so the uniqueness rule can ignore the row's own
+// value. Cheap rules come first: a failure short-circuits the field, so the
+// database is never queried for input that was blank or too long anyway.
+func (ct *Controller) validateItem(ctx context.Context, item [[.Type]], exceptID int64) *validate.Validator {
+	v := validate.New()
+	v.Field("name", item.Name, validate.Required, validate.MaxLen(200), ct.nameAvailable(ctx, exceptID))
+	// TODO: add a Field call per bound field.
+	return v
+}
+
+// nameAvailable rejects a name another row already uses. A failed query degrades
+// to a message on the form rather than a 500 — the user gets something
+// actionable, and the cause is in the log.
+func (ct *Controller) nameAvailable(ctx context.Context, exceptID int64) validate.Rule {
+	return func(name string) error {
+		taken, err := ct.nameTaken(ctx, name, exceptID)
+		if err != nil {
+			slog.Error("check [[.Table]] name", "err", err)
+			return errors.New("could not be verified, please try again")
+		}
+		if taken {
+			return errors.New("is already taken")
+		}
+		return nil
+	}
+}
+
+// nameTaken reports whether a row other than exceptID already uses name.
+func (ct *Controller) nameTaken(ctx context.Context, name string, exceptID int64) (bool, error) {
+	// TODO: count matching rows, e.g.
+	//	q := ct.DB.Table("[[.Table]]").Where("name", "=", name)
+	//	if exceptID != 0 {
+	//		q = q.Where("id", "!=", exceptID)
+	//	}
+	//	n, err := q.Count()
+	//	return n > 0, err
+	return false, nil
+}
+
+// renderForm renders the create/edit form. errs is nil on a first visit and
+// carries one message per bad field after a failed submit; item repopulates the
+// inputs, so what the user typed survives the re-render.
+func (ct *Controller) renderForm(c *inertia.Context, item [[.Type]], errs map[string]string) {
+	c.Set("item", item)
+	c.Set("basePath", ct.base)
+	if errs != nil {
+		c.Set("errors", errs)
+	}
+	if err := c.Render("admin/[[.ViewDir]]/form"); err != nil {
+		slog.Error("render admin [[.Package]] form", "err", err)
+	}
 }
 
 // flash stages a one-shot message for the page we are about to redirect to. The

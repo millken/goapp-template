@@ -40,6 +40,7 @@ Go + Vue 3 + Inertia.js 应用模板。
 <!--goappctl:session-->
 ├── internal/service/session/    # 签名 cookie + memory/db store
 <!--goappctl:end-->
+├── internal/validate/           # 表单校验（纯 stdlib，规则是 func(string) error）
 ├── internal/controller/         # HTTP 控制器（嵌入 *app.Services，无生命周期）
 ├── internal/controller/mount_gen.go  #   MountAll：非 admin 区域路由挂载（gen:mounts 区块）
 ├── internal/controller/site/    #   公开路由（/ 和 /api/health）
@@ -149,6 +150,14 @@ goappctl gen resource post -C ../other    # 指定项目根目录
   的 `gen:mounts` 区块（加 import + `post.Mount(eng, svc)`，按名排序）。重复执行不会产生重复项。
 - **admin resource 需手动一行** —— admin 区域挂在 [commands/serve.go](commands/serve.go) 里而非
   `gen:mounts` 区块，所以命令会把 `adminpost.Mount(eng, svc, adm)` 打印出来让你粘贴。
+
+校验：
+
+- 生成的 `Create` / `Update` 会先把表单绑进 `item`、跑 [internal/validate](internal/validate/validate.go)，
+  失败就用同一个 `item` 重渲染表单 —— 输入自动回填（表单本来就绑 `:value="item.name"`），
+  每个坏字段配一条 `errors` prop 消息。校验错误**不进 session**，所以无 session / 无 db 的构建里同样可用。
+- 唯一性这类要查库的规则是 handler 里的普通闭包（生成器给了 `nameAvailable` / `nameTaken` 桩子），
+  `internal/validate` 本身只依赖标准库。
 
 项目形态靠目录探测（没有 marker 文件）：module 路径读 `go.mod`；缺 `internal/controller/admin/` 时
 `gen admin` 直接报错；缺 `internal/service/db/` 时会警告 `svc.DB` 为 nil。

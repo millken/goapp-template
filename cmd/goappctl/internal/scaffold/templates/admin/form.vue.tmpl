@@ -6,6 +6,10 @@ interface MenuItem { title: string; path: string; order?: number }
 defineProps<{
   item: { id: number; name: string }
   basePath: string
+  // Set by the handler only when a submit failed validation: one message per
+  // bad field. `item` carries what was typed, so the inputs repopulate on their
+  // own — there is no separate `old` prop.
+  errors?: Record<string, string>
   // Injected by the admin auth middleware for the shell:
   adminMenu?: MenuItem[]
   adminUser?: unknown
@@ -32,7 +36,13 @@ defineProps<{
     >
       <div>
         <label class="block text-sm font-medium text-gray-700">Name</label>
-        <input name="name" :value="item.name" class="mt-1 block w-full border rounded px-2 py-1" />
+        <input
+          name="name"
+          :value="item.name"
+          class="mt-1 block w-full border rounded px-2 py-1"
+          :class="errors?.name ? 'border-red-500' : 'border-gray-300'"
+        />
+        <p v-if="errors?.name" class="mt-1 text-sm text-red-600">{{ errors.name }}</p>
       </div>
       <div class="flex space-x-2">
         <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white rounded">Save</button>
