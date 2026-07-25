@@ -40,3 +40,32 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+
+  # The frontend had no CI at all, which is why `pnpm type-check` could stay
+  # broken unnoticed. It is also the guard against `make update-npm`
+  # (pnpm update --latest) pulling in a TypeScript that vue-tsc cannot drive.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # --frozen-lockfile fails if package.json and the lockfile disagree.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm type-check
+
+      - name: Build
+        run: pnpm build

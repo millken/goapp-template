@@ -1,6 +1,9 @@
 {
   "include": ["vite.config.*", "ssr-esm-render.ts", "ssr/**/*", "scripts/**/*"],
   "compilerOptions": {
+    // Keep the incremental cache out of the working tree; tsconfig.app.json
+    // does the same. Without it, `vue-tsc --build` drops a .tsbuildinfo here.
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
