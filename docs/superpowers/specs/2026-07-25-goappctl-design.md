@@ -1,66 +1,156 @@
 # goappctl — v1 Design Spec
 
-Date: 2026-07-25 · Status: Draft — pending user review · Scope: deliberately small
+Date: 2026-07-25 · Status: Draft (rev 2, post-review) · Scope: deliberately small
+
+> **rev 2 changes** (from reviewing the spec against the actual tree): `config.yaml` is
+> gitignored and untracked, so a tracked `config.example.yaml` is introduced (§4 step 5, §7.1);
+> `internal/app/services.go` and `server/server.go` are added as marker sites and the §7.3
+> linchpin rule is narrowed to say why `svc.DB` and `svc.Session` differ; blank imports need
+> markers because goimports cannot drop them (§5); the app *name* is separated from the module
+> path (§4 step 6); `go.work` / `docs/` / tooling command registration are added to the delete
+> list; verification is `build + vet + test` over 4 combos (§9); package.json dependency editing
+> is dropped entirely (§4 step 4).
 
 ## 1. Goal & Summary
 
-`goappctl` is a small CLI that turns a fresh clone of `goapp-template` into a project: `goappctl init` trims the current directory down to the selected components (db, session, admin, ssr) and rewrites the module path; `goappctl gen` scaffolds new resources into an existing project (absorbing the current `internal/scaffold`). It is an **in-place transform** on the cwd — no embedded template, no registry, no config files. v1 hardcodes four components and a dead-simple comment-marker convention; everything fancier is a non-goal.
+`goappctl` is a small CLI that turns a fresh clone of `goapp-template` into a project:
+`goappctl init` trims the current directory down to the selected components (db, session, admin,
+ssr) and rewrites the project identity; `goappctl gen` scaffolds new resources into an existing
+project (absorbing the current `internal/scaffold`). It is an **in-place transform** on the cwd —
+no embedded template, no registry, no config files. v1 hardcodes four components and a
+dead-simple comment-marker convention; everything fancier is a non-goal.
 
 ## 2. Non-goals (v1)
 
 Explicitly out of scope — do not build:
 
-- Component manifest / registry (hardcode the four components; see §6 extensibility note)
+- Component manifest / registry (hardcode the four components; see §6.3 extensibility note)
 - `when=` expression DSL, `&&` / `!` conditions on markers
 - `uncomment` / alternate-code blocks (nil-tolerant APIs make them unnecessary, §4 step 4)
 - `lint-template` command, presets file, `.goappctl.yaml` project marker
 - `goappctl create <name>` (fresh-repo generator via embed — possible later thin wrapper over init)
 - `goappctl upgrade` / drift-protection tooling
-- Full compile matrix, boot smoke tests, frontend build in CI (§9 covers what we do run)
+- Full 16-combo compile matrix, boot smoke tests, frontend build in CI (§9 covers what we do run)
 
 ## 3. Model: in-place transform, tool in-repo
 
-- goappctl lives **in this repo** at `cmd/goappctl` (not a separate repo). Installable via
-  `go install github.com/millken/goapp-template/cmd/goappctl@latest`.
-- It operates on the **current directory**, which is expected to be a clone of the template:
+- goappctl lives **in this repo** at `cmd/goappctl` (not a separate repo).
+- It operates on the **current directory**, which is expected to be a clone of the template.
+- **Primary invocation is `go run ./cmd/goappctl`** — the tool and the template it transforms are
+  then guaranteed to be the same revision, which removes version skew by construction:
 
 ```
 git clone <goapp-template> myapp && cd myapp
-goappctl init --module github.com/me/myapp --with db,session,admin,ssr
-# then optionally: rm -rf .git && git init
+go run ./cmd/goappctl init --module github.com/me/myapp --with db,session,admin,ssr
 ```
 
-- Because the template *is* the cwd, there is **no embed, vendoring, sync, or drift**: the tool version and template version travel together in one repo. This is the whole reason the model stays trivial.
-- Project detection (for `gen`): `go.mod` present + expected directories (`internal/controller/`, etc.). No marker file.
+- `go install github.com/millken/goapp-template/cmd/goappctl@latest` also works and is documented
+  as the secondary path, with the caveat in §11.
+- Because the template *is* the cwd, there is **no embed, vendoring, sync, or drift**: the tool
+  version and template version travel together in one repo. This is the whole reason the model
+  stays trivial.
+- Project detection (for `gen`): `go.mod` present + expected directories (`internal/controller/`,
+  etc.). No marker file.
+
+### 3.1 Guardrails (init is destructive and in-place)
+
+`init` deletes and rewrites files in the cwd with no backup, so it refuses to run unless:
+
+1. `go.mod` exists and its module path is exactly `github.com/millken/goapp-template`. This is
+   also the idempotency guard — after a successful init the module path has changed, so a second
+   `init` fails loudly instead of half-transforming an already-transformed tree.
+2. The git worktree is clean, or `--force` is passed (allows non-repo directories too).
+
+`--dry-run` prints the full plan (files to delete, marker blocks to strip, identity replacements)
+and exits without touching anything.
 
 ## 4. `goappctl init`
 
 ```
-goappctl init --module <path> [--with db,session,admin,ssr] [--no-samples] [--git-reinit]
+goappctl init --module <path> [--name <app>] [--with db,session,admin,ssr]
+              [--dry-run] [--force] [--git-reinit]
 ```
 
-If `--with` is omitted, show an interactive checklist built from the hardcoded component list. `--no-samples` strips the sample pages/resource.
+If `--with` is omitted, show an interactive checklist built from the hardcoded component list.
+`--name` defaults to the last segment of `--module` (see step 6).
 
 Pipeline (all steps operate on cwd, in order):
 
-1. **Parse selection.** Validate `--with` names against the hardcoded list; apply dependency auto-closure: `admin ⇒ session + db` (inform the user when closure adds components).
-2. **Delete owned files.** For each *unselected* component, remove its owned dirs/files (see table §6), e.g. `internal/service/db/`, `internal/controller/admin/`, `commands/admin_user.go`, `frontend/pages/admin/`, SSR build files.
-3. **Strip marker blocks.** In the ~5 shared files, delete every `//goappctl:<name>` … `//goappctl:end` block whose name is unselected; for selected names, just remove the marker lines. `frontend/package.json` is edited as JSON (remove keyed deps/scripts) since JSON has no comments.
-4. **(Nothing.)** No alternate blocks ever get inserted — component constructors are nil-tolerant (e.g. `session.New(cfg, nil)` = memory store), which is *why* step 3 needs no conditionals. This is a template property (§7), not an init step, but the pipeline relies on it.
-5. **Rewrite identity.** Global replace `github.com/millken/goapp-template` → `--module`; put project name (last module segment) into `package.json`, `README.md`, `config.yaml` header.
-6. **Remove tooling.** Delete `cmd/goappctl/`, `internal/scaffold/`, `commands/gen.go`. Generated projects ship no generator.
-7. **Clean up.** Run `goimports`, `gofmt`, `go mod tidy`. This is what makes markers cheap: dangling imports and unused go.mod deps are removed automatically, so **no import-block or go.mod markers exist**.
-8. **Verify.** `go build ./...`; fail loudly if broken. Then optionally `rm -rf .git && git init` (`--git-reinit`).
+1. **Check guardrails.** §3.1. On `--dry-run`, compute every subsequent step's plan and print it
+   instead of applying.
+2. **Parse selection.** Validate `--with` names against the hardcoded list; apply dependency
+   auto-closure: `admin ⇒ session + db` (inform the user when closure adds components).
+3. **Delete owned files.** For each *unselected* component, remove its owned dirs/files (§6.1).
+   Missing paths are tolerated (no error); every deletion is logged.
+4. **Strip marker blocks.** In the marker sites listed in §6.2, delete every
+   `//goappctl:<name>` … `//goappctl:end` block whose name is unselected; for selected names,
+   remove only the marker lines. Blocks named `tooling` are *always* deleted (§5.3).
+   `frontend/package.json` is edited as JSON since JSON has no comments — **scripts only, never
+   dependencies** (§4a).
+5. **Materialize config.** Copy the marker-stripped `config.example.yaml` to `config.yaml` (skip
+   if `config.yaml` already exists). `config.example.yaml` stays in the project as the tracked
+   sample; `config.yaml` remains gitignored. Without this step a generated project has no config
+   file at all, because the template's `config.yaml` is untracked.
+6. **Rewrite identity.** Two independent dimensions:
+   - *Module path*: global replace `github.com/millken/goapp-template` → `--module` across
+     `*.go`, `go.mod`, `Makefile`, `*.md`, `.vscode/*.json`.
+   - *App name*: replace the app name `myapp` / env prefix `MYAPP` → `--name` / `upper(--name)` in
+     `internal/buildinfo/buildinfo.go` (`AppName`, which derives the `MYAPP_HOME` env var — see
+     `commands/paths.go`), `Makefile` (`BINARY`), `.vscode/launch.json` (`MYAPP_HOME`, two
+     occurrences), `commands/paths_test.go`, and `frontend/package.json` (`name`).
+   These are separate because the binary name is not necessarily the module's last segment; the
+   default just makes it so.
+7. **Remove template-only files.** Delete:
+   - Tooling: `cmd/goappctl/`, `internal/scaffold/`, `commands/gen.go` (the `newGenCmd()`
+     registration in `commands/root.go` is removed by the `tooling` marker in step 4).
+   - Workspace: `go.work`, `go.work.sum` — they point at local sibling checkouts
+     (`../../dnsoa/go/sqldb`, `../inertia`) and would break any build outside the author's machine.
+   - Template docs: `docs/` (the template's own design specs are not the user's).
+   - Template CI: `.github/workflows/goappctl.yml` (§9). `ci.yml` is kept — it is a reasonable
+     starting CI for the generated project.
+   - Local dev leftovers if present: `app.db`, `bin/`.
+   Generated projects ship no generator.
+8. **Clean up.** Run `goimports` (as a library, §11) then `go mod tidy`. This is what makes
+   markers cheap: *ordinary* dangling imports and unused go.mod deps are removed automatically —
+   see §5.2 for the blank-import exception, which markers must cover explicitly.
+9. **Verify.** `go build ./...`, `go vet ./...`, `go test ./...` — all three; fail loudly if any
+   breaks. `go build` alone does not compile `_test.go` files or build-tagged files, so it would
+   ship a project whose `make test` is broken (§7.5) and whose prod path is unchecked (§11).
+   Then optionally `rm -rf .git && git init` (`--git-reinit`).
+
+### 4a. `frontend/package.json`: scripts only
+
+Removing SSR does **not** remove any dependency: the only SSR-specific things in package.json are
+the `build:ssr` script and the `run-s` fan-out in `build`. Every dependency (`vue`, `vite`,
+`@vitejs/plugin-vue`, `npm-run-all2`, …) is needed by the client build regardless.
+
+So init's only package.json edit when ssr is off is:
+
+```
+"build": "run-s build:client build:ssr"   →   "build": "vite build"
+"build:ssr": …                            →   removed
+"build:client": …                         →   removed (folded into build)
+```
+
+**Dependencies are never touched.** This deliberately avoids invalidating `pnpm-lock.yaml`
+(`pnpm install --frozen-lockfile` would fail against a lockfile that still lists a removed dep),
+and it shrinks the JSON-formatting-churn risk to a two-key edit. An unused `npm-run-all2` in a
+non-SSR project is a harmless wart, and the right kind of wart to accept in v1.
 
 ## 5. Marker convention
 
-Single-name whole-line comment markers. No expressions, no nesting semantics beyond "delete or unwrap the block".
+Single-name whole-line comment markers. No expressions, no nesting semantics beyond "delete or
+unwrap the block".
 
 ```
 //goappctl:<component>
 ... lines owned by <component> ...
 //goappctl:end
 ```
+
+Go and TS files use `//goappctl:<name>`; YAML uses `#goappctl:<name>`. `frontend/package.json` is
+not markered (§4a). The existing `// gen:mounts:begin/end` region in `mount_gen.go` keeps its
+current name (used by `gen`, not `init`).
 
 Go (`commands/serve.go`):
 
@@ -71,7 +161,7 @@ svc.Session = sess
 //goappctl:end
 ```
 
-YAML (`config.yaml`):
+YAML (`config.example.yaml`):
 
 ```yaml
 #goappctl:db
@@ -81,34 +171,163 @@ db:
 #goappctl:end
 ```
 
-TS files use `//goappctl:<name>`. `frontend/package.json` is not markered — init edits it as JSON. The existing `// gen:mounts:begin/end` region in `mount_gen.go` keeps its current name (used by `gen`, not `init`).
+### 5.1 Strictness rules
+
+The parser is strict, because silent misbehaviour here only surfaces as a compile error much later
+(step 9) or, worse, as wrong code that compiles:
+
+- An unclosed marker block is a **hard error** naming the file and line — never "strip to EOF".
+- Nesting is **not allowed**; an opening marker inside an open block is a hard error.
+- An **unknown component name** is a hard error (not a silent no-op). It means the tool and the
+  template disagree, and failing at step 4 with a clear message beats failing at step 9 with a
+  compile error.
+- A `//goappctl:end` with no open block is a hard error.
+
+### 5.2 Blank imports must be inside marker blocks
+
+`goimports` removes *unused* imports, but a blank import (`_ "…"`) is never "unused" — it is
+removed by nobody. `commands/serve.go` has exactly this case:
+
+```go
+//goappctl:db
+_ "github.com/millken/goapp-template/internal/driver"
+//goappctl:end
+```
+
+Without the marker, stripping db deletes `internal/driver/` while `serve.go` still imports it, and
+the build fails. So the claim "no import-block markers exist" holds only for ordinary imports:
+**every blank import of a component-owned package must be wrapped in a marker block.** Current
+occurrences: `commands/serve.go:19`, and any `_ "…/internal/driver"` in test files (§7.5).
+
+### 5.3 Reserved name: `tooling`
+
+`tooling` is a reserved pseudo-component that is **always** stripped — it marks the template's own
+generator wiring, which no generated project keeps. Its only current use is the `gen` command
+registration in `commands/root.go`:
+
+```go
+//goappctl:tooling
+root.AddCommand(newGenCmd())
+//goappctl:end
+```
+
+It is not selectable via `--with` and does not appear in the interactive checklist.
 
 ## 6. Components (hardcoded)
 
-| Component | Deps | Owned files/dirs (deleted when off) | Shared-file marker spots |
-|---|---|---|---|
-| `db` | — | `internal/service/db/`, `internal/driver/` | `serve.go`, `config.go` (`DB *db.Config`), `config.yaml` |
-| `session` | — | `internal/service/session/` | `serve.go`, `config.go`, `config.yaml` |
-| `admin` | session, db | `internal/controller/admin/`, `commands/admin_user.go`, `frontend/pages/admin/` | `serve.go` (admin.New/Validate/Mount), `root.go` (admin_user cmd reg, if any), `config.go`, `config.yaml`, `mount_gen.go` region |
-| `ssr` | — | `frontend/ssr-*.ts`, `frontend/vite.config.ssr.ts`, SSR mode files in `server/` | `serve.go`/`server` wiring, `frontend/package.json` (JSON edit: SSR scripts + deps) |
+### 6.1 Owned files/dirs (deleted when the component is off)
 
-Samples (`--no-samples`): sample site pages/resource under `internal/controller/site/` extras and `frontend/pages/` — home + health always stay.
+| Component | Deps | Owned paths |
+|---|---|---|
+| `db` | — | `internal/service/db/`, `internal/driver/` |
+| `session` | — | `internal/service/session/` |
+| `admin` | session, db | `internal/controller/admin/`, `commands/admin_user.go`, `frontend/pages/admin/`, `frontend/src/components/AdminLayout.vue` |
+| `ssr` | — | `frontend/ssr/`, `frontend/ssr-esm-render.ts`, `frontend/vite.config.ssr.ts` |
 
-**Extensibility plan:** when a 5th component lands (grpc/restful/buf), extract a small in-code registry (`[]Component{Name, Deps, OwnedPaths}`) from the hardcoded switch — *then*, not now.
+### 6.2 Marker sites (shared files that survive with blocks stripped)
+
+This is the authoritative inventory — the prerequisite PRs in §7 add exactly these markers.
+
+| File | Marked names | What the blocks cover |
+|---|---|---|
+| `commands/serve.go` | db, session, admin | infra construct/Start/Stop, `svc.*` assignment, `eng.Use(session middleware)`, `admin.New/Validate/Mount`; **blank driver import** (§5.2) |
+| `commands/root.go` | admin, `tooling` | `newAdminCmd()` registration; `newGenCmd()` registration |
+| `internal/app/services.go` | session | the `Session *session.Service` field + its import (§7.3 — *not* `DB`) |
+| `internal/config/config.go` | db, session, admin, ssr | `Config.DB/.Session/.Admin` fields + imports; `ServerConfig.SSR` / `.SSRBundlePath`; the SSR entries in `defaults()` |
+| `server/server.go` | ssr | `inertia/ssr` + `ssr/quickjs` imports, `ssrBundleName` const, `cfg.SSR`→`ModeSSR` branch, the `quickjs.NewVM` block, the `ModeSSR` arm of `modeName` |
+| `server/mode_dev.go` | ssr | `loadSSRBundle` (build tag `!prod`) |
+| `server/mode_prod.go` | ssr | `loadSSRBundle` (build tag `prod`) |
+| `config.example.yaml` | db, session, admin, ssr | the config sections |
+| `frontend/package.json` | — | JSON edit, scripts only (§4a) |
+| test files (§7.5) | db, session | cross-component fixtures and blank driver imports |
+
+Deliberately *not* a marker site: `frontend/tsconfig.node.json`, whose `include` array lists
+`ssr-esm-render.ts` / `ssr/**/*` (plus two files that don't even exist today). TypeScript ignores
+`include` entries that match nothing, so stale SSR entries are harmless — not worth a JSON edit.
+
+`ssr` is the messiest component by a wide margin — four Go files, two of them behind opposing
+build tags. Budget accordingly; it is the one most likely to need a second pass.
+
+### 6.3 Notes
+
+- **Samples:** there is currently nothing to strip. `internal/controller/site/site.go` contains
+  only Home + Health (both always kept) and `frontend/pages/` contains only `Home.vue` plus the
+  admin pages (owned by `admin`). A `--no-samples` flag would be a no-op, so **v1 has no
+  `--no-samples` flag**. Reintroduce it if and when the template grows real sample resources.
+- **Extensibility plan:** when a 5th component lands (grpc/restful/buf), extract a small in-code
+  registry (`[]Component{Name, Deps, OwnedPaths, MarkerSites}`) from the hardcoded switch —
+  *then*, not now.
 
 ## 7. Prerequisite template changes (land before goappctl v1)
 
-Small PRs against the template itself:
+Small PRs against the template itself, in this order.
 
-1. Add `//goappctl:<name>` … `//goappctl:end` markers around each optional component's wiring in the shared files: `commands/serve.go`, `commands/root.go`, `internal/config/config.go`, `config.yaml`, and (SSR script/dep grouping only) `frontend/package.json`.
-2. Make composition **line-oriented**: one component per line/block in `serve.go` (no `db+session+admin` crammed on one line), so whole-line marker stripping works.
-3. **The linchpin — cross-component references go ONLY through `app.Services` fields (always-present, nil-able), never through another component's variable/package in a shared file.** This is what lets single-name markers work with zero alternate blocks. Concretely:
-   - `serve.go` builds `svc := app.NewServices(log)` unconditionally, then each component's block *assigns into* svc: the `db` block does `svc.DB = dbSvc.DB()`, the `session` block does `svc.Session = session.New(cfg.Session, svc.DB)`. Because `svc.DB` is a plain field that is simply `nil` when the db block was stripped, the session line compiles and falls back to the memory store — no `dbSvc` reference escapes the db block.
-   - Requires two small API changes: `session.New` takes `*sqldb.DB` directly (nil-tolerant) instead of the `db.Provider` interface, so it does **not** import the db component; and `Services.DB *sqldb.DB` stays a core field even when db is off (so `sqldb`, a third-party lib, remains a core go.mod dep regardless — the one accepted wart).
-   - `admin` still legitimately requires db+session, so its block may freely use `svc.DB`/`svc.Session`; it is never kept without them (dependency closure guarantees it).
-4. Keep `gen:mounts:begin/end` marker name unchanged.
+### 7.1 Add `config.example.yaml` (blocking — do this first)
 
-> If this Services-mediated rule ever proves too constraining for a future component, the fallback is to re-introduce a *single, narrow* alternate-block form for that one seam — but v1 needs none.
+`config.yaml` is listed in `.gitignore` and is **not tracked**, so a fresh clone does not contain
+it. Add a tracked `config.example.yaml` carrying the full annotated config with `#goappctl:<name>`
+markers; keep `config.yaml` gitignored. `config.Load` already tolerates a missing file, so this is
+additive and breaks nothing. This unblocks §4 step 5 and the `config.example.yaml` row of §6.2.
+
+### 7.2 Add the markers
+
+Add `//goappctl:<name>` … `//goappctl:end` blocks per the §6.2 inventory, and make composition
+**line-oriented**: one component per line/block in `serve.go` (no `db+session+admin` crammed onto
+one line), so whole-line stripping works. Wrap blank imports per §5.2.
+
+### 7.3 The linchpin: cross-component references go through `app.Services`
+
+**Cross-component references in shared files go ONLY through `app.Services` fields, never through
+another component's local variable or package.** This is what lets single-name markers work with
+zero alternate blocks. Concretely, `serve.go` becomes:
+
+```go
+svc := app.NewServices(log)          // unconditional; no component args
+//goappctl:db
+dbSvc := db.New(cfg.DB); …Start…
+svc.DB = dbSvc.DB()
+//goappctl:end
+//goappctl:session
+svc.Session = session.New(cfg.Session, svc.DB)   // svc.DB may be nil → memory store
+//goappctl:end
+```
+
+Required API changes: `NewServices(log)` drops its `db`/`sess` parameters (fields are assigned
+after construction), and `session.New` takes `*sqldb.DB` directly (nil-tolerant) instead of the
+`db.Provider` interface, so the session package does **not** import the db component.
+
+**`DB` and `Session` are not symmetric — this is the one subtlety in the whole design:**
+
+- `Services.DB *sqldb.DB` **stays a core field, always**. `sqldb` is a third-party library, so the
+  field's type survives even when the db component is deleted; `svc.DB` is simply `nil`. The cost
+  is that `sqldb` remains a core go.mod dependency regardless — the one accepted wart.
+- `Services.Session *session.Service` **cannot** be core, because its type comes from
+  `internal/service/session/`, a package that init *deletes*. So `services.go` is itself a marker
+  site (§6.2), and it follows that:
+
+  > **Rule: core (non-component) code must never reference `svc.Session`.** Only the `session` and
+  > `admin` blocks/packages may. Today only `internal/controller/admin/` does (`auth.go:18`,
+  > `handlers.go:39`, `handlers.go:49`), and admin's dependency closure guarantees session is
+  > present. Adding a `svc.Session` reference to `internal/controller/site/` or any other core file
+  > silently breaks the minimal combo — combo 2 in §9 is the guard.
+
+`admin` legitimately requires db+session, so its blocks may freely use `svc.DB` / `svc.Session`.
+
+### 7.4 Keep `gen:mounts:begin/end` unchanged
+
+The generator region name stays as-is; `init` never touches it.
+
+### 7.5 Make tests survive component removal
+
+`go test ./...` is part of verification (§4 step 9), so cross-component test files must be handled
+rather than ignored. Markers work in `_test.go` files at no extra cost, so prefer markers over
+splitting files. Known cases:
+
+- `internal/app/services_test.go` — imports both session and db; needs db/session marker blocks.
+- `internal/service/session/store_test.go` — imports `internal/driver` (blank) to exercise the DB
+  store; wrap the DB-store cases and that import in a `db` block (§5.2).
+- `internal/controller/admin/*_test.go` — no action: they live in an admin-owned directory and
+  admin's closure guarantees db+session.
 
 ## 8. `goappctl gen`
 
@@ -116,21 +335,37 @@ Small PRs against the template itself:
 goappctl gen resource <Name> [--admin] [--no-mount]
 ```
 
-- Reuses the existing `internal/scaffold` code, moved into `cmd/goappctl` (templates keep `[[ ]]` delimiters).
+- Reuses the existing `internal/scaffold` code, moved into `cmd/goappctl` (templates keep
+  `[[ ]]` delimiters).
 - Detects module path from `go.mod`; detects project shape by directory presence (no marker file).
-- Emits: controller embedding `*app.Services` + `Mount(...)`, model, Vue pages into `internal/controller/<pkg>/` and `frontend/pages/<pkg>/`.
-- Auto-edits the `gen:mounts` region in `internal/controller/mount_gen.go`; idempotent (re-running doesn't duplicate — the router's `ErrDuplicateRoute` / `Engine.RegistrationError()` is the runtime backstop). `--no-mount` skips the edit.
+- Emits: controller embedding `*app.Services` + `Mount(...)`, model, Vue pages into
+  `internal/controller/<pkg>/` and `frontend/pages/<pkg>/`.
+- Auto-edits the `gen:mounts` region in `internal/controller/mount_gen.go`; idempotent (re-running
+  doesn't duplicate — the router's `ErrDuplicateRoute` / `Engine.RegistrationError()` is the
+  runtime backstop). `--no-mount` skips the edit.
 - `--admin` targets the admin area; errors clearly if `internal/controller/admin/` is absent.
+- **db-less projects:** the scaffolder writes migrations to `internal/service/db/migrations/`,
+  which does not exist when db was stripped. If that directory is absent, skip migration emission
+  with a visible warning (the generated handler compiles fine — its `ct.DB` usages are commented
+  TODOs), and note in the warning that `svc.DB` is nil at runtime.
 
 ## 9. Correctness (v1)
 
-goappctl's CI runs `init` on **three combos** in temp copies of the repo and requires `go build ./...` to pass on each:
+A dedicated workflow `.github/workflows/goappctl.yml` (deleted from generated projects, §4 step 7)
+copies the repo into a temp dir — **excluding `go.work*`, which would otherwise point the copy at
+non-existent sibling checkouts** — runs `init`, and requires `go build ./...`, `go vet ./...` and
+`go test ./...` to pass, for **four** combos:
 
-1. All-on: `--with db,session,admin,ssr`
-2. Minimal: core only (no components)
-3. Middle: `--with db,session,admin`
+1. **All-on** — `--with db,session,admin,ssr`
+2. **Minimal** — core only (no components). The combo most likely to expose a missed marker, and
+   the guard for the §7.3 `svc.Session` rule.
+3. **Middle** — `--with db,session,admin` (no ssr)
+4. **SSR-only** — `--with ssr`. Deliberately included because ssr's marker sites are the most
+   scattered (four Go files, two build tags) and this is the only combo that strips db+session
+   while keeping ssr.
 
-That's it — no 8-combo matrix, no boot smoke, no frontend build. Just enough to catch broken marker stripping and deletion lists.
+That's it — no 16-combo matrix, no boot smoke, no frontend build. Just enough to catch broken
+marker stripping and deletion lists.
 
 ## 10. Internal package layout
 
@@ -138,9 +373,10 @@ That's it — no 8-combo matrix, no boot smoke, no frontend build. Just enough t
 cmd/goappctl/
   main.go            # cobra root: init, gen, version
   internal/
-    initcmd/         # pipeline steps 1–8 (selection, delete, strip, rewrite, tidy, verify)
-    markers/         # find/strip //goappctl:<name> blocks (Go//YAML#/TS//), + JSON edit for package.json
-    components/      # the hardcoded four: names, deps, owned paths, marker names
+    initcmd/         # pipeline steps 1–9 (guardrails, selection, delete, strip, config,
+                     # identity, remove, tidy, verify)
+    markers/         # find/strip //goappctl:<name> blocks (Go//YAML#/TS//), + JSON edit
+    components/      # the hardcoded four: names, deps, owned paths, marker sites
     scaffold/        # moved from internal/scaffold (gen)
 ```
 
@@ -148,8 +384,30 @@ Keep it flat; no interfaces until the 5th component forces the registry extracti
 
 ## 11. Open questions / risks
 
-- **Marker rot:** nothing enforces markers stay correct as the template evolves; the 3-combo CI is the only guard. Acceptable for v1 (a `lint-template` check is an explicit non-goal).
-- **package.json JSON edit:** must preserve formatting well enough not to churn diffs — use a key-removal edit, not full re-marshal, or accept re-marshal + document it.
-- **Interactive checklist dependency UX:** when the user picks admin, auto-check db/session in the UI vs. closure-after-confirm — implementer's choice, just be visible about it.
-- **cgo/SSR on user machines:** stripping ssr must leave a pure-Go build; verify combo 2/3 builds without QuickJS toolchain in CI.
-- **`go install @latest` skew:** a user may run a newer goappctl against an older clone. v1 answer: markers are additive and stripping unknown names is a no-op; document "use matching versions" and move on.
+- **Marker rot:** nothing enforces markers stay correct as the template evolves; the 4-combo CI is
+  the only guard. Acceptable for v1 (a `lint-template` check is an explicit non-goal). The §7.3
+  `svc.Session` rule is the specific thing most likely to rot.
+- **The prod/SSR path is never verified.** `server/mode_prod.go` is behind `//go:build prod`, so
+  `go build ./...` skips it, and `go build -tags prod ./...` needs `server/embedded/dist` — a
+  gitignored directory that only exists after a frontend build. Since §2 rules out frontend builds
+  in CI, **SSR breakage in the prod build path can ship**. Mitigation for v1: keep the ssr markers
+  in `mode_prod.go` byte-identical in shape to `mode_dev.go` so they rot together, and accept the
+  gap explicitly. Revisit if it bites.
+- **`goimports` availability:** shelling out to a `goimports` binary would fail on most user
+  machines. Import `golang.org/x/tools/imports` as a library instead. This costs nothing in the
+  generated project: `cmd/goappctl` is in the *same module*, so step 7 deletes it and step 8's
+  `go mod tidy` drops `x/tools` from the generated `go.mod` automatically. The step order
+  (remove-then-tidy) is load-bearing for this.
+- **`go mod tidy` needs network** on first run if the module cache is cold. Acceptable; surface the
+  error clearly rather than papering over it.
+- **package.json JSON edit:** even the scripts-only edit must preserve formatting well enough not
+  to churn diffs — use a key-level edit, not a full re-marshal.
+- **Interactive checklist dependency UX:** when the user picks admin, auto-check db/session in the
+  UI vs. closure-after-confirm — implementer's choice, just be visible about it.
+- **cgo after stripping:** db-off must drop `mattn/go-sqlite3` and ssr-off must drop
+  `buke/quickjs-go` (both cgo) via tidy, leaving a pure-Go build. Combo 2 in §9 is the check —
+  assert on the tidied `go.mod`, not just on a successful build.
+- **`go install @latest` skew:** a user may run a newer goappctl against an older clone. v1 answer:
+  document `go run ./cmd/goappctl` as the primary path (§3), which makes skew structurally
+  impossible; for the `@latest` path, §5.1's hard error on unknown component names turns skew into
+  an immediate, legible failure instead of a mysterious build break.
