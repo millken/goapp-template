@@ -211,6 +211,41 @@ func TestMiddleware_NoCookieWhenSessionUntouched(t *testing.T) {
 	}
 }
 
+// TestMiddleware_SessionIsNotAProp guards the boundary between request-scoped
+// state and page props. inertia's Context.data is both the middleware scratchpad
+// and the props bag Render serializes wholesale, so anything parked there ships
+// to the browser. The session must not: it marshals to {} only because its
+// fields happen to be unexported, and one exported field would leak session
+// contents into every rendered page.
+func TestMiddleware_SessionIsNotAProp(t *testing.T) {
+	eng := newTestEngine(t)
+	svc := installed(t, eng, &Config{Secret: "k", Store: StoreMemory})
+
+	var props map[string]any
+	var reachable bool
+	eng.GET("/", func(c *inertia.Context) {
+		s := svc.Session(c) // must still be reachable by handlers
+		s.Set("user", "alice")
+		reachable = true
+		props = c.Data()
+	})
+	eng.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if !reachable {
+		t.Fatal("handler could not reach the session")
+	}
+	for key, value := range props {
+		if _, isSession := value.(*session); isSession {
+			t.Errorf("session leaked into the page props under key %q", key)
+		}
+	}
+	// "session" is what the old c.Set key produced; assert on the literal so the
+	// test keeps meaning even if the storage mechanism changes again.
+	if _, present := props["session"]; present {
+		t.Error(`props contain "session"; request-scoped state belongs off the props bag`)
+	}
+}
+
 // TestMiddleware_TamperedCookieRejected ensures a tampered cookie yields a fresh
 // empty session.
 func TestMiddleware_TamperedCookieRejected(t *testing.T) {

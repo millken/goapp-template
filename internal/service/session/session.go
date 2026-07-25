@@ -1,9 +1,9 @@
 // Package session is the request-scoped session infrastructure service.
 //
-// Middleware loads (or creates) a session per request and stores it on the
-// inertia.Context; serve.go installs it globally. The session ID travels in a
-// signed cookie (HMAC-SHA256); the data lives in a pluggable Store (memory for
-// development, db for production). It implements app.Lifecycle.
+// Middleware loads (or creates) a session per request and puts it on the
+// request's context.Context; serve.go installs it globally. The session ID
+// travels in a signed cookie (HMAC-SHA256); the data lives in a pluggable Store
+// (memory for development, db for production). It implements app.Lifecycle.
 package session
 
 import (
@@ -19,8 +19,13 @@ import (
 	"github.com/millken/inertia"
 )
 
-// contextKey is the inertia.Context key holding the active Session for a request.
-const contextKey = "session"
+// sessionCtxKey is the request-context key holding the active Session.
+//
+// The session rides on the request's context.Context rather than on the
+// inertia.Context (c.Set) because that map is not scratch space: Render
+// serializes it wholesale as the page props, so anything parked there is shipped
+// to the browser. Props are for the page; request-scoped state is not.
+type sessionCtxKey struct{}
 
 // Provider exposes the per-request session; consumers depend on this interface.
 type Provider interface {
@@ -102,7 +107,7 @@ func (s *Service) Middleware() inertia.HandlerFunc {
 	return func(c *inertia.Context) {
 		sess := s.loadOrCreate(c.Request.Context(), c.Request)
 		sess.w = c.Writer
-		c.Set(contextKey, sess)
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), sessionCtxKey{}, sess))
 
 		// Consume any staged flash before the handler runs: the removal has to be
 		// persisted or the message repeats forever, and saving here lands the
@@ -141,13 +146,9 @@ func (s *Service) loadOrCreate(ctx context.Context, r *http.Request) *session {
 // Session returns the active session for the request, panicking if the
 // middleware did not run for it.
 func (s *Service) Session(c *inertia.Context) Session {
-	v, ok := c.Get(contextKey)
+	sess, ok := c.Request.Context().Value(sessionCtxKey{}).(*session)
 	if !ok {
 		panic("session: Session() called but middleware did not run for this request")
-	}
-	sess, ok := v.(*session)
-	if !ok {
-		panic("session: stored session has unexpected type")
 	}
 	return sess
 }

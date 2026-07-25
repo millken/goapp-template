@@ -274,10 +274,29 @@ because no shipped handler flashes — only generated ones do.
 So the middleware's `c.Set("flash", …)` does reach the rendered props, and delivery is read-once
 against a real server — the two claims the unit tests approximate through `c.Get`.
 
-Unrelated observation, recorded rather than fixed: that payload also contains `"session": {}`. The
-middleware stores the session under the context key `session`, and every `c.Set` value becomes a
-prop, so the session object is serialized on every render. It marshals to `{}` today because all its
-fields are unexported, but an exported field would leak straight into the page. Out of scope here.
+### 10.1 The session prop leak this uncovered (fixed)
+
+That first payload also contained `"session": {}`. Root cause: inertia's `Context.data` is both the
+middleware scratchpad (`Set`/`Get`) and the props bag, which `Render` serializes wholesale —
+`c.JSON(c.data)` under PJAX, `jsonMarshal(c.data, true)` into `data-page` otherwise. The middleware
+stored the live session there under the key `session`, so it shipped to the browser on every render.
+It marshaled to `{}` only because every field of `session` is unexported: the leak was structural and
+its harmlessness accidental — one exported field would have put session contents in the page.
+
+Fixed by moving the session to the request's `context.Context`, keyed by an unexported
+`sessionCtxKey{}`, which is where request-scoped non-presentational state belongs in Go. `Session(c)`
+reads it back from `c.Request.Context()`. Props now carry only what the page renders.
+
+Rejected alternatives: deleting the key before each render (every render path would have to remember,
+and forgetting is silent); teaching inertia to skip reserved key prefixes (`_ViEW_` is deliberately a
+prop, so a `_` rule contradicts itself, and it would put the template back on an unreleased library
+change).
+
+Re-verified live on the fixed code: `GET /` and `GET /admin/login` payloads contain only their real
+props, and the authenticated dashboard payload delivers `flash` once with no `session` key.
+
+`internal/service/session/session_test.go` grows `TestMiddleware_SessionIsNotAProp`, which fails if
+anything in the props bag is a `*session` or sits under the key `session`.
 
 ## 11. Files touched
 
@@ -285,8 +304,9 @@ fields are unexported, but an exported field would leak straight into the page. 
 |---|---|
 | `internal/service/session/flash.go` | New: `flashPrefix`, `Flash`, `takeFlash` |
 | `internal/service/session/store.go` | `Session` interface gains `Flash(kind, message string)` |
-| `internal/service/session/session.go` | `Middleware()` gains read-clear-persist |
+| `internal/service/session/session.go` | `Middleware()` gains read-clear-persist; session moves to the request context (§10.1) |
 | `internal/service/session/flash_test.go` | New |
+| `internal/service/session/session_test.go` | `TestMiddleware_SessionIsNotAProp` (§10.1) |
 | `frontend/src/components/AdminLayout.vue` | `flash` prop, `flashClass`, render block |
 | `frontend/pages/admin/dashboard.vue` | Declare and pass `flash` |
 | `cmd/goappctl/internal/scaffold/templates/admin/handler.go.tmpl` | `flash` helper + 3 calls |
