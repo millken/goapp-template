@@ -7,8 +7,18 @@ import (
 	"github.com/millken/inertia"
 )
 
-// LoginForm renders the public login page.
+// LoginForm renders the public login page, or bounces an already-authenticated
+// visitor to the dashboard — arriving here with a live session (back button,
+// typed URL, stale bookmark) should not offer a second sign-in.
 func (a *Admin) LoginForm(c *inertia.Context) {
+	sess := a.Session.Session(c)
+	if v, ok := sess.Get(a.authKey()); ok && v != nil && v != "" {
+		if err := c.Redirect(a.mount()); err != nil {
+			slog.Error("admin login: redirect to dashboard", "err", err)
+		}
+		return
+	}
+
 	c.Set("loginPath", a.LoginPath())
 	if err := c.Render("admin/login"); err != nil {
 		slog.Error("render admin login", "err", err)
@@ -41,7 +51,9 @@ func (a *Admin) LoginSubmit(c *inertia.Context) {
 	if _, err := sess.Save(c.Request.Context()); err != nil {
 		slog.Error("admin login: save session", "err", err)
 	}
-	redirectTo(c, a.mount())
+	if err := c.Redirect(a.mount()); err != nil {
+		slog.Error("admin login: redirect to dashboard", "err", err)
+	}
 }
 
 // Logout destroys the session and redirects to login.
@@ -50,7 +62,9 @@ func (a *Admin) Logout(c *inertia.Context) {
 	if err := sess.Destroy(c.Request.Context()); err != nil {
 		slog.Error("admin logout", "err", err)
 	}
-	redirectTo(c, a.LoginPath())
+	if err := c.Redirect(a.LoginPath()); err != nil {
+		slog.Error("admin logout: redirect to login", "err", err)
+	}
 }
 
 // Dashboard renders the admin home (adminMenu/adminUser are injected by the auth middleware).

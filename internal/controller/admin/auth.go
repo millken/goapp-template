@@ -1,7 +1,7 @@
 package admin
 
 import (
-	"net/http"
+	"log/slog"
 
 	"github.com/millken/inertia"
 )
@@ -24,16 +24,11 @@ func (a *Admin) AuthMiddleware() inertia.HandlerFunc {
 			c.Next()
 			return
 		}
-		// Not authenticated: redirect to login.
-		redirectTo(c, login)
+		// Not authenticated: redirect to login. Under PJAX this becomes a
+		// {redirect} payload rather than a 302 — see inertia's Context.Redirect.
+		if err := c.Redirect(login); err != nil {
+			slog.Error("admin auth: redirect to login", "err", err)
+		}
 		c.Abort()
 	}
-}
-
-// redirectTo writes a 302 to location. A minimal body is written because
-// inertia's write-through ResponseWriter flushes the header on first Write.
-func redirectTo(c *inertia.Context, location string) {
-	c.Writer.Header().Set("Location", location)
-	c.Status(http.StatusFound)
-	_, _ = c.Writer.Write([]byte("redirecting..."))
 }

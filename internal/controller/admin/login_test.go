@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -164,5 +165,89 @@ func TestLogout_ClearsCookie(t *testing.T) {
 	}
 	if !cleared {
 		t.Fatal("expected the session cookie to be cleared on logout")
+	}
+}
+
+// loginAndGetCookie signs in as the seeded user and returns the session cookie.
+func loginAndGetCookie(t *testing.T, eng *inertia.Engine) *http.Cookie {
+	t.Helper()
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, postForm("/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}}))
+	cookies := w.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatalf("login did not set a session cookie (status %d)", w.Code)
+	}
+	return &http.Cookie{Name: cookies[0].Name, Value: cookies[0].Value}
+}
+
+// TestLoginForm_RedirectsWhenAlreadyAuthenticated: after signing in, going back
+// to the login page — by the back button or by typing the URL — should land on
+// the dashboard rather than offering a second sign-in.
+func TestLoginForm_RedirectsWhenAlreadyAuthenticated(t *testing.T) {
+	eng, _ := loginStack(t)
+	cookie := loginAndGetCookie(t, eng)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302 for an authenticated visit to the login page", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/admin" {
+		t.Fatalf("Location = %q, want /admin", loc)
+	}
+}
+
+func TestLoginForm_RendersWhenNotAuthenticated(t *testing.T) {
+	eng, _ := loginStack(t)
+
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/login", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: an anonymous visitor must get the form", w.Code)
+	}
+}
+
+// TestRedirects_UnderPJAX: every admin redirect must become a payload when the
+// client is doing a PJAX navigation, or the client would follow the 3xx
+// transparently and end up showing one page while the address bar names another.
+func TestRedirects_UnderPJAX(t *testing.T) {
+	cases := []struct {
+		name         string
+		authenticate bool
+		path         string
+		wantRedirect string
+	}{
+		{"guarded route while anonymous", false, "/admin/probe", "/admin/login"},
+		{"login page while signed in", true, "/admin/login", "/admin"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			eng, adm := loginStack(t)
+			eng.GET("/admin/probe", adm.AuthMiddleware(), func(c *inertia.Context) {})
+
+			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			if tc.authenticate {
+				r.AddCookie(loginAndGetCookie(t, eng))
+			}
+			r.Header.Set("X-Pjax", "true")
+
+			w := httptest.NewRecorder()
+			eng.ServeHTTP(w, r)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: a PJAX redirect is a payload", w.Code)
+			}
+			var body map[string]any
+			if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+				t.Fatalf("decode body: %v (raw: %q)", err, w.Body.String())
+			}
+			if got := body["redirect"]; got != tc.wantRedirect {
+				t.Errorf(`body["redirect"] = %v, want %q`, got, tc.wantRedirect)
+			}
+		})
 	}
 }
