@@ -1,10 +1,7 @@
-// Package db is an infrastructure service providing database access and
-// migrations via github.com/dnsoa/go/sqldb.
-//
-// It implements app.Lifecycle: Start opens the connection pool, pings it, and
-// runs migrations when configured; Stop closes the pool. It registers no routes
-// and imports no app kernel — serve.go drives Start/Stop explicitly and hands
-// the opened *sqldb.DB to app.Services.
+// Package db is the database infrastructure service (connection pool +
+// migrations via github.com/dnsoa/go/sqldb). It implements app.Lifecycle:
+// Start opens/pings/migrates, Stop closes. It imports no app kernel — serve.go
+// drives Start/Stop and hands the opened *sqldb.DB to app.Services.
 package db
 
 import (
@@ -19,24 +16,19 @@ import (
 )
 
 // migrationFS holds the migration SQL files bundled with this package. The FS
-// comes from the package (not from yaml, which cannot carry an fs.FS), so
-// configuring a `migrations:` section can never silently no-op due to a nil FS.
+// comes from the package, not yaml (which cannot carry an fs.FS).
 //
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
-// Provider exposes the database handle. Consumers depend on this interface
-// (accept interfaces), not on the concrete *Service. DB() is only valid after
-// Start; calling it before Start panics with a clear message (preferable to a
-// nil dereference deep inside a handler).
+// Provider exposes the database handle. DB() panics if called before Start
+// (preferable to a nil dereference inside a handler).
 type Provider interface {
 	DB() *sqldb.DB
 }
 
-// Config configures the db service. It is a pointer in New so that Start can
-// enforce the enable-consistency rule: a service that is constructed and Started
-// must have its config section present; a nil cfg yields a clear error rather
-// than a silent skip.
+// Config configures the db service. A pointer in New lets Start distinguish
+// "enabled but misconfigured" (nil) from "not enabled" (never Started).
 type Config struct {
 	Driver          string        `yaml:"driver"` // "sqlite3" / "mysql" / "pgx" …
 	DSN             string        `yaml:"dsn"`
@@ -44,14 +36,14 @@ type Config struct {
 	MaxIdleConns    int           `yaml:"max_idle"`
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
 	Debug           bool          `yaml:"debug"`
-	Migrations      *Migrations   `yaml:"migrations"` // presence of this section enables migrations
+	Migrations      *Migrations   `yaml:"migrations"` // presence enables migrations
 }
 
-// Migrations holds the yaml-expressible migration options. The fs.FS is NOT
-// here — it cannot come from yaml; it is the package-level migrationFS.
+// Migrations holds the yaml-expressible migration options; the fs.FS is the
+// package-level migrationFS.
 type Migrations struct {
-	Table   string `yaml:"table"`   // default "migrations" (sqldb default, not schema_migrations)
-	Service string `yaml:"service"` // default "default"; isolates histories when services share a DB
+	Table   string `yaml:"table"`   // default "migrations"
+	Service string `yaml:"service"` // isolates histories when services share a DB
 }
 
 // Service is the db infrastructure service.
@@ -60,13 +52,11 @@ type Service struct {
 	db  *sqldb.DB
 }
 
-// New constructs the db service. cfg is a pointer so Start can distinguish
-// "enabled but misconfigured" (nil → error) from "not enabled" (never Started).
+// New constructs the db service.
 func New(cfg *Config) *Service { return &Service{cfg: cfg} }
 
 // Start opens the pool, pings it, applies pool settings, and runs migrations if
-// configured. On any failure it closes the pool it opened and returns the error
-// (so it is never left half-initialised).
+// configured. On failure it closes the pool it opened.
 func (s *Service) Start(ctx context.Context) error {
 	if s.cfg == nil {
 		return errors.New("db: service enabled but [db] config section missing")
@@ -122,9 +112,7 @@ func (s *Service) migrate(ctx context.Context, mg *Migrations) error {
 	return nil
 }
 
-// DB returns the database handle. It panics if called before Start (the value
-// is meaningless and a nil dereference inside a handler would be far harder to
-// diagnose).
+// DB returns the handle, panicking if called before Start.
 func (s *Service) DB() *sqldb.DB {
 	if s.db == nil {
 		panic("db: DB() called before Start")
@@ -132,7 +120,7 @@ func (s *Service) DB() *sqldb.DB {
 	return s.db
 }
 
-// Stop closes the pool. Safe to call when Start never set the handle.
+// Stop closes the pool; safe to call if Start never set the handle.
 func (s *Service) Stop(context.Context) error {
 	if s.db != nil {
 		return s.db.Close()

@@ -15,10 +15,8 @@ func homeEnvVar() string {
 	return strings.ToUpper(buildinfo.AppName) + "_HOME"
 }
 
-// resolveHome computes the app home directory from the environment.
-// Priority: $MYAPP_HOME env var → ~/.<AppName>
+// resolveHome computes the app home directory: $MYAPP_HOME → ~/.<AppName>.
 func resolveHome() (string, error) {
-	// Allow overriding the entire home dir via env var (e.g. MYAPP_HOME).
 	if p := os.Getenv(homeEnvVar()); p != "" {
 		return p, nil
 	}
@@ -31,10 +29,8 @@ func resolveHome() (string, error) {
 
 var homeOnce = sync.OnceValues(resolveHome)
 
-// Home returns the app home directory.
-// Priority: $MYAPP_HOME env var → ~/.myapp
-// Returns an error if the home directory cannot be determined, so callers
-// can fail loudly instead of silently operating on the filesystem root.
+// Home returns the app home directory ($MYAPP_HOME → ~/.myapp), erroring if it
+// cannot be determined rather than silently operating on the filesystem root.
 func Home() (string, error) {
 	return homeOnce()
 }

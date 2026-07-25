@@ -28,8 +28,8 @@ func TestHashAndVerifyPassword(t *testing.T) {
 	}
 }
 
-// newUsersDB opens an in-memory SQLite DB with a users table and one seeded user
-// (alice / password "pw").
+// newUsersDB opens an in-memory SQLite DB with a users table and one seeded
+// user (alice / "pw").
 func newUsersDB(t *testing.T) *sqldb.DB {
 	t.Helper()
 	d, err := sqldb.Open("sqlite3", ":memory:")

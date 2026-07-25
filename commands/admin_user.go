@@ -14,12 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// tableNameRe mirrors the admin module's validation so the interpolated table
-// name is a safe identifier.
+// tableNameRe mirrors the admin module's validation: the table name is
+// interpolated into SQL, so it must be a safe identifier.
 var tableNameRe = regexp.MustCompile(`^[A-Za-z_]\w*$`)
 
 // newAdminCmd builds the `goapp admin` command tree (admin utilities that need
-// config + DB, so — unlike gen — they run through AppInit).
+// config + DB, so they run through AppInit).
 func newAdminCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "admin",
@@ -40,7 +40,7 @@ func newAdminCreateUserCmd() *cobra.Command {
 			username := args[0]
 
 			if password == "" {
-				// Read one line from stdin. For non-interactive use, pipe it:
+				// Read one line from stdin (pipe it for non-interactive use):
 				//   echo "s3cret" | goapp admin create-user alice
 				fmt.Fprint(os.Stderr, "Password: ")
 				line, _ := bufio.NewReader(os.Stdin).ReadString('\n')

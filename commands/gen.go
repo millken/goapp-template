@@ -7,9 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newGenCmd builds the `goapp gen` command tree. gen is a development-time
-// scaffolder, so its PersistentPreRunE returns nil to skip AppInit (no config
-// load, no DB connection) — the generators only write files.
+// newGenCmd builds the `goapp gen` command tree. gen is a dev-time scaffolder,
+// so its PersistentPreRunE skips AppInit (the generators only write files).
 func newGenCmd() *cobra.Command {
 	var force bool
 

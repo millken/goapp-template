@@ -19,8 +19,8 @@ func newTestEngine(t *testing.T) *inertia.Engine {
 	return eng
 }
 
-// installed builds a Started service and installs its middleware on eng, the way
-// serve.go wires it (eng.Use(svc.Middleware())).
+// installed builds a Started service and installs its middleware on eng, as
+// serve.go does.
 func installed(t *testing.T, eng *inertia.Engine, cfg *Config) *Service {
 	t.Helper()
 	svc := New(cfg, nil)
@@ -79,18 +79,16 @@ func TestStart_MemoryDefault(t *testing.T) {
 }
 
 // TestService_SatisfiesProvider asserts *Service implements Provider. The
-// app.Lifecycle assertion lives with the composition root (commands), not here:
-// app imports session, so an internal test importing app would be a cycle.
+// Lifecycle assertion lives in commands (app imports session, so importing app
+// here would be a cycle).
 func TestService_SatisfiesProvider(t *testing.T) {
 	var _ Provider = (*Service)(nil)
 }
 
-// TestMiddleware_AutoWritesCookieOnSave is the regression test for the HIGH bug
-// where the session cookie never reached the response. The handler calls Save
-// and THEN writes a body (the normal case: render a page / return JSON) —
-// inertia's writer is write-through, so the cookie must be emitted by Save
-// before the body flushes, not after the handler returns. A follow-up request
-// with that cookie must load the saved values.
+// TestMiddleware_AutoWritesCookieOnSave is the regression for the cookie never
+// reaching the response. The handler Saves then writes a body — the writer is
+// write-through, so Save must emit the cookie before the body flushes, and a
+// follow-up with that cookie must load the saved values.
 func TestMiddleware_AutoWritesCookieOnSave(t *testing.T) {
 	eng := newTestEngine(t)
 	svc := installed(t, eng, &Config{Secret: "test-secret", Store: StoreMemory})
@@ -138,9 +136,8 @@ func TestMiddleware_AutoWritesCookieOnSave(t *testing.T) {
 	}
 }
 
-// TestMiddleware_ClearsCookieOnDestroy verifies Destroy causes the middleware to
-// clear the cookie, and that a follow-up request with the stale cookie does not
-// resurrect the destroyed session.
+// TestMiddleware_ClearsCookieOnDestroy verifies Destroy clears the cookie and a
+// follow-up with the stale cookie does not resurrect the session.
 func TestMiddleware_ClearsCookieOnDestroy(t *testing.T) {
 	eng := newTestEngine(t)
 	svc := installed(t, eng, &Config{Secret: "test-secret", Store: StoreMemory})
@@ -192,8 +189,8 @@ func TestMiddleware_ClearsCookieOnDestroy(t *testing.T) {
 	}
 }
 
-// TestMiddleware_NoCookieWhenSessionUntouched verifies the middleware does not
-// set a cookie when the handler never calls Save/Destroy (read-only access).
+// TestMiddleware_NoCookieWhenSessionUntouched verifies no cookie is set when the
+// handler never calls Save/Destroy.
 func TestMiddleware_NoCookieWhenSessionUntouched(t *testing.T) {
 	eng := newTestEngine(t)
 	svc := installed(t, eng, &Config{Secret: "k", Store: StoreMemory})
@@ -209,7 +206,7 @@ func TestMiddleware_NoCookieWhenSessionUntouched(t *testing.T) {
 }
 
 // TestMiddleware_TamperedCookieRejected ensures a tampered cookie yields a fresh
-// empty session rather than loading attacker-controlled data.
+// empty session.
 func TestMiddleware_TamperedCookieRejected(t *testing.T) {
 	eng := newTestEngine(t)
 	svc := installed(t, eng, &Config{Secret: "k", Store: StoreMemory})

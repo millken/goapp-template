@@ -9,10 +9,8 @@ import (
 )
 
 // TestResource_OutputCompiles generates a public resource into the real module
-// tree and compiles it. The generated Controller embeds the real *app.Services
-// and its Mount takes the real *inertia.Engine, so a successful build proves the
-// generated code wires against the real types (no provider-interface indirection
-// to get wrong).
+// tree and compiles it — a successful build proves the generated code wires
+// against the real *app.Services / *inertia.Engine types.
 func TestResource_OutputCompiles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skips go build in -short mode")
@@ -34,7 +32,7 @@ func TestResource_OutputCompiles(t *testing.T) {
 }
 
 // TestAdmin_OutputCompiles does the same for an admin resource, which also wires
-// against the real *admin.Admin (Prefix/AuthMiddleware/AddMenuItem).
+// against the real *admin.Admin.
 func TestAdmin_OutputCompiles(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skips go build in -short mode")
@@ -65,8 +63,7 @@ func goBuild(t *testing.T, dir, pattern string) {
 	}
 }
 
-// moduleRoot returns the directory containing go.mod, or skips the test if not
-// running inside a module.
+// moduleRoot returns the directory containing go.mod, or skips if not in a module.
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	out, err := exec.Command("go", "env", "GOMOD").Output()

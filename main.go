@@ -12,10 +12,8 @@ import (
 func main() {
 	root := commands.New()
 
-	// Single signal owner at this level: SIGINT + SIGTERM. The context is
-	// threaded through cobra into app.Serve, where it is consumed by Boot (so a
-	// slow startup is interruptible). eng.Serve owns HTTP-level signal handling
-	// internally; app.Serve builds a fresh timeout context for Shutdown.
+	// Own SIGINT + SIGTERM here; the context threads through cobra so a slow
+	// startup is interruptible. eng.Serve owns HTTP-level signal handling.
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	if err := root.ExecuteContext(ctx); err != nil {

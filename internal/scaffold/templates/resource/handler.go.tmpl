@@ -16,15 +16,14 @@ import (
 	"github.com/millken/inertia"
 )
 
-// Controller serves /[[.Route]]/*. It embeds *app.Services for typed access to
-// DB/Session/Log. A single instance is shared across requests (constructed in
-// Mount); it holds no per-request state.
+// Controller serves /[[.Route]]/* and embeds *app.Services. A single instance
+// is shared across requests; it holds no per-request state.
 type Controller struct {
 	*app.Services
 }
 
-// Mount registers the [[.Type]] routes on the engine. Route uniqueness is
-// enforced by inertia at registration time.
+// Mount registers the [[.Type]] routes. Route uniqueness is enforced at
+// registration time.
 func Mount(eng *inertia.Engine, svc *app.Services) {
 	ct := &Controller{svc}
 	eng.GET("/[[.Route]]", ct.Index)

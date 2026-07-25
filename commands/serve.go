@@ -14,9 +14,8 @@ import (
 	"github.com/millken/goapp-template/server"
 	"github.com/spf13/cobra"
 
-	// Register the database driver(s) used by the app. The blank import lives at
-	// the composition root so database/sql has the driver registered before any
-	// service Starts.
+	// Register the database driver(s) at the composition root so database/sql
+	// has them before any service Starts.
 	_ "github.com/millken/goapp-template/internal/driver"
 )
 
@@ -28,9 +27,7 @@ func newServeCmd() *cobra.Command {
 		Use:   "serve",
 		Short: "Start the HTTP server",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// appCfg is populated by AppInit (PersistentPreRunE). Env overrides
-			// (e.g. VITE_DEV_ADDR) are already applied there; this layer only
-			// handles flags.
+			// appCfg is populated by AppInit; this layer only applies flags.
 			cfg := appCfg
 			if addr != "" {
 				cfg.Server.Addr = addr
@@ -46,19 +43,15 @@ func newServeCmd() *cobra.Command {
 	return cmd
 }
 
-// runServe is the composition root for the serve command (the OpenCart-style
-// index.php): it Starts infrastructure in dependency order, builds the typed
-// service container, wires controllers onto the inertia engine, and serves.
-//
-// There is no Module abstraction: db/session are infrastructure services driven
-// explicitly here; controllers are plain handler methods wired by the generated
-// controller.MountAll (plus the admin area, wired separately because it needs
-// its own config). Stop runs in reverse order via defer.
+// runServe is the composition root: it Starts infrastructure in dependency
+// order, builds the service container, wires controllers onto the engine, and
+// serves. db/session are driven explicitly here; controllers are wired by the
+// generated controller.MountAll (plus the admin area, which needs its own
+// config). Stop runs in reverse order via defer.
 func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	log := slog.Default()
 
-	// 1. Infrastructure: construct + Start in dependency order (db before
-	//    session, which may use the db store).
+	// 1. Infrastructure: construct + Start in dependency order (db before session).
 	dbSvc := db.New(cfg.DB)
 	if err := dbSvc.Start(cmd.Context()); err != nil {
 		return fmt.Errorf("start db: %w", err)
@@ -71,7 +64,7 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	}
 	defer func() { _ = sessSvc.Stop(context.Background()) }()
 
-	// 2. Typed service container (built from Started infra; DB is non-nil).
+	// 2. Typed service container (built from Started infra).
 	svc := app.NewServices(log, dbSvc.DB(), sessSvc)
 
 	// 3. HTTP engine (inertia).
@@ -82,16 +75,16 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 
 	// 4. Global middleware + generated route wiring.
 	eng.Use(sessSvc.Middleware()) // session on every request
-	controller.MountAll(eng, svc) // generated non-admin controller areas
+	controller.MountAll(eng, svc) // generated non-admin areas
 
-	// 5. Admin area (needs its own config): validated, then wired with auth.
+	// 5. Admin area (needs its own config): validate, then mount with auth.
 	adm := admin.New(svc, cfg.Admin)
 	if err := adm.Validate(); err != nil {
 		return err
 	}
 	adm.Mount(eng)
 
-	// Surface any duplicate-route registration before binding a listener.
+	// Surface duplicate-route registration before binding a listener.
 	if err := eng.RegistrationError(); err != nil {
 		return fmt.Errorf("route registration: %w", err)
 	}

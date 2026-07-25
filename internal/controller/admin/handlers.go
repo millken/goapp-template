@@ -15,10 +15,10 @@ func (a *Admin) LoginForm(c *inertia.Context) {
 	}
 }
 
-// LoginSubmit authenticates username+password against the users table. On
-// success it sets the session auth key and redirects to the dashboard; on
-// failure it re-renders the login page with a generic error. The session cookie
-// is emitted by Save before the redirect body flushes (write-through writer).
+// LoginSubmit authenticates against the users table. On success it sets the
+// session auth key and redirects to the dashboard; on failure it re-renders
+// login with a generic error. Save emits the cookie before the redirect body
+// flushes (write-through writer).
 func (a *Admin) LoginSubmit(c *inertia.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
@@ -44,7 +44,7 @@ func (a *Admin) LoginSubmit(c *inertia.Context) {
 	redirectTo(c, a.mount())
 }
 
-// Logout destroys the session (clearing its cookie) and redirects to login.
+// Logout destroys the session and redirects to login.
 func (a *Admin) Logout(c *inertia.Context) {
 	sess := a.Session.Session(c)
 	if err := sess.Destroy(c.Request.Context()); err != nil {
@@ -53,8 +53,7 @@ func (a *Admin) Logout(c *inertia.Context) {
 	redirectTo(c, a.LoginPath())
 }
 
-// Dashboard renders the admin home. adminMenu/adminUser are already injected by
-// the auth middleware.
+// Dashboard renders the admin home (adminMenu/adminUser are injected by the auth middleware).
 func (a *Admin) Dashboard(c *inertia.Context) {
 	if err := c.Render("admin/dashboard"); err != nil {
 		slog.Error("render admin dashboard", "err", err)

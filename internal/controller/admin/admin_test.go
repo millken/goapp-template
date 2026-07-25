@@ -17,12 +17,11 @@ func newTestEngine(t *testing.T) *inertia.Engine {
 }
 
 func TestValidate(t *testing.T) {
-	// nil config → error (enable-consistency: a wired admin area must be
-	// configured). Services is not consulted by Validate, so nil is fine here.
+	// nil config → error (a wired admin area must be configured).
 	if err := New(nil, nil).Validate(); err == nil {
 		t.Error("nil [admin] config should error")
 	}
-	// illegal users-table identifier → error (it is interpolated into SQL).
+	// illegal users-table identifier → error (interpolated into SQL).
 	if err := New(nil, &Config{UsersTable: "bad table"}).Validate(); err == nil {
 		t.Error("illegal users table name should error")
 	}

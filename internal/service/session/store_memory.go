@@ -10,9 +10,8 @@ import (
 	"time"
 )
 
-// MemoryStore is an in-process session store. It is the development default
-// (zero dependencies) but loses all sessions on restart and does not share
-// state across instances — use the db store for production.
+// MemoryStore is an in-process session store: the development default, but
+// loses sessions on restart and does not share state across instances.
 type MemoryStore struct {
 	mu    sync.Mutex
 	sesss map[string]memorySession
@@ -72,9 +71,8 @@ func (s *MemoryStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-// randomID returns a fresh 32-byte hex-encoded random session ID. It returns an
-// error rather than a predictable fallback if the system CSPRNG fails — a
-// guessable session ID is worse than no session.
+// randomID returns a fresh 32-byte hex session ID. It errors rather than return
+// a predictable fallback if the CSPRNG fails — a guessable ID is worse than none.
 func randomID() (string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {

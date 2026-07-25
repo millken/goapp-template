@@ -2,23 +2,21 @@ package admin
 
 import "sort"
 
-// MenuItem is a navigation entry shown in the admin shell. Generated admin
-// resources register one via AddMenuItem so the dashboard/layout can link them.
+// MenuItem is a navigation entry; generated admin resources register one via
+// AddMenuItem.
 type MenuItem struct {
 	Title string `json:"title"`
 	Path  string `json:"path"`
 	Order int    `json:"order"` // ascending; ties broken by Title
 }
 
-// AddMenuItem registers a navigation entry. Contract: call during startup wiring
-// (before Serve). The menu slice is only read at request time via menuItems, so
-// no locking is needed under that contract.
+// AddMenuItem registers a navigation entry. Call only during startup wiring
+// (before Serve); the menu is read at request time, so no locking is needed.
 func (a *Admin) AddMenuItem(item MenuItem) {
 	a.menu = append(a.menu, item)
 }
 
-// menuItems returns a sorted copy of the registered menu, injected as a shared
-// prop on authenticated admin requests.
+// menuItems returns a sorted copy of the menu, injected as a shared prop.
 func (a *Admin) menuItems() []MenuItem {
 	out := make([]MenuItem, len(a.menu))
 	copy(out, a.menu)

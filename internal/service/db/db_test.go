@@ -11,8 +11,8 @@ import (
 	_ "github.com/millken/goapp-template/internal/driver"
 )
 
-// newTestService builds a Service against an in-memory SQLite database with
-// migrations enabled. Each :memory: DB is isolated, so tests don't share state.
+// newTestService builds a Service against an isolated in-memory SQLite DB with
+// migrations enabled.
 func newTestService(t *testing.T) *Service {
 	t.Helper()
 	return New(&Config{
@@ -25,8 +25,7 @@ func newTestService(t *testing.T) *Service {
 	})
 }
 
-// TestDB_BeforeStartPanics verifies DB() panics with a clear message before
-// Start, rather than nil-dereferencing inside a handler.
+// TestDB_BeforeStartPanics verifies DB() panics before Start.
 func TestDB_BeforeStartPanics(t *testing.T) {
 	s := newTestService(t)
 	defer func() {
@@ -37,9 +36,8 @@ func TestDB_BeforeStartPanics(t *testing.T) {
 	_ = s.DB()
 }
 
-// TestStart_OpensAndMigrates verifies Start opens the pool, pings it, runs the
-// embedded sample migration (creating app_meta), and that DB() then returns a
-// usable handle with the migration version recorded.
+// TestStart_OpensAndMigrates verifies Start runs the sample migration and DB()
+// returns a usable handle with the version recorded.
 func TestStart_OpensAndMigrates(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
@@ -49,7 +47,7 @@ func TestStart_OpensAndMigrates(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Stop(ctx) })
 
-	// The sample migration creates app_meta; verify it exists and is writable.
+	// The sample migration creates app_meta; verify it is writable.
 	db := s.DB()
 	if _, err := db.ExecContext(ctx, `INSERT INTO app_meta (key, value) VALUES ('k', 'v')`); err != nil {
 		t.Fatalf("insert into migrated table: %v", err)
@@ -72,8 +70,7 @@ func TestStart_OpensAndMigrates(t *testing.T) {
 	}
 }
 
-// TestStart_NilConfig verifies the enable-consistency rule: a Started service
-// with a missing config section fails loudly.
+// TestStart_NilConfig verifies a Started service with no config section fails.
 func TestStart_NilConfig(t *testing.T) {
 	s := New(nil)
 	err := s.Start(context.Background())
@@ -85,8 +82,7 @@ func TestStart_NilConfig(t *testing.T) {
 	}
 }
 
-// TestStart_BadDriver verifies open failures are reported and the service is
-// left uninitialised (DB() still panics, Stop is a no-op).
+// TestStart_BadDriver verifies open failure leaves the service uninitialised.
 func TestStart_BadDriver(t *testing.T) {
 	s := New(&Config{Driver: "no-such-driver", DSN: ""})
 	err := s.Start(context.Background())
@@ -102,10 +98,9 @@ func TestStart_BadDriver(t *testing.T) {
 	_ = s.DB()
 }
 
-// TestStart_BadDSN verifies ping failure cleans up the pool (no handle leaked)
-// and leaves the service uninitialised.
+// TestStart_BadDSN verifies ping failure cleans up the pool.
 func TestStart_BadDSN(t *testing.T) {
-	// A file path that cannot be created: directory doesn't exist.
+	// A path that cannot be created: directory doesn't exist.
 	s := New(&Config{Driver: "sqlite3", DSN: "/nonexistent-dir/that/cannot/be/created/db.sqlite"})
 	err := s.Start(context.Background())
 	if err == nil {
@@ -118,8 +113,8 @@ func TestStart_BadDSN(t *testing.T) {
 	}
 }
 
-// TestStop_ClosesPool verifies Stop closes the pool and is idempotent enough not
-// to panic (sql.DB.Close is safe to call repeatedly).
+// TestStop_ClosesPool verifies Stop closes the pool and does not panic when
+// called twice.
 func TestStop_ClosesPool(t *testing.T) {
 	s := newTestService(t)
 	if err := s.Start(context.Background()); err != nil {
@@ -133,8 +128,7 @@ func TestStop_ClosesPool(t *testing.T) {
 	_ = s.Stop(context.Background())
 }
 
-// TestService_SatisfiesInterfaces asserts *Service implements the app.Lifecycle
-// contract and the Provider contract.
+// TestService_SatisfiesInterfaces asserts *Service implements Lifecycle and Provider.
 func TestService_SatisfiesInterfaces(t *testing.T) {
 	var (
 		_ app.Lifecycle = (*Service)(nil)

@@ -7,15 +7,9 @@ import (
 	"errors"
 )
 
-// signedValue is a tamper-proof carrier for the session ID in a cookie. It
-// base64-encodes the ID and appends an HMAC-SHA256 tag over the encoded bytes,
-// so a client cannot forge or alter another session's ID without the secret.
-//
-// Layout: <base64(id)>.<base64(hmac)>
-//
-// This is intentionally minimal: the cookie carries only the (signed) session
-// ID; the session data lives in the Store. Encryption is not provided — the ID
-// is not secret, it only needs to be unforgeable.
+// The cookie carries only the signed session ID (data lives in the Store).
+// Layout: <base64(id)>.<base64(hmac)> — unforgeable without the secret, no
+// encryption (the ID is not secret).
 
 // signCookie returns the signed cookie value for the given session ID.
 func signCookie(secret, id string) string {
@@ -26,9 +20,8 @@ func signCookie(secret, id string) string {
 	return enc + "." + tag
 }
 
-// verifyCookie validates a signed cookie value produced by signCookie and
-// returns the session ID. It returns an error if the value is malformed or the
-// signature does not match (constant-time comparison).
+// verifyCookie validates a signed cookie value and returns the session ID. The
+// signature is compared in constant time.
 var errInvalidCookie = errors.New("session: invalid or tampered cookie")
 
 func verifyCookie(secret, raw string) (string, error) {

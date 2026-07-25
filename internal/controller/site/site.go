@@ -1,6 +1,5 @@
-// Package site holds the public non-CRUD routes (home, health) that don't fit
-// the generated resource convention. Its Mount is hand-written and wired by the
-// generated controller.MountAll.
+// Package site holds the public non-CRUD routes (home, health). Its Mount is
+// hand-written and wired by the generated controller.MountAll.
 package site
 
 import (
@@ -15,8 +14,7 @@ type Site struct {
 	*app.Services
 }
 
-// Mount wires the site routes. Hand-written (these are not CRUD routes); kept in
-// the same shape as generated Mount funcs so controller.MountAll can call it.
+// Mount wires the site routes (hand-written, same shape as generated Mount funcs).
 func Mount(eng *inertia.Engine, svc *app.Services) {
 	s := &Site{svc}
 	eng.GET("/", s.Home)

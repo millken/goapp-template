@@ -95,9 +95,8 @@ server:
 	}
 }
 
-// TestLoad_PartialFileKeepsDefaults verifies that yaml.v3 merges at the
-// field level: a user config that only sets log.file.path must NOT clobber
-// the default MaxSize/MaxBackups.
+// TestLoad_PartialFileKeepsDefaults verifies yaml.v3 merges at field level: a
+// partial config must not clobber default MaxSize/MaxBackups.
 func TestLoad_PartialFileKeepsDefaults(t *testing.T) {
 	const yaml = `
 log:
@@ -138,20 +137,20 @@ log:
 	if err == nil {
 		t.Fatalf("Load(invalid yaml) returned nil error; want a parse error")
 	}
-	// Error must mention the path so users can locate the bad file.
+	// Error must mention the path.
 	var pathErr interface{ Unwrap() []error }
 	_ = pathErr
 	if !contains(err.Error(), "config.yaml") {
 		t.Errorf("error %q should contain the config file path", err.Error())
 	}
-	// Returned config should still be usable (defaults applied).
+	// Returned config still has defaults applied.
 	if cfg.Server.Addr != ":8080" {
 		t.Errorf("returned cfg.Server.Addr = %q, want default :8080", cfg.Server.Addr)
 	}
 }
 
 func TestLoad_UnreadableFileReturnsError(t *testing.T) {
-	// Create a directory where a file is expected — ReadFile will fail.
+	// A directory where a file is expected — ReadFile will fail.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	if err := os.Mkdir(path, 0o755); err != nil {
@@ -167,8 +166,8 @@ func TestLoad_UnreadableFileReturnsError(t *testing.T) {
 	}
 }
 
-// TestLoad_NotExistIsNotError ensures a missing config file is the normal
-// path (uses defaults) and does NOT surface as an error.
+// TestLoad_NotExistIsNotError ensures a missing config file uses defaults and
+// is not an error.
 func TestLoad_NotExistIsNotError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "definitely-missing.yaml")
 

@@ -10,11 +10,9 @@ import (
 	_ "github.com/millken/goapp-template/internal/driver"
 )
 
-// TestUpsertSQL_PlaceholderCount guards the invariant that Save passes exactly
-// 3 bind args: every dialect's upsert must have exactly 3 '?' placeholders (the
-// UPDATE branch reuses inserted values via excluded/VALUES, no extra binds). A
-// mismatch passes on SQLite (lenient) but errors on pq/pgx/MySQL, so assert it
-// here for every flavor rather than discovering it in production.
+// TestUpsertSQL_PlaceholderCount guards that every dialect's upsert has exactly
+// 3 '?' placeholders — Save passes 3 args, and a mismatch passes on SQLite but
+// errors on pq/pgx/MySQL.
 func TestUpsertSQL_PlaceholderCount(t *testing.T) {
 	for _, flavor := range []sqldb.Flavor{sqldb.SQLite, sqldb.PostgreSQL, sqldb.MySQL} {
 		s := &DBStore{db: &sqldb.DB{Flavor: flavor}, table: "sessions"}
@@ -24,8 +22,7 @@ func TestUpsertSQL_PlaceholderCount(t *testing.T) {
 	}
 }
 
-// TestMemoryStore_Lifecycle exercises save/load/delete and expiry on the
-// in-memory store.
+// TestMemoryStore_Lifecycle exercises save/load/delete on the in-memory store.
 func TestMemoryStore_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 	s := NewMemoryStore()
@@ -93,8 +90,7 @@ func TestMemoryStore_LoadUnknown(t *testing.T) {
 	}
 }
 
-// TestDBStore_Lifecycle exercises save/load/delete on the db store using an
-// in-memory SQLite database.
+// TestDBStore_Lifecycle exercises save/load/delete on the db store.
 func TestDBStore_Lifecycle(t *testing.T) {
 	ctx := context.Background()
 	db, err := sqldb.Open("sqlite3", ":memory:")
@@ -188,8 +184,8 @@ func TestNewDBStore_InvalidTableName(t *testing.T) {
 	}
 }
 
-// TestUpsertSQL_PerFlavor verifies the dialect-correct upsert is generated
-// without needing live MySQL/PostgreSQL instances.
+// TestUpsertSQL_PerFlavor verifies the dialect-correct upsert without live
+// MySQL/PostgreSQL instances.
 func TestUpsertSQL_PerFlavor(t *testing.T) {
 	db, _ := sqldb.Open("sqlite3", ":memory:")
 	t.Cleanup(func() { db.Close() })

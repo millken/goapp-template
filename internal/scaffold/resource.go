@@ -5,17 +5,12 @@ import (
 	"path/filepath"
 )
 
-// Resource produces a full public CRUD resource scaffold for the given name:
-// a handler + model under internal/controller/<pkg>/ and index/form Vue pages
-// under frontend/pages/<viewdir>/. Invoked by `goapp gen resource <name>`.
+// Resource produces a public CRUD scaffold: handler + model under
+// internal/controller/<pkg>/ and index/form Vue pages under
+// frontend/pages/<viewdir>/. Wire the handler once into controller.MountAll.
 //
-// The handler is a controller embedding *app.Services with a Mount(eng, svc)
-// func; wire it once into controller.MountAll (internal/controller/mount_gen.go).
-//
-// No migration is emitted here. Schema changes are usually holistic (not
-// one-per-resource); add versioned migrations by hand under
-// internal/service/db/migrations/ (NNN_name.up.sql / .down.sql); sqldb applies
-// them in filename order and records applied versions.
+// No migration is emitted; add versioned migrations by hand under
+// internal/service/db/migrations/ (NNN_name.up.sql / .down.sql).
 func Resource(name string, opts Options) error {
 	spec, err := NewSpec(name)
 	if err != nil {

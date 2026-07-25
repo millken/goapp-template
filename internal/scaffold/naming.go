@@ -1,13 +1,6 @@
 // Package scaffold is the dev-time code generator for the Go + Inertia + Vue
-// CRUD pattern. It is tooling, not runtime code — hence it lives under
-// internal/scaffold.
-//
-// It provides (1) resource-name normalization (Spec/NewSpec) shared by the
-// generators, (2) Resource(name) — a public CRUD resource scaffolder
-// (`goapp gen resource <name>`), and (3) Admin(name) — an admin CRUD resource
-// scaffolder (`goapp gen admin <name>`). Generated resources are controllers
-// embedding *app.Services with a Mount func, wired via controller.MountAll (or,
-// for admin resources, in commands/serve.go after the admin area).
+// CRUD pattern. It provides resource-name normalization (Spec/NewSpec) and two
+// scaffolders: Resource (`goapp gen resource`) and Admin (`goapp gen admin`).
 package scaffold
 
 import (
@@ -16,31 +9,20 @@ import (
 	"unicode"
 )
 
-// Spec holds the derived identifiers for a resource, used by the generators to
-// fill templates consistently. All fields are computed from the input resource
-// name by NewSpec.
+// Spec holds the derived identifiers for a resource, computed by NewSpec.
 type Spec struct {
-	// Resource is the raw input name as given on the CLI (e.g. "blog-post").
-	Resource string
-	// Type is the PascalCase Go type name (e.g. "BlogPost").
-	Type string
-	// Receiver is a short, valid Go receiver name (lowercase, e.g. "bp").
-	Receiver string
-	// Package is the lowercased package/import path segment (e.g. "blogpost").
-	Package string
-	// Table is the snake_case database table name (e.g. "blog_posts").
-	Table string
-	// Route is the URL path prefix (e.g. "blog-posts").
-	Route string
-	// FileBase is the snake_case file-name stem for migrations (e.g. "blog_post").
-	FileBase string
-	// ViewDir is the frontend pages subdirectory (e.g. "blog-post").
-	ViewDir string
+	Resource string // raw input name (e.g. "blog-post")
+	Type     string // PascalCase Go type name (e.g. "BlogPost")
+	Receiver string // short lowercase Go receiver (e.g. "bp")
+	Package  string // lowercased package segment (e.g. "blogpost")
+	Table    string // snake_case table name (e.g. "blog_posts")
+	Route    string // URL path prefix (e.g. "blog-posts")
+	FileBase string // snake_case migration stem (e.g. "blog_post")
+	ViewDir  string // frontend pages subdir (e.g. "blog-post")
 }
 
-// NewSpec derives all identifier forms from a resource name. The input may be
-// any of snake_case, kebab-case, CamelCase, or space-separated words; it is
-// normalized to words first, then each form is built from the words.
+// NewSpec derives all identifier forms from a resource name (snake_case,
+// kebab-case, CamelCase, or space-separated words are all accepted).
 func NewSpec(resource string) (Spec, error) {
 	resource = strings.TrimSpace(resource)
 	if resource == "" {
@@ -69,7 +51,7 @@ func NewSpec(resource string) (Spec, error) {
 }
 
 // isAlphaNum reports whether s contains only letters, digits, dash, underscore,
-// or space — the separators splitWords understands.
+// or space (the separators splitWords understands).
 func isAlphaNum(s string) bool {
 	for _, r := range s {
 		switch {
@@ -83,7 +65,7 @@ func isAlphaNum(s string) bool {
 }
 
 // splitWords breaks a name into lowercase words on dashes, underscores, spaces,
-// and camelCase boundaries (e.g. "BlogPost" → ["blog","post"]).
+// and camelCase boundaries.
 func splitWords(s string) []string {
 	s = strings.ReplaceAll(s, "-", " ")
 	s = strings.ReplaceAll(s, "_", " ")
@@ -131,11 +113,8 @@ func joinKebab(words []string) string {
 	return strings.Join(words, "-")
 }
 
-// receiver derives a short, valid Go receiver identifier from a PascalCase type
-// name. It prefers the lowercase first letter; if that collides with a Go
-// keyword/builtin it would need adjustment, but for resource names this is
-// practically fine. For single-word types it uses the whole lowercased word
-// when short (<=3 chars) to stay readable.
+// receiver derives a short Go receiver identifier from a PascalCase type name,
+// avoiding single letters that read as literals (i, l, o).
 func receiver(pascal string) string {
 	if pascal == "" {
 		return "m"

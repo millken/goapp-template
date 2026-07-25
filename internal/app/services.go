@@ -7,28 +7,20 @@ import (
 	"github.com/millken/goapp-template/internal/service/session"
 )
 
-// Services is the typed service container, assembled once after infrastructure
-// Start and shared (read-only) by every controller. It replaces OpenCart's
-// map-based $registry: same "one place to reach shared services" ergonomics,
-// but every field is compile-time typed — no string keys, no `any`, no runtime
-// type assertions, no missing-key panics.
+// Services is the typed, read-only container for process-lifetime services,
+// assembled once after infrastructure Start and shared by every controller.
+// Per-request state lives on *inertia.Context, never here.
 //
-// It holds ONLY process-lifetime services (safe to share across goroutines).
-// Per-request state never lives here — it stays on *inertia.Context.
-//
-// Note it deliberately does NOT hold *config.Config: config imports the service
-// and controller packages, and controllers import app, so an app→config edge
-// would close an import cycle. Controllers that need a specific configuration
-// value receive it as a typed field/argument at construction instead.
+// It intentionally holds no *config.Config: config imports app's dependents,
+// so an app→config edge would close an import cycle — pass config values as
+// constructor arguments instead.
 type Services struct {
 	Log     *slog.Logger
-	DB      *sqldb.DB        // already-opened handle (post-Start), never nil in production
+	DB      *sqldb.DB        // resolved handle after Start; never nil in production
 	Session *session.Service // provides Session(ctx) per request
 }
 
-// NewServices builds the container from already-Started infrastructure. Because
-// DB is the resolved handle (not a lazy provider), controllers never hit the
-// "DB() before Start" panic path.
+// NewServices builds the container from already-Started infrastructure.
 func NewServices(log *slog.Logger, db *sqldb.DB, sess *session.Service) *Services {
 	return &Services{Log: log, DB: db, Session: sess}
 }

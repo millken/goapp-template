@@ -6,11 +6,9 @@ import (
 	"github.com/millken/inertia"
 )
 
-// AuthMiddleware enforces login on the routes it guards. It is attached only to
-// protected admin routes (not the login path), so it never has to filter by
-// path: if it runs, the route requires a truthy AuthKey in the session. On
-// authenticated requests it injects the shared props admin pages need (menu,
-// current user, mount, login path) before continuing.
+// AuthMiddleware enforces login on the routes it guards. Because it is attached
+// only to protected routes, it never filters by path. On success it injects the
+// shared props admin pages need (menu, user, mount, login path).
 func (a *Admin) AuthMiddleware() inertia.HandlerFunc {
 	mount := a.mount()
 	login := a.LoginPath()
@@ -26,8 +24,7 @@ func (a *Admin) AuthMiddleware() inertia.HandlerFunc {
 			c.Next()
 			return
 		}
-		// Not authenticated: redirect to login. inertia's ResponseWriter defers
-		// WriteHeader until a Write, so emit a minimal body to flush the 302.
+		// Not authenticated: redirect to login.
 		redirectTo(c, login)
 		c.Abort()
 	}

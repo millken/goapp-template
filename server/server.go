@@ -13,12 +13,11 @@ import (
 	"github.com/millken/inertia/ssr/quickjs"
 )
 
-// ssrBundleName is the SSR bundle filename, shared between the config default
-// (dev path) and the prod embed. Centralised so the two cannot drift.
+// ssrBundleName is the SSR bundle filename, shared between the dev config path
+// and the prod embed so the two cannot drift.
 const ssrBundleName = "ssr-render-cjs.js"
 
-// modeName derives the human-readable mode string from the internal mode value.
-// Called once inside New so logs never disagree with the actual engine mode.
+// modeName maps the internal mode to a human-readable string.
 func modeName(m inertia.Mode) string {
 	switch m {
 	case inertia.ModeSSR:
@@ -30,10 +29,8 @@ func modeName(m inertia.Mode) string {
 	}
 }
 
-// New creates and assembles an inertia.Engine from application config.
-// It returns the engine, the derived mode name (single derivation, for
-// logging), and any error. Route registration is NOT done here — routes are
-// attached via the server.Routes Module at app.Use time.
+// New assembles an inertia.Engine from config and returns it with the derived
+// mode name (for logging). Route registration is done by the caller.
 func New(cfg config.ServerConfig) (*inertia.Engine, string, error) {
 	mode := defaultMode
 	if cfg.SSR {
@@ -89,7 +86,7 @@ func New(cfg config.ServerConfig) (*inertia.Engine, string, error) {
 	return eng, modeName(mode), nil
 }
 
-// rootHTML scans dist for the entry CSS and JS files and builds a root HTML template.
+// rootHTML scans dist for the entry CSS/JS and builds the root HTML template.
 func rootHTML(distFS fs.FS) string {
 	cssLink := ""
 	if entries, err := fs.Glob(distFS, "assets/main-*.css"); err == nil && len(entries) > 0 {

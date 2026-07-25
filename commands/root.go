@@ -12,23 +12,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// appCfg holds the loaded configuration, set by AppInit. It is package-level so
-// that subcommands (serve) can read it without the context.Value ceremony —
-// AppInit runs via PersistentPreRunE before any subcommand's RunE.
+// appCfg holds the loaded configuration, set by AppInit (PersistentPreRunE) so
+// subcommands can read it without context.Value plumbing.
 var appCfg config.Config
 
-// AppInit performs shared initialization (env loading, config, logging).
-// Subcommands that define their own PersistentPreRunE must call this explicitly:
-//
-//	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-//	    return AppInit(cmd, args)
-//	},
+// AppInit performs shared initialization (env, config, logging). Subcommands
+// that define their own PersistentPreRunE must call it explicitly.
 func AppInit(cmd *cobra.Command, args []string) error {
 	envPath, err := EnvFile()
 	if err != nil {
 		return fmt.Errorf("resolve env file: %w", err)
 	}
-	// godotenv.Load wraps errors, so use os.Stat to check existence first.
+	// godotenv.Load wraps errors, so stat first.
 	if _, err := os.Stat(envPath); err == nil {
 		if err := godotenv.Load(envPath); err != nil {
 			slog.Warn("failed to load .env", "path", envPath, "err", err)
@@ -45,9 +40,8 @@ func AppInit(cmd *cobra.Command, args []string) error {
 		cfg.Log.Level = "debug"
 	}
 
-	// Apply environment overrides (kept out of the command layer): VITE_DEV_ADDR
-	// overrides the configured Vite dev server URL. This is the single place
-	// env→config mapping happens, so serve only deals with flags.
+	// VITE_DEV_ADDR overrides the Vite dev server URL — the single env→config
+	// mapping, so serve only deals with flags.
 	if v := os.Getenv("VITE_DEV_ADDR"); v != "" {
 		cfg.Server.DevAddr = v
 	}
@@ -130,9 +124,7 @@ func setupLogging(cfg config.LogConfig) {
 	slog.SetDefault(logger.Slog())
 }
 
-// resolveConfigFile returns the config file path using the following priority:
-//  1. --config flag
-//  2. ConfigFile() which derives from Home() (itself respects $MYAPP_HOME)
+// resolveConfigFile returns the config path from --config, else ConfigFile().
 func resolveConfigFile(cmd *cobra.Command) (string, error) {
 	if p, _ := cmd.Root().PersistentFlags().GetString("config"); p != "" {
 		return p, nil

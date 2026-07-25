@@ -1,14 +1,9 @@
-// Package session is an infrastructure service providing request-scoped
-// sessions.
+// Package session is the request-scoped session infrastructure service.
 //
-// It exposes Middleware() — a HandlerFunc that loads (or creates) a session per
-// request and stores it on the inertia.Context for handlers to use via the
-// Provider. serve.go installs it globally with eng.Use(sessSvc.Middleware()).
-// The session ID travels in a signed cookie (HMAC-SHA256); the session data
-// lives in a pluggable Store (memory for development, db for production).
-//
-// It implements app.Lifecycle (Start resolves the store, Stop is a no-op) and
-// imports no app kernel.
+// Middleware loads (or creates) a session per request and stores it on the
+// inertia.Context; serve.go installs it globally. The session ID travels in a
+// signed cookie (HMAC-SHA256); the data lives in a pluggable Store (memory for
+// development, db for production). It implements app.Lifecycle.
 package session
 
 import (
@@ -24,18 +19,15 @@ import (
 	"github.com/millken/inertia"
 )
 
-// contextKey is the inertia.Context key under which the active Session is stored
-// for the duration of a request.
+// contextKey is the inertia.Context key holding the active Session for a request.
 const contextKey = "session"
 
-// Provider exposes the per-request session. Consumers (e.g. admin) depend on
-// this interface and call Session lazily from handlers.
+// Provider exposes the per-request session; consumers depend on this interface.
 type Provider interface {
 	Session(c *inertia.Context) Session
 }
 
-// DBProvider is the dependency on the db service. It is satisfied by
-// *db.Service (which implements db.Provider with the same signature) without
+// DBProvider is the db-service dependency, satisfied by *db.Service without
 // session importing the db package.
 type DBProvider interface {
 	DB() *sqldb.DB
@@ -49,8 +41,7 @@ const (
 	StoreDB     StoreKind = "db"     // production; requires DBProvider
 )
 
-// Config configures the session service. Pointer in New so Start can enforce the
-// enable-consistency rule.
+// Config configures the session service.
 type Config struct {
 	Secret     string        `yaml:"secret"`      // HMAC key; required
 	CookieName string        `yaml:"cookie_name"` // default "session"
@@ -70,15 +61,13 @@ type Service struct {
 	dbProv DBProvider
 }
 
-// New constructs the session service. dbProv is required only when Store=db; it
-// may be nil otherwise. The store is resolved in Start (db needs the handle,
-// which is only valid after db Starts — so construction is deferred to Start).
+// New constructs the session service. dbProv is required only when Store=db; the
+// store itself is resolved in Start (db needs its post-Start handle).
 func New(cfg *Config, dbProv DBProvider) *Service {
 	return &Service{cfg: cfg, dbProv: dbProv}
 }
 
-// Start resolves the store. For store=db it needs the db handle, so the db
-// service must Start first (Start db before session in serve.go).
+// Start resolves the store. For store=db the db service must Start first.
 func (s *Service) Start(ctx context.Context) error {
 	if s.cfg == nil {
 		return errors.New("session: service enabled but [session] config section missing")
@@ -109,10 +98,9 @@ func (s *Service) Start(ctx context.Context) error {
 }
 
 // Middleware returns the HandlerFunc that loads/creates the session per request.
-// It injects the response writer into the session so Save/Destroy can emit the
-// cookie synchronously (inertia's writer is write-through; a cookie set after
-// the handler renders would be dropped — see impl.go). serve.go installs it via
-// eng.Use.
+// It injects the response writer so Save/Destroy can emit the cookie
+// synchronously — inertia's writer is write-through, so a cookie set after the
+// handler renders would be dropped.
 func (s *Service) Middleware() inertia.HandlerFunc {
 	return func(c *inertia.Context) {
 		sess := s.loadOrCreate(c.Request.Context(), c.Request)
@@ -122,8 +110,8 @@ func (s *Service) Middleware() inertia.HandlerFunc {
 	}
 }
 
-// loadOrCreate reads the signed cookie, verifies it, and loads the session from
-// the store; if absent or invalid it returns a fresh empty session.
+// loadOrCreate verifies the signed cookie and loads the session, or returns a
+// fresh empty one if absent or invalid.
 func (s *Service) loadOrCreate(ctx context.Context, r *http.Request) *session {
 	if cookie, err := r.Cookie(s.cookieName()); err == nil {
 		if id, err := verifyCookie(s.cfg.Secret, cookie.Value); err == nil {
@@ -139,8 +127,7 @@ func (s *Service) loadOrCreate(ctx context.Context, r *http.Request) *session {
 }
 
 // Session returns the active session for the request, panicking if the
-// middleware did not run (i.e. the route was registered without the session
-// middleware, or the handler is called outside a request).
+// middleware did not run for it.
 func (s *Service) Session(c *inertia.Context) Session {
 	v, ok := c.Get(contextKey)
 	if !ok {
@@ -153,8 +140,7 @@ func (s *Service) Session(c *inertia.Context) Session {
 	return sess
 }
 
-// Stop is a no-op; stores own no resources that need releasing at shutdown (db
-// connections are owned by the db service).
+// Stop is a no-op; stores own no resources (db connections belong to the db service).
 func (s *Service) Stop(context.Context) error { return nil }
 
 // cookieName returns the configured cookie name or the default.
@@ -182,9 +168,7 @@ func (s *Service) sameSite() http.SameSite {
 	}
 }
 
-// setCookie writes the signed session cookie on the response. HttpOnly is
-// always on — there is no opt-out; if one is ever needed, add an explicit field
-// rather than a bool whose zero value is ambiguous.
+// setCookie writes the signed session cookie. HttpOnly is always on.
 func (s *Service) setCookie(w http.ResponseWriter, id string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.cookieName(),

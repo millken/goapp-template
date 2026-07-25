@@ -12,22 +12,19 @@ import (
 	"github.com/dnsoa/go/sqldb"
 )
 
-// tableNameRe restricts session table names to a safe identifier shape so they
-// can be interpolated into DDL/DML without quoting concerns.
+// tableNameRe restricts session table names to a safe identifier, since they
+// are interpolated directly into SQL.
 var tableNameRe = regexp.MustCompile(`^[A-Za-z_]\w*$`)
 
-// DBStore persists sessions in the application database via db.Provider. Suitable
-// for production: survives restarts and shares state across instances.
-//
-// The sessions table is created on first use (idempotent CREATE TABLE IF NOT
-// EXISTS); no migration file is required from the db module.
+// DBStore persists sessions in the application database (production: survives
+// restarts, shares state across instances). The table is created on first use.
 type DBStore struct {
 	db    *sqldb.DB
 	table string
 }
 
-// NewDBStore wraps a database handle for session storage. table is the sessions
-// table name (default "sessions"); it must match ^[A-Za-z_]\w*$.
+// NewDBStore wraps a database handle for session storage. table defaults to
+// "sessions" and must match ^[A-Za-z_]\w*$.
 func NewDBStore(db *sqldb.DB, table string) (*DBStore, error) {
 	if table == "" {
 		table = "sessions"
@@ -38,9 +35,8 @@ func NewDBStore(db *sqldb.DB, table string) (*DBStore, error) {
 	return &DBStore{db: db, table: table}, nil
 }
 
-// ensureTable creates the sessions table if it does not exist. Idempotent.
-// expires_at is BIGINT so it holds UnixNano on all dialects (PostgreSQL/MySQL
-// INTEGER is 32-bit and would overflow).
+// ensureTable creates the sessions table if absent. expires_at is BIGINT so it
+// holds UnixNano on all dialects (PostgreSQL/MySQL INTEGER is 32-bit).
 func (s *DBStore) ensureTable(ctx context.Context) error {
 	ddl := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     id         TEXT PRIMARY KEY,
@@ -99,11 +95,8 @@ func (s *DBStore) Save(ctx context.Context, id string, values map[string]any, tt
 	return id, nil
 }
 
-// upsertSQL returns the dialect-correct INSERT...ON CONFLICT/DUPLICATE statement
-// for the configured flavor. Both forms take exactly 3 bind args
-// (id, data, expires_at): the UPDATE branch reuses the inserted values via
-// excluded.<col> (SQLite/PostgreSQL) or VALUES(<col>) (MySQL), so no extra
-// placeholders are needed.
+// upsertSQL returns the dialect-correct upsert. The UPDATE branch reuses the
+// inserted values, so exactly 3 bind args are needed (id, data, expires_at).
 func (s *DBStore) upsertSQL() string {
 	switch s.db.Flavor {
 	case sqldb.MySQL:

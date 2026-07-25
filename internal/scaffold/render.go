@@ -14,20 +14,16 @@ var templateFS embed.FS
 
 // Options controls generator behaviour.
 type Options struct {
-	// Force overwrites existing files. By default the generator refuses to
-	// overwrite, so manual edits are preserved.
+	// Force overwrites existing files (default: refuse, to preserve manual edits).
 	Force bool
-	// ModuleRoot is the repo root containing internal/ and frontend/. It is used
-	// to resolve output paths. When empty, paths are relative to the cwd.
+	// ModuleRoot is the repo root containing internal/ and frontend/; empty means
+	// paths are relative to the cwd.
 	ModuleRoot string
 }
 
-// render parses one embedded template (by slash path relative to templates/,
-// e.g. "resource/handler.go.tmpl") and writes it to outPath.
-//
-// Vue templates use {{ }} for interpolation, which collides with text/template's
-// default delimiters. To keep Vue files readable, templates use [[ .Field ]] for
-// Go-side substitutions while Vue's {{ }} passes through verbatim.
+// render parses one embedded template (e.g. "resource/handler.go.tmpl") and
+// writes it to outPath. Templates use [[ .Field ]] delimiters so Vue's {{ }}
+// passes through verbatim.
 func render(tmplName, outPath string, spec Spec, opts Options) error {
 	raw, err := templateFS.ReadFile(path.Join("templates", tmplName))
 	if err != nil {

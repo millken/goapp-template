@@ -15,10 +15,7 @@ import (
 type Config struct {
 	Log    LogConfig    `yaml:"log"`
 	Server ServerConfig `yaml:"server"`
-	// DB holds the database service config. nil when db is not used. config
-	// imports the service/controller packages for their Config types; this stays
-	// acyclic because app never imports config (app.Services deliberately holds
-	// no *config.Config), so there is no config→…→config back-edge.
+	// DB holds the database service config. nil when db is not used.
 	DB *db.Config `yaml:"db"`
 	// Session holds the session service config. nil when not used.
 	Session *session.Config `yaml:"session"`
@@ -62,10 +59,8 @@ type LogFileConfig struct {
 	LocalTime bool `yaml:"local_time"`
 }
 
-// Load reads config from the given YAML file path.
-// Returns a zero-value Config (with defaults applied) if the file does not exist.
-// A read or parse error is returned wrapped with the path so callers can fail
-// loudly instead of silently falling back to defaults.
+// Load reads config from the given YAML file. A missing file returns the
+// zero-value Config with defaults; read/parse errors are wrapped with the path.
 func Load(path string) (Config, error) {
 	cfg := defaults()
 
@@ -95,10 +90,8 @@ func defaults() Config {
 		},
 		Server: ServerConfig{
 			Addr: ":8080",
-			// StaticPath / SSRBundlePath are only used in non-prod builds (dev
-			// reads from disk); under the prod build tag they are no-ops since
-			// assets are embedded. The SSR bundle filename must match
-			// server.ssrBundleName.
+			// StaticPath / SSRBundlePath are dev-only (prod embeds assets); the
+			// SSR bundle filename must match server.ssrBundleName.
 			StaticPath:    "frontend/dist",
 			DevAddr:       "http://localhost:5173",
 			SSRBundlePath: "frontend/dist/ssr-render-cjs.js",

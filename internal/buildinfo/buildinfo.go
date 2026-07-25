@@ -1,8 +1,6 @@
-// Package buildinfo holds variables set at build time via -ldflags.
+// Package buildinfo holds variables set at build time via -ldflags (see Makefile).
 package buildinfo
 
-// These variables are set by the linker at build time.
-// See the Makefile for the -ldflags usage.
 var (
 	AppName   = "myapp"
 	Version   = "dev"

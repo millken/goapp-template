@@ -15,20 +15,19 @@ import (
 	"github.com/millken/goapp-template/internal/service/session"
 	"github.com/millken/inertia"
 
-	// Register the SQLite driver used by the db service in this test.
+	// Register the SQLite driver for this test.
 	_ "github.com/millken/goapp-template/internal/driver"
 )
 
-// loginStack wires the real db + session services and the admin controller
-// against an in-memory SQLite database (migrations on → users table) with one
-// seeded user (alice / "pw"), in the same order serve.go uses.
+// loginStack wires db + session + admin against an in-memory SQLite DB
+// (migrations on) with one seeded user (alice / "pw"), in serve.go's order.
 func loginStack(t *testing.T) (*inertia.Engine, *Admin) {
 	t.Helper()
 	ctx := context.Background()
 	eng := newTestEngine(t)
 
-	// MaxOpenConns=1 so migrations, seed, and login queries all hit the same
-	// :memory: connection (a fresh :memory: DB per connection otherwise).
+	// MaxOpenConns=1 so migrations, seed, and queries hit the same :memory:
+	// connection (otherwise each gets a fresh DB).
 	dbSvc := db.New(&db.Config{
 		Driver:       "sqlite3",
 		DSN:          ":memory:",
@@ -74,9 +73,8 @@ func postForm(path string, form url.Values) *http.Request {
 func TestLogin_HappyPath(t *testing.T) {
 	eng, adm := loginStack(t)
 
-	// A protected probe route guarded by the same auth middleware admin routes
-	// use — this is what verifies auth actually gates access in the new
-	// per-route model.
+	// A probe route guarded by the same auth middleware admin routes use — this
+	// verifies auth actually gates access per-route.
 	authed := false
 	eng.GET("/admin/probe", adm.AuthMiddleware(), func(c *inertia.Context) { authed = true })
 

@@ -1,14 +1,11 @@
-// Package admin is the authenticated admin controller area.
-//
-// It owns the admin shell: an auth middleware guarding the admin routes, a
-// login/logout flow backed by a users table (via app.Services.DB) and the
+// Package admin is the authenticated admin controller area: an auth middleware
+// guarding the admin routes, a login/logout flow backed by a users table and the
 // session service, a dashboard, and a menu registry that generated admin
 // resources register into.
 //
-// Unlike an ordinary controller area it needs its own *Config (mount, auth key,
-// users table), so serve.go wires it explicitly with admin.Mount(eng, svc,
-// cfg.Admin) rather than through the generated MountAll. The auth middleware is
-// attached only to the protected routes, so it never has to self-filter by path.
+// It needs its own *Config (mount, auth key, users table), so serve.go wires it
+// explicitly rather than through the generated MountAll. The auth middleware
+// guards only the protected routes, so it never filters by path.
 package admin
 
 import (
@@ -23,8 +20,8 @@ import (
 
 const defaultAuthKey = "admin_user_id"
 
-// tableNameRe restricts the users table name to a safe identifier so it can be
-// interpolated into SQL without quoting concerns.
+// tableNameRe restricts the users table name to a safe identifier, since it is
+// interpolated directly into SQL.
 var tableNameRe = regexp.MustCompile(`^[A-Za-z_]\w*$`)
 
 // Config configures the admin area.
@@ -40,26 +37,22 @@ type Config struct {
 	UsersTable string `yaml:"users_table"`
 }
 
-// Admin is the admin controller. It embeds *app.Services (DB/Session/Log) and
-// holds its resolved config plus the menu registry. A single instance is
-// constructed by Mount at startup and shared across requests (read-only after
-// setup).
+// Admin is the admin controller. It embeds *app.Services and holds its resolved
+// config plus the menu registry; a single instance is built at startup and
+// shared (read-only) across requests.
 type Admin struct {
 	*app.Services
 	cfg  *Config
 	menu []MenuItem
 }
 
-// New constructs the admin controller from the service container and its config.
-// cfg may be nil; resolved accessors apply defaults.
+// New constructs the admin controller. cfg may be nil; accessors apply defaults.
 func New(svc *app.Services, cfg *Config) *Admin {
 	return &Admin{Services: svc, cfg: cfg}
 }
 
-// Validate enforces the enable-consistency rule: a wired admin area must have
-// its [admin] config section present, and the users-table name must be a safe
-// identifier (it is interpolated into SQL). Accessors remain nil-safe so tests
-// may use New(svc, nil) without Validate.
+// Validate requires a present [admin] config section and a safe users-table
+// name (interpolated into SQL). Accessors stay nil-safe so tests may skip it.
 func (a *Admin) Validate() error {
 	if a.cfg == nil {
 		return errors.New("admin: enabled but [admin] config section missing")
@@ -71,7 +64,7 @@ func (a *Admin) Validate() error {
 }
 
 // Mount wires the admin shell onto eng: public login routes plus the mount and
-// logout guarded by the auth middleware. serve.go calls it after Validate.
+// logout guarded by the auth middleware.
 func (a *Admin) Mount(eng *inertia.Engine) {
 	auth := a.AuthMiddleware()
 	eng.GET(a.LoginPath(), a.LoginForm)    // public
@@ -80,8 +73,7 @@ func (a *Admin) Mount(eng *inertia.Engine) {
 	eng.GET(a.mount(), auth, a.Dashboard)
 }
 
-// Prefix returns the resolved admin mount prefix. Generated admin resources call
-// it to build their route paths.
+// Prefix returns the resolved admin mount prefix (used by generated resources).
 func (a *Admin) Prefix() string { return a.mount() }
 
 // LoginPath returns the resolved public login route.

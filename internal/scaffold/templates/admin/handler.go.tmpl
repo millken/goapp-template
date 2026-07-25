@@ -20,17 +20,15 @@ import (
 	"github.com/millken/inertia"
 )
 
-// Controller serves the admin [[.Type]] CRUD under the admin prefix. It embeds
-// *app.Services for typed access to DB/Session/Log; base is the resolved
-// mount+route (e.g. "/admin/[[.Route]]").
+// Controller serves admin [[.Type]] CRUD under the admin prefix; base is the
+// resolved mount+route (e.g. "/admin/[[.Route]]").
 type Controller struct {
 	*app.Services
 	base string
 }
 
-// Mount registers the admin [[.Type]] routes under the admin prefix, guarded by
-// the admin auth middleware, and adds a menu entry so the resource appears in
-// the admin shell.
+// Mount registers the admin [[.Type]] routes (guarded by the admin auth
+// middleware) and adds a menu entry.
 func Mount(eng *inertia.Engine, svc *app.Services, adm *admin.Admin) {
 	ct := &Controller{Services: svc, base: adm.Prefix() + "/[[.Route]]"}
 	auth := adm.AuthMiddleware()
