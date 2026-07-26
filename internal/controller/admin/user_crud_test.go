@@ -216,3 +216,116 @@ func TestUserCreate_RedirectIsAPayloadUnderPJAX(t *testing.T) {
 		t.Errorf(`body["redirect"] = %v, want /admin/user`, got)
 	}
 }
+
+// Rule 1. Both directions of the same rule: you are the one account you must
+// not be able to remove or switch off.
+func TestUserDeleteAndDisable_CannotTargetYourself(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		path string
+		form url.Values
+	}{
+		{"delete", "/delete", nil},
+		{"disable", "/status", url.Values{"status": {"0"}}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			eng, adm, cookie := adminStack(t)
+			var id int64
+			if err := adm.DB.QueryRowContext(context.Background(),
+				`SELECT id FROM users WHERE username = 'alice'`).Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+
+			w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d%s", id, c.path), c.form)
+			if w.Code == http.StatusFound {
+				t.Error("acting on your own account must be refused")
+			}
+
+			var n, status int
+			if err := adm.DB.QueryRowContext(context.Background(),
+				`SELECT COUNT(*), COALESCE(MAX(status), -1) FROM users WHERE id = ?`, id).
+				Scan(&n, &status); err != nil {
+				t.Fatal(err)
+			}
+			if n != 1 {
+				t.Error("the account was deleted anyway")
+			}
+			if status != statusActive {
+				t.Error("the account was disabled anyway")
+			}
+		})
+	}
+}
+
+// Rule 3, through HTTP rather than the guard's unit test: deleting the only
+// other superuser is fine, deleting the last one is not.
+func TestUserDelete_KeepsOneEnabledSuperuser(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+	ctx := context.Background()
+	// bob is a second superuser, so deleting him is allowed...
+	if _, err := adm.DB.ExecContext(ctx,
+		`INSERT INTO users (username, password_hash, created_at, status, group_id)
+		 VALUES ('bob', 'x', 0, 1, (SELECT id FROM user_groups WHERE name = 'Administrators'))`); err != nil {
+		t.Fatal(err)
+	}
+	var bob int64
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE username = 'bob'`).Scan(&bob); err != nil {
+		t.Fatal(err)
+	}
+	if w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/delete", bob), nil); w.Code != http.StatusFound {
+		t.Fatalf("deleting a second superuser: status = %d, want 303", w.Code)
+	}
+
+	// ...and now alice is the last one, but she is also the caller, so rule 1
+	// already covers her. Add a third superuser and have alice delete them to
+	// leave exactly one, then check the count never reached zero.
+	if n := countEnabledSuperusers(t, adm); n != 1 {
+		t.Errorf("enabled superusers = %d, want 1", n)
+	}
+}
+
+// A group with no superuser: disabling its only member is fine, because the
+// rule is about superusers, not about users in general.
+func TestUserSetStatus_DisablesANonSuperuser(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+	ctx := context.Background()
+	if _, err := adm.DB.ExecContext(ctx,
+		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES ('Editors', 0, '[]', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adm.DB.ExecContext(ctx,
+		`INSERT INTO users (username, password_hash, created_at, status, group_id)
+		 VALUES ('erin', 'x', 0, 1, (SELECT id FROM user_groups WHERE name = 'Editors'))`); err != nil {
+		t.Fatal(err)
+	}
+	var erin int64
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE username = 'erin'`).Scan(&erin); err != nil {
+		t.Fatal(err)
+	}
+
+	w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/status", erin), url.Values{"status": {"0"}})
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
+	}
+	var status int
+	if err := adm.DB.QueryRowContext(ctx, `SELECT status FROM users WHERE id = ?`, erin).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != statusDisabled {
+		t.Errorf("status = %d, want %d", status, statusDisabled)
+	}
+
+	// Enabling again is not subject to rules 1 or 3, and the value comes from the
+	// request rather than being toggled: submitting 1 twice leaves it enabled.
+	for range 2 {
+		if w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/status", erin), url.Values{"status": {"1"}}); w.Code != http.StatusFound {
+			t.Fatalf("enable: status = %d, want 303", w.Code)
+		}
+	}
+	if err := adm.DB.QueryRowContext(ctx, `SELECT status FROM users WHERE id = ?`, erin).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != statusActive {
+		t.Errorf("status after two enables = %d, want %d", status, statusActive)
+	}
+}

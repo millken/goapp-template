@@ -225,10 +225,89 @@ func (a *Admin) userUpdate(c *inertia.Context) {
 	a.redirect(c, a.userBase())
 }
 
-// userDelete and userSetStatus are implemented in the next task; the routes are
-// registered here so the resource's permission set is complete from the start.
-func (a *Admin) userDelete(c *inertia.Context)    { c.AbortWithStatus(http.StatusNotImplemented) }
-func (a *Admin) userSetStatus(c *inertia.Context) { c.AbortWithStatus(http.StatusNotImplemented) }
+// userDelete removes a user. Rule 1 blocks your own account; rule 3 blocks the
+// change if it would leave no enabled superuser, and rolls it back.
+func (a *Admin) userDelete(c *inertia.Context) {
+	ctx := c.Request.Context()
+	id, _ := c.Params.GetInt64("id")
+
+	if err := a.notSelf(c, id); err != nil {
+		// Unlike the last-superuser rule below, this is not state-dependent: it
+		// is always true and a hand-made POST is the only way to reach it (the
+		// UI hides the control on your own row), so it is refused outright
+		// rather than sent through the redirect a legitimate submission gets.
+		a.flash(c, "error", "不能删除自己的账号")
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+
+	err := a.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
+		q := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, a.usersTable())
+		_, err := tx.ExecContext(ctx, q, id)
+		return err
+	})
+	switch {
+	case errors.Is(err, errLastSuperuser):
+		a.flash(c, "error", "系统必须至少保留一个启用的超级管理员")
+	case err != nil:
+		slog.Error("admin: delete user", "err", err, "user", id)
+		a.flash(c, "error", "删除失败，请查看日志")
+	default:
+		a.flash(c, "success", "用户已删除")
+	}
+	a.redirect(c, a.userBase())
+}
+
+// userSetStatus enables or disables a user. The value comes from the request
+// rather than being toggled, so a double-submitted form cannot flip a user back
+// on — and the two directions are not symmetric: only disabling can lock anyone
+// out, so only disabling is guarded.
+func (a *Admin) userSetStatus(c *inertia.Context) {
+	ctx := c.Request.Context()
+	id, _ := c.Params.GetInt64("id")
+
+	want := statusActive
+	if c.PostForm("status") == "0" {
+		want = statusDisabled
+	}
+
+	if want == statusDisabled {
+		if err := a.notSelf(c, id); err != nil {
+			// Same as userDelete: this rule is always true regardless of
+			// system state, so it is refused outright rather than redirected.
+			a.flash(c, "error", "不能禁用自己的账号")
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+	}
+
+	set := func(tx *sqldb.Tx) error {
+		q := fmt.Sprintf(`UPDATE %s SET status = ? WHERE id = ?`, a.usersTable())
+		_, err := tx.ExecContext(ctx, q, want, id)
+		return err
+	}
+
+	var err error
+	if want == statusDisabled {
+		err = a.keepingASuperuser(ctx, set)
+	} else {
+		// Enabling can only increase the count, so the guard has nothing to
+		// check; running it anyway would be misleading rather than wrong.
+		err = a.DB.Transaction(set)
+	}
+	switch {
+	case errors.Is(err, errLastSuperuser):
+		a.flash(c, "error", "系统必须至少保留一个启用的超级管理员")
+	case err != nil:
+		slog.Error("admin: set user status", "err", err, "user", id)
+		a.flash(c, "error", "操作失败，请查看日志")
+	case want == statusDisabled:
+		a.flash(c, "success", "用户已禁用")
+	default:
+		a.flash(c, "success", "用户已启用")
+	}
+	a.redirect(c, a.userBase())
+}
 
 // validateUser checks a submitted user. requirePassword is false on an update
 // with a blank password field, which means "leave it alone" — otherwise every
