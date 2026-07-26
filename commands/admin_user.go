@@ -40,17 +40,6 @@ func newAdminCreateUserCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			username := args[0]
 
-			if password == "" {
-				// Read one line from stdin (pipe it for non-interactive use):
-				//   echo "s3cret" | goapp admin create-user alice
-				fmt.Fprint(os.Stderr, "Password: ")
-				line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-				password = strings.TrimRight(line, "\r\n")
-			}
-			if password == "" {
-				return fmt.Errorf("password must not be empty")
-			}
-
 			if appCfg.DB == nil {
 				return fmt.Errorf("no [db] config section; admin users require a database")
 			}
@@ -69,11 +58,25 @@ func newAdminCreateUserCmd() *cobra.Command {
 			}
 			defer func() { _ = dbSvc.Stop(context.Background()) }()
 
-			hash, err := admin.HashPassword(password)
+			// The group is resolved before the password is asked for: a name that
+			// does not exist is the likeliest mistake here, and finding out after
+			// typing a password is a needless second attempt.
+			groupID, err := admin.FindGroupID(ctx, dbSvc.DB(), groupName)
 			if err != nil {
 				return err
 			}
-			groupID, err := admin.FindGroupID(ctx, dbSvc.DB(), groupName)
+
+			if password == "" {
+				// Read one line from stdin (pipe it for non-interactive use):
+				//   echo "s3cret" | myapp admin create-user alice
+				fmt.Fprint(os.Stderr, "Password: ")
+				line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+				password = strings.TrimRight(line, "\r\n")
+			}
+			if password == "" {
+				return fmt.Errorf("password must not be empty")
+			}
+			hash, err := admin.HashPassword(password)
 			if err != nil {
 				return err
 			}
