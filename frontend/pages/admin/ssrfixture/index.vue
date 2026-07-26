@@ -1,0 +1,233 @@
+<!--
+  GENERATED FIXTURE — do not edit by hand.
+
+  This is `goappctl gen admin ssrfixture`'s index.vue, committed verbatim so the
+  generated admin list page reaches the SSR bundle. It has to exist as a real
+  .vue file: the page it comes from is a Go template with [[ ]] delimiters, so it
+  never lands in frontend/pages/ and no test could otherwise render the very
+  components that carry QuickJS risk — Dialog, DropdownMenu, Select and the
+  TanStack pager.
+
+  Regenerate with:
+      go run ./cmd/goappctl gen admin ssrfixture --force
+      rm -rf internal/controller/adminssrfixture \
+             frontend/pages/admin/ssrfixture/form.vue
+      git checkout internal/controller/mount_gen.go
+
+  TestAdminIndexFixtureIsCurrent fails if this drifts from the template.
+  Nothing routes here; it exists only to be rendered by
+  TestSSR_GeneratedAdminListRendersUnderQuickJS.
+-->
+<script setup lang="ts">
+import { h, ref } from 'vue'
+import {
+  FlexRender, getCoreRowModel, getFilteredRowModel, getPaginationRowModel,
+  getSortedRowModel, useVueTable,
+  type ColumnDef, type ColumnFiltersState, type SortingState,
+} from '@tanstack/vue-table'
+import { ArrowUpDown, MoreHorizontal, Plus } from 'lucide-vue-next'
+import AdminLayout from '@/components/AdminLayout.vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Input } from '@/components/ui/input'
+import {
+  Pagination, PaginationContent, PaginationEllipsis, PaginationFirst,
+  PaginationItem, PaginationLast, PaginationNext, PaginationPrevious,
+} from '@/components/ui/pagination'
+import {
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import { valueUpdater } from '@/lib/utils'
+
+interface MenuItem { title: string; path: string; order?: number }
+interface Ssrfixture { id: number; name: string }
+
+const props = defineProps<{
+  items: Ssrfixture[]
+  basePath: string
+  // Injected by the admin auth middleware for the shell:
+  adminMenu?: MenuItem[]
+  adminUser?: unknown
+  adminMount?: string
+  loginPath?: string
+  // One-shot messages staged by the handlers before their redirects:
+  flash?: Record<string, string>
+}>()
+
+// Rows per page. Both the table's row model and the pager read this, so they
+// cannot drift apart.
+const PAGE_SIZE = 20
+
+// Sorting, filtering and paging all happen client-side over `items`. Swap in
+// server-side paging by adding query params to the handler and setting
+// manualPagination: true here.
+const sorting = ref<SortingState>([])
+const columnFilters = ref<ColumnFiltersState>([])
+
+// The row awaiting delete confirmation; null closes the dialog. Overlays must
+// start closed — SSR does not emit teleported content.
+const pending = ref<Ssrfixture | null>(null)
+
+const columns: ColumnDef<Ssrfixture>[] = [
+  { accessorKey: 'id', header: 'ID' },
+  {
+    accessorKey: 'name',
+    header: ({ column }) =>
+      h(
+        Button,
+        {
+          variant: 'ghost',
+          class: '-ml-4',
+          onClick: () => column.toggleSorting(column.getIsSorted() === 'asc'),
+        },
+        () => ['Name', h(ArrowUpDown, { class: 'ml-2 size-4' })],
+      ),
+  },
+]
+
+const table = useVueTable({
+  get data() { return props.items },
+  columns,
+  getCoreRowModel: getCoreRowModel(),
+  getSortedRowModel: getSortedRowModel(),
+  getFilteredRowModel: getFilteredRowModel(),
+  getPaginationRowModel: getPaginationRowModel(),
+  onSortingChange: (u) => valueUpdater(u, sorting),
+  onColumnFiltersChange: (u) => valueUpdater(u, columnFilters),
+  initialState: { pagination: { pageSize: PAGE_SIZE } },
+  state: {
+    get sorting() { return sorting.value },
+    get columnFilters() { return columnFilters.value },
+  },
+})
+
+const setNameFilter = (v: string | number) =>
+  table.getColumn('name')?.setFilterValue(String(v))
+</script>
+
+<template>
+  <AdminLayout
+    :menu="adminMenu"
+    :user="adminUser"
+    :mount="adminMount"
+    :login-path="loginPath"
+    :flash="flash"
+  >
+    <Card>
+      <CardHeader class="flex flex-row items-center justify-between">
+        <CardTitle>Ssrfixture</CardTitle>
+        <Button as="a" :href="`${basePath}/new`" size="sm">
+          <Plus />
+          New
+        </Button>
+      </CardHeader>
+
+      <CardContent class="space-y-4">
+        <Input
+          placeholder="Filter by name…"
+          class="max-w-xs"
+          @update:model-value="setNameFilter"
+        />
+
+        <Table>
+          <TableHeader>
+            <TableRow v-for="hg in table.getHeaderGroups()" :key="hg.id">
+              <TableHead v-for="header in hg.headers" :key="header.id">
+                <FlexRender
+                  :render="header.column.columnDef.header"
+                  :props="header.getContext()"
+                />
+              </TableHead>
+              <TableHead class="w-12" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
+              <TableCell v-for="cell in row.getVisibleCells()" :key="cell.id">
+                <FlexRender :render="cell.column.columnDef.cell" :props="cell.getContext()" />
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon-sm"><MoreHorizontal /></Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem as="a" :href="`${basePath}/${row.original.id}/edit`">
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      @select="pending = row.original"
+                    >Delete</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+            <TableEmpty
+              v-if="!table.getRowModel().rows.length"
+              :colspan="columns.length + 1"
+            >
+              No ssrfixture yet.
+            </TableEmpty>
+          </TableBody>
+        </Table>
+
+        <!-- Page state lives in the table: reka-ui emits update:page and we
+             forward it, so there is one source of truth. First/Previous/Next/Last
+             are siblings of the page items, never parents — wrapping one in a
+             PaginationItem nests a <button> inside a <button>, which browsers
+             reparse and hydration then disagrees with. PaginationItem is itself
+             a button (it applies buttonVariants), so the page number goes in its
+             slot rather than in a nested Button. -->
+        <Pagination
+          v-if="table.getPageCount() > 1"
+          :items-per-page="PAGE_SIZE"
+          :total="table.getFilteredRowModel().rows.length"
+          :page="table.getState().pagination.pageIndex + 1"
+          :sibling-count="1"
+          show-edges
+          @update:page="(p) => table.setPageIndex(p - 1)"
+        >
+          <PaginationContent v-slot="{ items }" class="justify-end">
+            <PaginationFirst />
+            <PaginationPrevious />
+            <template v-for="(item, i) in items">
+              <PaginationItem
+                v-if="item.type === 'page'"
+                :key="`page-${item.value}`"
+                :value="item.value"
+                :is-active="item.value === table.getState().pagination.pageIndex + 1"
+              >{{ item.value }}</PaginationItem>
+              <PaginationEllipsis v-else :key="`gap-${i}`" :index="i" />
+            </template>
+            <PaginationNext />
+            <PaginationLast />
+          </PaginationContent>
+        </Pagination>
+      </CardContent>
+    </Card>
+
+    <!-- Delete posts to the real handler, so the server stays the single source
+         of truth — no client-side mutation. -->
+    <Dialog :open="pending !== null" @update:open="(o) => !o && (pending = null)">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete “{{ pending?.name }}”?</DialogTitle>
+          <DialogDescription>This cannot be undone.</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" @click="pending = null">Cancel</Button>
+          <form :action="`${basePath}/${pending?.id}/delete`" method="post">
+            <Button type="submit" variant="destructive">Delete</Button>
+          </form>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </AdminLayout>
+</template>

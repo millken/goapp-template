@@ -69,6 +69,11 @@ var ToolingPaths = []string{
 	"cmd/goappctl",
 	"docs",
 	".github/workflows/goappctl.yml",
+	// The committed rendering of the generated admin list page, and the test that
+	// renders it through QuickJS. They exist so the template can test what
+	// `gen admin` produces — a generated project has no use for either.
+	"frontend/pages/admin/ssrfixture",
+	"server/ssr_fixture_test.go",
 	"go.work",
 	"go.work.sum",
 	"app.db",
