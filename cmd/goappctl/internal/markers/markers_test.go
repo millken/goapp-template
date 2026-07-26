@@ -296,7 +296,7 @@ func TestStripSSRScripts_Idempotent(t *testing.T) {
 }
 
 func TestStrip_CSSForm(t *testing.T) {
-	src := "@import \"tailwindcss\";\n\n/*goappctl:admin*/\n:root { --x: 1; }\n/*goappctl:end*/\n"
+	src := "@import \"tailwindcss\";\n\n/*goappctl:admin*/\n:root { --x: 1; }\n/*goappctl:end*/\nbody { color: red; }\n"
 
 	got, n, err := Strip("main.css", []byte(src), opts("admin"))
 	if err != nil {
@@ -305,7 +305,7 @@ func TestStrip_CSSForm(t *testing.T) {
 	if n != 1 {
 		t.Errorf("stripped = %d, want 1", n)
 	}
-	if want := "@import \"tailwindcss\";\n"; string(got) != want {
+	if want := "@import \"tailwindcss\";\n\nbody { color: red; }\n"; string(got) != want {
 		t.Errorf("admin off: got %q, want %q", got, want)
 	}
 
@@ -316,7 +316,7 @@ func TestStrip_CSSForm(t *testing.T) {
 	if n != 0 {
 		t.Errorf("stripped = %d, want 0", n)
 	}
-	want := "@import \"tailwindcss\";\n\n:root { --x: 1; }\n"
+	want := "@import \"tailwindcss\";\n\n:root { --x: 1; }\nbody { color: red; }\n"
 	if string(got) != want {
 		t.Errorf("admin on: got %q, want %q", got, want)
 	}
