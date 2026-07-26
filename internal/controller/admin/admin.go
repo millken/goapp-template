@@ -45,8 +45,8 @@ type Config struct {
 }
 
 // Admin is the admin controller. It embeds *app.Services and holds its resolved
-// config plus the menu registry; a single instance is built at startup and
-// shared (read-only) across requests.
+// config, the menu registry, and the permission catalogue; a single instance is
+// built at startup and shared (read-only) across requests.
 type Admin struct {
 	*app.Services
 	cfg  *Config

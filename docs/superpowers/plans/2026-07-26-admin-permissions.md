@@ -1001,6 +1001,25 @@ func TestRegistrar_RegistersRoutesAndRecordsKeys(t *testing.T) {
 	}
 }
 
+// A dot in the name would make permKey produce keys that alias confusingly, and
+// this is the one place a name enters the system.
+func TestResource_RejectsIllegalNames(t *testing.T) {
+	eng := newTestEngine(t)
+	a := New(nil, nil)
+	for _, bad := range []string{"post.access", "Post", "", "my post", "post/sub", ".post"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Resource(%q) should panic", bad)
+				}
+			}()
+			a.Resource(eng, bad)
+		}()
+	}
+	// And a legal one must not panic.
+	a.Resource(eng, "blog-post")
+}
+
 func TestRegistrar_HandleCoversOtherMethods(t *testing.T) {
 	eng := newTestEngine(t)
 	a := New(nil, nil)
@@ -1023,7 +1042,7 @@ Expected: FAIL to compile — `undefined: (*Admin).Resource`.
 
 - [ ] **Step 3: Write the implementation**
 
-Append to `internal/controller/admin/permission.go` (add `"github.com/millken/inertia"` to its imports):
+Append to `internal/controller/admin/permission.go` (add `"regexp"`, `"strconv"` and `"github.com/millken/inertia"` to its imports):
 
 ```go
 // Registrar registers one resource's admin routes. Every route it registers is
@@ -1040,8 +1059,21 @@ type Registrar struct {
 // derived from the path: deriving it would silently re-key every permission when
 // someone changes a mount path, revoking access with no error anywhere.
 func (a *Admin) Resource(eng *inertia.Engine, name string) *Registrar {
+	// permKey and Allows build and split keys textually around ".access" and
+	// ".modify", so a name containing a dot would produce keys that alias each
+	// other in confusing ways. Rejecting it here is the one place the name enters
+	// the system, and a bad name is a wiring mistake — same class as the panic in
+	// Handle, and caught at startup rather than in a request.
+	if !resourceNameRe.MatchString(name) {
+		panic("admin: Resource: illegal resource name " + strconv.Quote(name) +
+			" (want ^[a-z0-9][a-z0-9_-]*$)")
+	}
 	return &Registrar{admin: a, eng: eng, resource: name}
 }
+
+// resourceNameRe keeps a resource name free of the separators permission keys are
+// built from.
+var resourceNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Handle registers path for method, guarded by the permission that method
 // implies, and records the pairing in the catalogue.
