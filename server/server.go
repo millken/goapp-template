@@ -117,11 +117,13 @@ func rootHTML(distFS fs.FS) string {
 	if js := firstAsset(distFS, "assets/main-*.js"); js != "" {
 		jsTag = fmt.Sprintf(`<script type="module" src="/%s"></script>`, js)
 	}
-	// Set the dark class before first paint, or the page flashes light. The
-	// assignment (not the string) carries the markers: this HTML lives in a Go
-	// string literal, where a marker line would be served to browsers as text.
+	// The admin area's theme script, empty when there is no admin area.
 	darkBoot := ""
 	//goappctl:admin
+	// Set the dark class before first paint, or the page flashes light. The
+	// assignment carries the markers rather than the template string: this HTML
+	// lives in a Go string literal, where a marker line would survive stripping
+	// and be served to browsers as visible text.
 	darkBoot = `<script>try{if(localStorage.theme==='dark'||(!('theme' in localStorage)&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>`
 	//goappctl:end
 	return fmt.Sprintf(`<!DOCTYPE html>
