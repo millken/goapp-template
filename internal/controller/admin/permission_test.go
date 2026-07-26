@@ -92,7 +92,7 @@ func TestRegistrar_RegistersRoutesAndRecordsKeys(t *testing.T) {
 	r.GET("/admin/post/:id/edit", noop)
 	r.POST("/admin/post", noop)
 	r.POST("/admin/post/:id/delete", noop)
-	r.Menu("Post", "/admin/post")
+	r.Menu("Content", "Post", "/admin/post")
 
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("routes did not register: %v", err)
@@ -110,8 +110,8 @@ func TestRegistrar_RegistersRoutesAndRecordsKeys(t *testing.T) {
 	}
 
 	// Menu goes through addResourceMenuItem, so it is gated by post.access.
-	if len(a.menu) != 1 || a.menu[0].resource != "post" {
-		t.Errorf("Menu should record the resource, got %+v", a.menu)
+	if len(a.menu) != 1 || a.menu[0].resource != "post" || a.menu[0].item.Section != "Content" {
+		t.Errorf("Menu should record the resource and section, got %+v", a.menu)
 	}
 }
 

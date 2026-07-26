@@ -44,7 +44,7 @@ func Mount(eng *inertia.Engine, svc *app.Services, adm *admin.Admin) {
 	r.GET(ct.base+"/:id/edit", ct.Edit)
 	r.POST(ct.base+"/:id", ct.Update)
 	r.POST(ct.base+"/:id/delete", ct.Delete)
-	r.Menu("[[.Type]]", ct.base)
+	r.Menu("Content", "[[.Type]]", ct.base)
 }
 
 // Index lists all [[.Table]].

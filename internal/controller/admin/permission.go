@@ -147,10 +147,10 @@ func (r *Registrar) POST(path string, h inertia.HandlerFunc) {
 	r.Handle(http.MethodPost, path, h)
 }
 
-// Menu adds the resource's sidebar entry, shown only to callers holding its
-// access key.
-func (r *Registrar) Menu(title, path string) {
-	r.admin.addResourceMenuItem(MenuItem{Title: title, Path: path}, r.resource)
+// Menu adds the resource's sidebar entry under section (the icon-rail group),
+// shown only to callers holding the resource's access key.
+func (r *Registrar) Menu(section, title, path string) {
+	r.admin.addResourceMenuItem(MenuItem{Title: title, Path: path, Section: section}, r.resource)
 }
 
 // guard requires an authenticated caller whose group holds key. It is the only

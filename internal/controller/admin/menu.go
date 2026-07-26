@@ -12,6 +12,8 @@ type MenuItem struct {
 	Title string `json:"title"`
 	Path  string `json:"path"`
 	Order int    `json:"order"` // ascending; ties broken by Title
+	// Section groups items in the shell's icon rail; empty means "Content".
+	Section string `json:"section"`
 }
 
 // menuEntry pairs a sidebar item with the resource whose access key gates it. An
@@ -26,12 +28,18 @@ type menuEntry struct {
 // during startup wiring (before Serve); the menu is read at request time, so no
 // locking is needed.
 func (a *Admin) AddMenuItem(item MenuItem) {
+	if item.Section == "" {
+		item.Section = "Content"
+	}
 	a.menu = append(a.menu, menuEntry{item: item})
 }
 
 // addResourceMenuItem registers an entry gated by resource's access key. Used by
 // the registrar; resources go through Registrar.Menu rather than calling this.
 func (a *Admin) addResourceMenuItem(item MenuItem, resource string) {
+	if item.Section == "" {
+		item.Section = "Content"
+	}
 	a.menu = append(a.menu, menuEntry{item: item, resource: resource})
 }
 
@@ -47,8 +55,21 @@ func (a *Admin) menuItems(g *group) []MenuItem {
 		}
 		out = append(out, e.item)
 	}
+	// Section order is computed from the unfiltered menu, not out: deriving it
+	// from the filtered slice would let a section jump position for a caller who
+	// cannot see its first item, making the rail reorder itself per user.
+	secIdx := make(map[string]int)
+	for _, e := range a.menu {
+		if _, ok := secIdx[e.item.Section]; !ok {
+			secIdx[e.item.Section] = len(secIdx)
+		}
+	}
 	slices.SortStableFunc(out, func(x, y MenuItem) int {
-		return cmp.Or(cmp.Compare(x.Order, y.Order), cmp.Compare(x.Title, y.Title))
+		return cmp.Or(
+			cmp.Compare(secIdx[x.Section], secIdx[y.Section]),
+			cmp.Compare(x.Order, y.Order),
+			cmp.Compare(x.Title, y.Title),
+		)
 	})
 	return out
 }

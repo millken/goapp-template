@@ -72,6 +72,27 @@ func TestAddResourceMenuItem_RecordsTheResource(t *testing.T) {
 	}
 }
 
+// Sections display in first-registration order — not alphabetically — so the
+// wiring order in serve.go is the one knob controlling the rail. Items inside
+// a section keep the Order-then-Title rule.
+func TestMenuItems_SectionOrderFollowsRegistration(t *testing.T) {
+	a := New(nil, nil)
+	a.AddMenuItem(MenuItem{Title: "Settings", Path: "/admin/settings", Section: "System"})
+	a.AddMenuItem(MenuItem{Title: "Groups", Path: "/admin/group", Section: "Access"})
+	a.AddMenuItem(MenuItem{Title: "Users", Path: "/admin/user", Section: "Access"})
+	a.AddMenuItem(MenuItem{Title: "Posts", Path: "/admin/post"}) // empty → "Content"
+
+	got := a.menuItems(&group{Superuser: true})
+	titles := make([]string, len(got))
+	for i, m := range got {
+		titles[i] = m.Section + ":" + m.Title
+	}
+	want := "System:Settings,Access:Groups,Access:Users,Content:Posts"
+	if s := strings.Join(titles, ","); s != want {
+		t.Errorf("menu = %q, want %q", s, want)
+	}
+}
+
 // The spec asks for the menu to be asserted on both an exempt route and a guarded
 // one, because the two middlewares have to agree: they inject the same prop, and
 // they only agree because both go through resolve. menuItems is tested in

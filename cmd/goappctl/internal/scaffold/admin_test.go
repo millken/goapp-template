@@ -137,7 +137,7 @@ func TestAdmin_RoutesGoThroughTheRegistrar(t *testing.T) {
 		`r := adm.Resource(eng, "post")`,
 		"r.GET(ct.base, ct.Index)",
 		"r.POST(ct.base+\"/:id/delete\", ct.Delete)",
-		`r.Menu("Post", ct.base)`,
+		`r.Menu("Content", "Post", ct.base)`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("handler.go missing %q:\n%s", want, got)
