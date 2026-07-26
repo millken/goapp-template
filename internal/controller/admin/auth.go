@@ -41,7 +41,7 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 		return nil, false
 	}
 
-	g, err := findGroup(c.Request.Context(), a.DB, a.usersTable(), id)
+	g, username, err := findGroup(c.Request.Context(), a.DB, a.usersTable(), id)
 	switch {
 	case errors.Is(err, errNoGroup):
 		// Fail closed. A user with no group has no permissions, and that is a
@@ -59,9 +59,10 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 	}
 
 	c.Set("adminMenu", a.menuItems(g))
-	c.Set("adminUser", v)
+	c.Set("adminUser", map[string]any{"id": id, "username": username})
 	c.Set("adminMount", a.mount())
 	c.Set("loginPath", a.LoginPath())
+	c.Set("currentPath", c.Request.URL.Path)
 	return g, true
 }
 

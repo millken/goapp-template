@@ -56,15 +56,18 @@ func TestFindGroup(t *testing.T) {
 	d := groupFixture(t)
 	ctx := context.Background()
 
-	su, err := findGroup(ctx, d, "users", 1)
+	su, name, err := findGroup(ctx, d, "users", 1)
 	if err != nil {
 		t.Fatalf("superuser: %v", err)
 	}
 	if !su.Superuser {
 		t.Error("user 1 should be a superuser")
 	}
+	if name != "root" {
+		t.Errorf("username = %q, want root", name)
+	}
 
-	ed, err := findGroup(ctx, d, "users", 2)
+	ed, _, err := findGroup(ctx, d, "users", 2)
 	if err != nil {
 		t.Fatalf("editor: %v", err)
 	}
@@ -87,10 +90,10 @@ func TestFindGroup(t *testing.T) {
 func TestFindGroup_NoGroupIsErrNoGroup(t *testing.T) {
 	d := groupFixture(t)
 
-	if _, err := findGroup(context.Background(), d, "users", 3); !errors.Is(err, errNoGroup) {
+	if _, _, err := findGroup(context.Background(), d, "users", 3); !errors.Is(err, errNoGroup) {
 		t.Errorf("orphaned user: got %v, want errNoGroup", err)
 	}
-	if _, err := findGroup(context.Background(), d, "users", 999); !errors.Is(err, errNoGroup) {
+	if _, _, err := findGroup(context.Background(), d, "users", 999); !errors.Is(err, errNoGroup) {
 		t.Errorf("unknown user: got %v, want errNoGroup", err)
 	}
 }
@@ -104,7 +107,7 @@ func TestFindGroup_BadJSONIsNotErrNoGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := findGroup(context.Background(), d, "users", 2)
+	_, _, err := findGroup(context.Background(), d, "users", 2)
 	if err == nil {
 		t.Fatal("want an error for malformed JSON")
 	}
