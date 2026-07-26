@@ -101,3 +101,48 @@ func TestMigration003_RollsBackCleanly(t *testing.T) {
 		t.Errorf("users.group_id missing after re-apply: %v", err)
 	}
 }
+
+// An existing project already has 001 and 002 applied and real users in the
+// table. group_id is nullable, so without a backfill every one of them resolves
+// to errNoGroup and is refused — including on the dashboard and logout, because
+// resolve runs before the exemption. They cannot even sign out. Before this
+// migration they had no permission checks at all, so Administrators is what
+// preserves their access rather than granting new.
+func TestMigration003_BackfillsUsersThatPredateIt(t *testing.T) {
+	const dsn = "file:mig003backfill?mode=memory&cache=shared"
+	ctx := context.Background()
+
+	s := New(&Config{Driver: "sqlite3", DSN: dsn, MaxOpenConns: 1, Migrations: &Migrations{}})
+	if err := s.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Stop(ctx) })
+
+	sub, err := fs.Sub(migrationFS, "migrations")
+	if err != nil {
+		t.Fatalf("sub FS: %v", err)
+	}
+	// Rewind to the state an existing project is in, then add a user the way it
+	// would have been created before groups existed.
+	if err := s.DB().MigrateTo(ctx, sub, "002_users"); err != nil {
+		t.Fatalf("migrate down to 002_users: %v", err)
+	}
+	if _, err := s.DB().ExecContext(ctx,
+		`INSERT INTO users (username, password_hash, created_at) VALUES ('legacy', 'x', 0)`); err != nil {
+		t.Fatalf("seed pre-existing user: %v", err)
+	}
+
+	if err := s.DB().MigrateUp(ctx, sub); err != nil {
+		t.Fatalf("upgrade to 003: %v", err)
+	}
+
+	var groupName string
+	if err := s.DB().QueryRowContext(ctx,
+		`SELECT g.name FROM users u JOIN user_groups g ON g.id = u.group_id
+		 WHERE u.username = 'legacy'`).Scan(&groupName); err != nil {
+		t.Fatalf("pre-existing user has no group after upgrade: %v", err)
+	}
+	if groupName != "Administrators" {
+		t.Errorf("legacy user landed in %q, want Administrators", groupName)
+	}
+}

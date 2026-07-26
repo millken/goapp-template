@@ -2,12 +2,16 @@
 -- Admin permission groups. A group holds a flat JSON array of permission keys
 -- ("post.access", "post.modify"); superuser bypasses the check entirely.
 --
--- SQLite flavor (the template's default driver). For other dialects adjust the
--- id/auto-increment line:
---   PostgreSQL: id BIGSERIAL PRIMARY KEY
---   MySQL:      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY
--- created_at is UnixNano (BIGINT), matching the users and sessions convention;
--- hence the strftime multiplication in the seed below.
+-- SQLite flavor (the template's default driver). For other dialects adjust:
+--   the id line — PostgreSQL: id BIGSERIAL PRIMARY KEY
+--                 MySQL:      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY
+--   the seed's created_at — strftime is SQLite-only. PostgreSQL:
+--     (EXTRACT(EPOCH FROM now())::bigint * 1000000000); MySQL:
+--     (UNIX_TIMESTAMP() * 1000000000).
+-- created_at is UnixNano (BIGINT), matching the users and sessions convention.
+-- This is also the first migration with more than one statement, and the
+-- migrator execs each file as a single string: a MySQL DSN needs
+-- multiStatements=true, or split this file per statement.
 --
 -- This migration writes the literal `users` table. The [admin] users_table
 -- setting redirects runtime lookups only — embedded SQL cannot read config — so
@@ -28,3 +32,12 @@ ALTER TABLE users ADD COLUMN group_id INTEGER REFERENCES user_groups(id);
 INSERT INTO user_groups (name, superuser, permissions, created_at)
 VALUES ('Administrators', 1, '[]',
         CAST(strftime('%s', 'now') AS INTEGER) * 1000000000);
+
+-- Users that predate this migration have a NULL group_id, and a user with no
+-- group is refused everything — including the dashboard and logout, because the
+-- group lookup runs before the exemption. They had no permission checks at all
+-- before now, so putting them in Administrators preserves the access they had
+-- rather than granting new. On a fresh database this matches no rows.
+UPDATE users
+   SET group_id = (SELECT id FROM user_groups WHERE name = 'Administrators')
+ WHERE group_id IS NULL;
