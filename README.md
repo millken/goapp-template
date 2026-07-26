@@ -45,7 +45,7 @@ Go + Vue 3 + Inertia.js 应用模板。
 ├── internal/controller/mount_gen.go  #   MountAll：非 admin 区域路由挂载（gen:mounts 区块）
 ├── internal/controller/site/    #   公开路由（/ 和 /api/health）
 <!--goappctl:admin-->
-├── internal/controller/admin/   #   后台：auth + login/logout + dashboard + menu + users
+├── internal/controller/admin/   #   后台：登录/登出 + 权限（组）+ dashboard + 菜单
 <!--goappctl:end-->
 ├── server/server.go             # inertia.Engine 构造
 ├── server/mode_dev.go           # !prod：从磁盘读 dist
@@ -249,6 +249,10 @@ UPDATE user_groups SET permissions = '["post.access","post.modify"]' WHERE name 
 ```
 
 `adm.Permissions()` 返回全部已注册的权限键及各自覆盖的路由，供将来的权限编辑界面使用。
+
+**这一层是认证与授权，不是用户管理模块。** 后台没有用户列表/新建/改密/启停用界面，
+加人只有 `admin create-user`；也没有注册、邮箱、失败锁定，`users` 表没有启停用列。
+公开路由（`internal/controller/site/`）不涉及用户，这一整套只服务后台。
 
 **`users_table` 只影响运行时查询。** 迁移操作字面量 `users` 表（嵌入的 SQL 读不到配置），
 所以把它指向别的表意味着那张表的结构由你负责，包括 `group_id` 列。
