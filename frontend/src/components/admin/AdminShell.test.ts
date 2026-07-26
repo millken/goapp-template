@@ -1,0 +1,90 @@
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from 'vitest'
+import { createApp, h, nextTick } from 'vue'
+import AdminShell from './AdminShell.vue'
+
+// Mounted via createApp directly: the repo deliberately has no @vue/test-utils.
+function mount(props: Record<string, unknown>) {
+  const el = document.createElement('div')
+  document.body.appendChild(el)
+  createApp({ render: () => h(AdminShell, props as any) }).mount(el)
+  return el
+}
+
+const props = {
+  menu: [
+    { title: 'Posts', path: '/admin/post', section: 'Content' },
+    { title: 'Users', path: '/admin/user', section: 'Access' },
+  ],
+  user: { id: 1, username: 'alice' },
+  mount: '/admin',
+  currentPath: '/admin/post',
+}
+
+// The dropdown teleports its content, so query the document rather than the
+// mount point.
+const openUserMenu = async (el: HTMLElement) => {
+  const trigger = [...el.querySelectorAll('button')].find((b) =>
+    b.textContent?.includes('alice'),
+  ) as HTMLButtonElement
+  trigger.click()
+  await nextTick()
+  await nextTick()
+}
+
+describe('AdminShell', () => {
+  it('shows only the active section, and puts it in the breadcrumb', () => {
+    const el = mount(props)
+    // Content is active, so its item shows and Access's does not — that is the
+    // point of two columns rather than one long list.
+    const panel = el.querySelectorAll('aside')[1]
+    expect(panel.textContent).toContain('Posts')
+    expect(panel.textContent).not.toContain('Users')
+
+    const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
+    expect(crumbs.textContent).toContain('Content')
+    expect(crumbs.textContent).toContain('Posts')
+  })
+
+  it('treats a subpage as its parent item, and appends the crumb tail', () => {
+    const el = mount({ ...props, currentPath: '/admin/post/3/edit', crumb: 'Edit' })
+    const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
+    expect(crumbs.textContent).toContain('Posts')
+    expect(crumbs.textContent).toContain('Edit')
+    // The parent becomes a link once there is a tail after it.
+    expect(crumbs.querySelector('a[href="/admin/post"]')).not.toBeNull()
+  })
+
+  it('falls back to Home when no menu item matches the path', () => {
+    const el = mount({ ...props, currentPath: '/admin' })
+    expect(el.querySelector('nav[aria-label="Breadcrumb"]')!.textContent).toContain('Home')
+  })
+
+  // Logout is the one control that must really submit. It is a menu item inside
+  // a form, and reka-ui menu items intercept selection — if a future version
+  // calls preventDefault on the click, the button would silently stop working
+  // and nothing else here would notice.
+  it('logs out by submitting a real form POST', async () => {
+    const el = mount(props)
+    await openUserMenu(el)
+
+    const form = document.querySelector('form[method="post"]') as HTMLFormElement
+    expect(form).not.toBeNull()
+    expect(form.getAttribute('action')).toBe('/admin/logout')
+
+    const submit = form.querySelector('button[type="submit"]') as HTMLButtonElement
+    expect(submit).not.toBeNull()
+
+    // happy-dom does not navigate, so listen for the event instead.
+    const submitted = vi.fn((e: Event) => e.preventDefault())
+    form.addEventListener('submit', submitted)
+    submit.click()
+    await nextTick()
+    expect(submitted).toHaveBeenCalled()
+  })
+
+  it('renders no button inside a button', () => {
+    const el = mount(props)
+    expect(el.querySelector('button button')).toBeNull()
+  })
+})
