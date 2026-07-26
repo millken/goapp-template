@@ -48,6 +48,7 @@ var All = []Component{
 			"frontend/src/components/AdminLayout.vue",
 			"frontend/src/components/ui",
 			"frontend/src/lib",
+			"server/ssr_admin_test.go",
 		},
 	},
 	{
@@ -56,6 +57,7 @@ var All = []Component{
 			"frontend/ssr",
 			"frontend/ssr-esm-render.ts",
 			"frontend/vite.config.ssr.ts",
+			"server/ssr_admin_test.go",
 		},
 	},
 }
