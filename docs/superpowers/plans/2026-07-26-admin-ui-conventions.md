@@ -1403,7 +1403,7 @@ Keep the two negative checks (`:open="true"` and leftover `[[`/`]]`) exactly as 
 - [ ] **Step 4: Regenerate the fixture** (the regeneration recipe is the fixture's own header comment; the header must be restored because `gen` overwrites the whole file):
 
 ```bash
-head -21 frontend/pages/admin/ssrfixture/index.vue > /tmp/fixture-header.txt   # the <!-- … --> block
+head -20 frontend/pages/admin/ssrfixture/index.vue > /tmp/fixture-header.txt   # the <!-- … --> block ends on line 20
 go run ./cmd/goappctl gen admin ssrfixture --force
 rm -rf internal/controller/adminssrfixture frontend/pages/admin/ssrfixture/form.vue
 git checkout internal/controller/mount_gen.go
@@ -1411,7 +1411,7 @@ cat /tmp/fixture-header.txt frontend/pages/admin/ssrfixture/index.vue > /tmp/fix
   && mv /tmp/fixture.vue frontend/pages/admin/ssrfixture/index.vue
 ```
 
-(Adjust `head -21` to however many lines the comment block actually is — it ends at the first `-->`.)
+(20 is the current line number of the closing `-->`; confirm with `awk '/-->/{print NR; exit}' frontend/pages/admin/ssrfixture/index.vue` before running.)
 
 - [ ] **Step 5: Run everything, SSR included**
 
