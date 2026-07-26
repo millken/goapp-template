@@ -26,7 +26,7 @@ the public side of a derived project heavier.
 | Client-side form validation | **Excluded.** No shadcn `form`, no vee-validate — validation is server-side (`internal/validate`) |
 | Vue feature flags | **Delete the five `__VUE_FEATURE_*` defines** — they are dead config (§5) |
 | Theme CSS | Marker block in `main.css`; requires `.css` support in `markers` |
-| npm dependencies | Pruned from `frontend/package.json` when `admin` is off |
+| npm dependencies | **Left in place** when `admin` is off — pruning them invalidates `pnpm-lock.yaml` (§5.3) |
 
 **Why shadcn-vue over five alternatives.** Measured, not assumed — every
 candidate was built into this repo, rendered through the real QuickJS SSR VM, and
@@ -165,23 +165,32 @@ Not optional: `initcmd` deliberately **errors** when a marker appears in a file
 type with no comment form (`initcmd.go:264`), so markers in `.css` without this
 entry would break `goappctl init` outright. That guard is correct and stays.
 
-### 5.3 Dependency pruning
+### 5.3 Dependencies stay — they are not pruned
 
-Eight entries are admin-only:
+Eight entries exist only for the copied components:
 
 | | packages |
 |---|---|
 | `dependencies` | `reka-ui`, `@vueuse/core`, `lucide-vue-next`, `class-variance-authority`, `clsx`, `tailwind-merge`, `@tanstack/vue-table` |
 | `devDependencies` | `tw-animate-css` |
 
-`initcmd` gains `stripAdminDeps`, a sibling of the existing `stripSSRScripts`
-(which already rewrites `frontend/package.json` when `ssr` is off), removing
-those keys when `admin` is off and leaving the file untouched otherwise.
+An earlier revision of this spec had `init` remove them when `admin` was off, on
+tidiness grounds. **That was wrong and has been reverted.** `pnpm-lock.yaml` is
+not pruned alongside `package.json`, and `.github/workflows/ci.yml` ships with
+every generated project running `pnpm install --frozen-lockfile` — which fails
+the moment the two disagree. Every admin-less project would have been generated
+with a red frontend build, and `init`'s own verification (`go build`/`vet`/`test`)
+would not have caught it.
 
-Honest accounting: unused dependencies cost **zero** bundle bytes — measured,
-removing five abandoned libraries left every chunk hash byte-identical. The
-reason to prune is `pnpm install` downloading packages a trimmed project can
-never use, which is the same tidiness argument the rest of `init` is built on.
+This invariant predates this spec: `2026-07-25-goappctl-design.md` §4a already
+stated that dependencies are never touched, naming this exact failure, and calling
+an unused package "the right kind of wart to accept". That judgement holds.
+
+What a trimmed project carries is therefore a wasted download, not weight —
+unused dependencies cost **zero** bundle bytes, measured: removing five abandoned
+libraries left every chunk hash byte-identical. Editing `scripts` (what
+`stripSSRScripts` does for `ssr`) stays safe, because the lockfile does not track
+them.
 
 ## 6. `goappctl gen ui <component>…`
 
