@@ -217,7 +217,50 @@ func TestStripAdminDeps_Idempotent(t *testing.T) {
 		t.Errorf("a package.json with no admin deps must be untouched:\ngot  %q\nwant %q", out, src)
 	}
 }
+
+// The fixture above is realistic — pnpm sorts keys, so "vue" ends up last in
+// dependencies and no admin dep is ever the final key. That means it never
+// exercises the trailing-comma repair, and would pass even if
+// dropCommaBeforeBrace were never called. These two force the cases that make
+// the repair load-bearing.
+func TestStripAdminDeps_LastKeyRemovedStaysValidJSON(t *testing.T) {
+	src := []byte("{\n  \"dependencies\": {\n    \"vue\": \"^3.5.40\",\n    \"reka-ui\": \"^2.10.1\"\n  }\n}\n")
+
+	out, err := StripAdminDeps(src)
+	if err != nil {
+		t.Fatalf("StripAdminDeps: %v", err)
+	}
+	var pkg struct {
+		Dependencies map[string]string `json:"dependencies"`
+	}
+	if err := json.Unmarshal(out, &pkg); err != nil {
+		t.Fatalf("removing the final key left invalid JSON: %v\n%s", err, out)
+	}
+	if len(pkg.Dependencies) != 1 || pkg.Dependencies["vue"] != "^3.5.40" {
+		t.Errorf("want only vue to survive, got %v", pkg.Dependencies)
+	}
+}
+
+func TestStripAdminDeps_EmptiedBlockStaysValidJSON(t *testing.T) {
+	src := []byte("{\n  \"devDependencies\": {\n    \"tw-animate-css\": \"^1.4.0\"\n  }\n}\n")
+
+	out, err := StripAdminDeps(src)
+	if err != nil {
+		t.Fatalf("StripAdminDeps: %v", err)
+	}
+	var pkg struct {
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(out, &pkg); err != nil {
+		t.Fatalf("emptying a block left invalid JSON: %v\n%s", err, out)
+	}
+	if len(pkg.DevDependencies) != 0 {
+		t.Errorf("want an empty devDependencies, got %v", pkg.DevDependencies)
+	}
+}
 ```
+
+**Sanity-check that these tests can fail.** After they pass, temporarily comment out the `dropCommaBeforeBrace(out)` call in `StripAdminDeps` and re-run: `TestStripAdminDeps_LastKeyRemovedStaysValidJSON` must fail with an invalid-JSON error. Restore the call. A test that cannot fail is not coverage.
 
 - [ ] **Step 2: Run test to verify it fails**
 
