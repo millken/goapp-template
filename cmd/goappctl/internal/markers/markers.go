@@ -171,8 +171,13 @@ func StripSSRScripts(src []byte) ([]byte, error) {
 		return nil, errors.New(`package.json has no "build" script to rewrite`)
 	}
 
-	// The removed keys may have left the preceding line with a trailing comma
-	// before a closing brace, which is invalid JSON.
+	dropCommaBeforeBrace(out)
+	return []byte(strings.Join(out, "\n") + trailer), nil
+}
+
+// dropCommaBeforeBrace repairs the JSON that removing a key can leave behind: a
+// trailing comma on the line before a closing brace. Mutates out in place.
+func dropCommaBeforeBrace(out []string) {
 	for i := 0; i+1 < len(out); i++ {
 		next := strings.TrimSpace(out[i+1])
 		if !strings.HasPrefix(next, "}") {
@@ -182,5 +187,44 @@ func StripSSRScripts(src []byte) ([]byte, error) {
 			out[i] = strings.TrimSuffix(cur, ",")
 		}
 	}
+}
+
+// adminDeps are the packages that exist only for the copied shadcn components,
+// listed as they appear as JSON keys.
+var adminDeps = []string{
+	"@tanstack/vue-table",
+	"@vueuse/core",
+	"class-variance-authority",
+	"clsx",
+	"lucide-vue-next",
+	"reka-ui",
+	"tailwind-merge",
+	"tw-animate-css",
+}
+
+// StripAdminDeps removes the admin-only packages from a package.json. It is
+// line-based like StripSSRScripts: the file is developer-edited, so reformatting
+// it through a JSON round-trip would produce a needlessly large diff.
+func StripAdminDeps(src []byte) ([]byte, error) {
+	body, trailer := string(src), ""
+	if strings.HasSuffix(body, "\n") {
+		body, trailer = strings.TrimSuffix(body, "\n"), "\n"
+	}
+
+	drop := make(map[string]bool, len(adminDeps))
+	for _, d := range adminDeps {
+		drop[`"`+d+`"`] = true
+	}
+
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		key, _, found := strings.Cut(strings.TrimSpace(line), ":")
+		if found && drop[strings.TrimSpace(key)] {
+			continue
+		}
+		out = append(out, line)
+	}
+
+	dropCommaBeforeBrace(out)
 	return []byte(strings.Join(out, "\n") + trailer), nil
 }

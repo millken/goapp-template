@@ -327,3 +327,64 @@ func TestSupported_CSS(t *testing.T) {
 		t.Error("Supported(.css) = false, want true")
 	}
 }
+
+func TestStripAdminDeps(t *testing.T) {
+	src := []byte(`{
+  "dependencies": {
+    "@tanstack/vue-table": "^8.21.3",
+    "@vueuse/core": "^13.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-vue-next": "^0.544.0",
+    "reka-ui": "^2.10.1",
+    "tailwind-merge": "^3.3.1",
+    "vue": "^3.5.40"
+  },
+  "devDependencies": {
+    "tw-animate-css": "^1.4.0",
+    "vite": "^8.1.5"
+  }
+}
+`)
+
+	out, err := StripAdminDeps(src)
+	if err != nil {
+		t.Fatalf("StripAdminDeps: %v", err)
+	}
+
+	var pkg struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(out, &pkg); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	for _, gone := range []string{
+		"@tanstack/vue-table", "@vueuse/core", "class-variance-authority",
+		"clsx", "lucide-vue-next", "reka-ui", "tailwind-merge",
+	} {
+		if _, ok := pkg.Dependencies[gone]; ok {
+			t.Errorf("dependencies still has %q", gone)
+		}
+	}
+	if _, ok := pkg.DevDependencies["tw-animate-css"]; ok {
+		t.Error("devDependencies still has tw-animate-css")
+	}
+	if pkg.Dependencies["vue"] != "^3.5.40" {
+		t.Errorf("vue was not preserved: %q", pkg.Dependencies["vue"])
+	}
+	if pkg.DevDependencies["vite"] != "^8.1.5" {
+		t.Errorf("vite was not preserved: %q", pkg.DevDependencies["vite"])
+	}
+}
+
+func TestStripAdminDeps_Idempotent(t *testing.T) {
+	src := []byte("{\n  \"dependencies\": {\n    \"vue\": \"^3.5.40\"\n  }\n}\n")
+	out, err := StripAdminDeps(src)
+	if err != nil {
+		t.Fatalf("StripAdminDeps: %v", err)
+	}
+	if string(out) != string(src) {
+		t.Errorf("a package.json with no admin deps must be untouched:\ngot  %q\nwant %q", out, src)
+	}
+}
