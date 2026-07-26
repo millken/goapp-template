@@ -129,7 +129,6 @@ func TestUIDestPath(t *testing.T) {
 		{"ui/button/Button.vue", "frontend/src/components/ui/button/Button.vue"},
 		{"ui/button/index.ts", "frontend/src/components/ui/button/index.ts"},
 		{"lib/utils.ts", "frontend/src/lib/utils.ts"},
-		{"composables/useFoo.ts", "frontend/src/composables/useFoo.ts"},
 	} {
 		got, err := uiDestPath(c.in)
 		if err != nil {

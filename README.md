@@ -174,9 +174,9 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 后台用 [shadcn-vue](https://www.shadcn-vue.com/)：组件**源码复制进仓库**（`frontend/src/components/ui/`），
 不是 npm 依赖 —— 和 `gen resource` 产出一样，是「你拥有的普通文件」。数据表格能力来自
 [@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。有两处改动没有跟上游保持一致，
-`--overwrite` 更新组件时要留意别覆盖回去：`frontend/src/components/ui/alert/index.ts` 多了一个
+`gen ui --force` 更新组件时要留意别覆盖回去：`frontend/src/components/ui/alert/index.ts` 多了一个
 `success` 变体（上游只有 `default`、`destructive`）；所有 `@/registry/default/ui` 导入都已重写成
-`@/components/ui`（见下文「注意」）。
+`@/components/ui`。
 
 - **只服务后台。** 这些文件归 `admin` 组件所有，`goappctl init` 不选 admin 时 `main.css` 里的
   主题块随之消失，公开页面体积回到原样。**依赖不会一起消失**：8 个 npm 包仍留在

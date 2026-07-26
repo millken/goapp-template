@@ -130,10 +130,17 @@ func uiDestPath(registryPath string) (string, error) {
 		strings.HasPrefix(cleanPath, "..") || cleanPath != registryPath {
 		return "", fmt.Errorf("registry file path %q is not a plain relative path", registryPath)
 	}
-	if strings.HasPrefix(registryPath, "ui/") {
+	// Only the two directories the registry actually ships (verified across 17
+	// live items: 142 files under ui/, one under lib/). Without this, a path like
+	// "main.ts" would map onto frontend/src/main.ts — the real Vite entry point —
+	// and --force would overwrite it with component source.
+	switch {
+	case strings.HasPrefix(registryPath, "ui/"):
 		return "frontend/src/components/" + registryPath, nil
+	case strings.HasPrefix(registryPath, "lib/"):
+		return "frontend/src/" + registryPath, nil
 	}
-	return "frontend/src/" + registryPath, nil
+	return "", fmt.Errorf("registry file path %q is outside ui/ and lib/, the only directories components ship into", registryPath)
 }
 
 // rewriteRegistryImports points registry-internal imports at where the files
