@@ -137,3 +137,21 @@ func TestFindGroupID(t *testing.T) {
 		}
 	}
 }
+
+// The unknown-name message tells the operator to pass a different --group. If a
+// storage failure produced that same message they would keep retrying names
+// against a database that is not answering, so the two must not collapse.
+func TestFindGroupID_StorageFailureIsNotAnUnknownName(t *testing.T) {
+	d := groupFixture(t)
+	if err := d.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := FindGroupID(context.Background(), d, "Administrators")
+	if err == nil {
+		t.Fatal("want an error once the pool is closed")
+	}
+	if strings.Contains(err.Error(), "--group") {
+		t.Errorf("a storage failure must not be reported as an unknown group name: %v", err)
+	}
+}
