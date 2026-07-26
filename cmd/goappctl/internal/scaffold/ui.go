@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -141,6 +142,42 @@ func rewriteRegistryImports(content string) string {
 	return strings.ReplaceAll(content, registryImportPrefix, "@/components/ui")
 }
 
+// missingDeps reports which npm packages the components need that
+// frontend/package.json does not already list. A project without a package.json
+// gets the full list rather than an error — it is a report, not a gate.
+func missingDeps(moduleRoot string, deps []string) ([]string, error) {
+	installed := map[string]bool{}
+
+	data, err := os.ReadFile(filepath.Join(moduleRoot, "frontend/package.json"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read frontend/package.json: %w", err)
+	}
+	if err == nil {
+		var pkg struct {
+			Dependencies    map[string]string `json:"dependencies"`
+			DevDependencies map[string]string `json:"devDependencies"`
+		}
+		if err := json.Unmarshal(data, &pkg); err != nil {
+			return nil, fmt.Errorf("frontend/package.json is not valid JSON: %w", err)
+		}
+		for name := range pkg.Dependencies {
+			installed[name] = true
+		}
+		for name := range pkg.DevDependencies {
+			installed[name] = true
+		}
+	}
+
+	var out []string
+	for _, d := range deps {
+		if !installed[d] && !slices.Contains(out, d) {
+			out = append(out, d)
+		}
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
 // UIOptions controls `gen ui`.
 type UIOptions struct {
 	// ModuleRoot is the project root; empty means paths are relative to the cwd.
@@ -219,6 +256,21 @@ func UI(names []string, opts UIOptions) error {
 		if err := os.WriteFile(full, []byte(rewriteRegistryImports(p.content)), 0o644); err != nil {
 			return fmt.Errorf("gen ui: write %s: %w", p.dest, err)
 		}
+	}
+
+	var deps []string
+	for _, item := range items {
+		deps = append(deps, item.Dependencies...)
+	}
+	missing, err := missingDeps(opts.ModuleRoot, deps)
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		// Printed, not run: gen admin prints its mount line rather than editing
+		// serve.go, and the generator does not silently change dependencies.
+		fmt.Fprintf(out, "\ninstall the packages these components need:\n    pnpm -C frontend add %s\n",
+			strings.Join(missing, " "))
 	}
 	return nil
 }

@@ -328,3 +328,49 @@ func TestUI_WritesNothingWhenAnyItemFails(t *testing.T) {
 		t.Error("a failed run left files behind")
 	}
 }
+
+func TestMissingDeps(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "frontend"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkg := `{
+  "dependencies": { "vue": "^3.5.40", "reka-ui": "^2.10.1" },
+  "devDependencies": { "vite": "^8.1.5" }
+}`
+	if err := os.WriteFile(filepath.Join(root, "frontend/package.json"), []byte(pkg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := missingDeps(root, []string{"reka-ui", "clsx", "vite", "clsx"})
+	if err != nil {
+		t.Fatalf("missingDeps: %v", err)
+	}
+	if len(got) != 1 || got[0] != "clsx" {
+		t.Errorf("got %v, want [clsx] — installed deps and duplicates must drop out", got)
+	}
+}
+
+func TestMissingDeps_NoPackageJSONReportsEverything(t *testing.T) {
+	got, err := missingDeps(t.TempDir(), []string{"clsx", "reka-ui"})
+	if err != nil {
+		t.Fatalf("missingDeps: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %v, want both deps reported when there is no package.json", got)
+	}
+}
+
+func TestUI_ReportsMissingDependencies(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+
+	if err := UI([]string{"button"}, UIOptions{
+		ModuleRoot: root, BaseURL: twoItemStub(t), Out: &out,
+	}); err != nil {
+		t.Fatalf("UI: %v", err)
+	}
+	if !strings.Contains(out.String(), "pnpm -C frontend add reka-ui") {
+		t.Errorf("expected a pnpm add line naming reka-ui, got:\n%s", out.String())
+	}
+}
