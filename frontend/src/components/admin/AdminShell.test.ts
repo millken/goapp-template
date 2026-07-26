@@ -40,6 +40,9 @@ describe('AdminShell', () => {
     const panel = el.querySelectorAll('aside')[1]
     expect(panel.textContent).toContain('Posts')
     expect(panel.textContent).not.toContain('Users')
+    // Home is contributed by the shell rather than the menu, which makes it the
+    // one item likely to be concatenated into every panel by mistake.
+    expect(panel.textContent).not.toContain('Overview')
 
     const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
     expect(crumbs.textContent).toContain('Content')
@@ -55,9 +58,22 @@ describe('AdminShell', () => {
     expect(crumbs.querySelector('a[href="/admin/post"]')).not.toBeNull()
   })
 
-  it('falls back to Home when no menu item matches the path', () => {
-    const el = mount({ ...props, currentPath: '/admin' })
-    expect(el.querySelector('nav[aria-label="Breadcrumb"]')!.textContent).toContain('Home')
+  it('resolves an unregistered admin path to Home by prefix', () => {
+    const el = mount({ ...props, currentPath: '/admin/nothing-registered-here' })
+    const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
+    expect(crumbs.textContent).toContain('Home')
+    expect(crumbs.textContent).toContain('Overview')
+  })
+
+  // The no-match fallback needs a path outside the mount to reach at all: Home's
+  // own item is the mount, so it prefix-matches everything beneath it. Only a
+  // mount that disagrees with the served path gets here — which is exactly the
+  // misconfiguration worth degrading gracefully rather than crashing on.
+  it('falls back to Home for a path outside the mount', () => {
+    const el = mount({ ...props, currentPath: '/somewhere-else' })
+    const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
+    expect(crumbs.textContent).toContain('Home')
+    expect(el.querySelectorAll('aside')[1].textContent).toContain('Overview')
   })
 
   // Logout is the one control that must really submit. It is a menu item inside
