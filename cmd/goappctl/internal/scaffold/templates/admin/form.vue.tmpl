@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import AdminLayout from '@/components/AdminLayout.vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 interface MenuItem { title: string; path: string; order?: number }
 
@@ -28,26 +32,33 @@ defineProps<{
     :login-path="loginPath"
     :flash="flash"
   >
-    <h1 class="text-2xl font-bold text-gray-900 mb-6">{{ item.id ? 'Edit' : 'New' }} [[.Type]]</h1>
-    <form
-      :action="item.id ? `${basePath}/${item.id}` : basePath"
-      method="post"
-      class="space-y-4 bg-white p-6 rounded shadow max-w-lg"
-    >
-      <div>
-        <label class="block text-sm font-medium text-gray-700">Name</label>
-        <input
-          name="name"
-          :value="item.name"
-          class="mt-1 block w-full border rounded px-2 py-1"
-          :class="errors?.name ? 'border-red-500' : 'border-gray-300'"
-        />
-        <p v-if="errors?.name" class="mt-1 text-sm text-red-600">{{ errors.name }}</p>
-      </div>
-      <div class="flex space-x-2">
-        <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white rounded">Save</button>
-        <a :href="basePath" class="px-3 py-1.5 border rounded">Cancel</a>
-      </div>
-    </form>
+    <Card class="max-w-lg">
+      <CardHeader>
+        <CardTitle>{{ item.id ? 'Edit' : 'New' }} [[.Type]]</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form
+          :action="item.id ? `${basePath}/${item.id}` : basePath"
+          method="post"
+          class="space-y-4"
+        >
+          <div class="space-y-1.5">
+            <Label for="name">Name</Label>
+            <Input
+              id="name"
+              name="name"
+              :model-value="item.name"
+              :aria-invalid="!!errors?.name"
+              :class="errors?.name ? 'border-destructive' : ''"
+            />
+            <p v-if="errors?.name" class="text-sm text-destructive">{{ errors.name }}</p>
+          </div>
+          <div class="flex gap-2">
+            <Button type="submit">Save</Button>
+            <Button as="a" :href="basePath" variant="outline">Cancel</Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   </AdminLayout>
 </template>

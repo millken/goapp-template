@@ -103,13 +103,22 @@ func TestGeneratedImportsTargetModule(t *testing.T) {
 // is why there is no `old` prop.
 func TestGeneratedWriteHandlersValidate(t *testing.T) {
 	for _, c := range []struct {
-		name    string
-		gen     func(string, Options) error
-		handler string
-		form    string
+		name      string
+		gen       func(string, Options) error
+		handler   string
+		form      string
+		formWants []string
 	}{
-		{"resource", Resource, "internal/controller/post/handler.go", "frontend/pages/post/form.vue"},
-		{"admin", Admin, "internal/controller/adminpost/handler.go", "frontend/pages/admin/post/form.vue"},
+		{
+			"resource", Resource,
+			"internal/controller/post/handler.go", "frontend/pages/post/form.vue",
+			[]string{`errors?: Record<string, string>`, `errors?.name`, `:value="item.name"`},
+		},
+		{
+			"admin", Admin,
+			"internal/controller/adminpost/handler.go", "frontend/pages/admin/post/form.vue",
+			[]string{`errors?: Record<string, string>`, `errors?.name`, `:model-value="item.name"`},
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -139,11 +148,7 @@ func TestGeneratedWriteHandlersValidate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read %s: %v", c.form, err)
 			}
-			for _, want := range []string{
-				`errors?: Record<string, string>`,
-				`errors?.name`,
-				`:value="item.name"`,
-			} {
+			for _, want := range c.formWants {
 				if !strings.Contains(string(form), want) {
 					t.Errorf("%s missing %q:\n%s", c.form, want, form)
 				}
