@@ -218,16 +218,26 @@ writing partial output — fetch every requested item before writing any file.
 `--dry-run` still needs the network, because the plan it prints is derived from
 the fetched manifests.
 
-**Why not the upstream CLI.** `pnpm dlx shadcn-vue@latest init` fails in this
-environment with `Failed to fetch from registry` while `curl` and node's `fetch`
-reach the same URL and return 200; normalising the conflicting `http_proxy` /
-`HTTPS_PROXY` variables did not help and the cause was not identified. Whether
-that generalises beyond this machine is **unknown** — but the registry format is
-four fields (`files[].path`, `files[].content`, `dependencies`,
-`registryDependencies`), the fetch-and-rewrite path is already prototyped end to
-end, and `goappctl` is how this template does scaffolding. The exposure is that
-an upstream format change breaks `gen ui`; the mitigation is that it breaks
-loudly, at a single call site, and only for developers adding new components.
+**Why not the upstream CLI.** Primarily because of who has to run it. A developer
+working on a generated project already has the Go toolchain — `goappctl` is how
+this template does every other kind of scaffolding, and `gen ui` keeps adding a
+component in the same place as adding a resource. The upstream CLI additionally
+requires Node and a working `pnpm dlx`, which a Go backend developer may not have
+set up at all.
+
+The registry format is four fields (`files[].path`, `files[].content`,
+`dependencies`, `registryDependencies`) and the fetch-and-rewrite path is
+prototyped end to end. The exposure is that an upstream format change breaks
+`gen ui`; the mitigation is that it breaks loudly, at a single call site, and
+only for developers adding new components.
+
+**A secondary observation, not the main argument.** Both `pnpm dlx
+shadcn-vue@latest init` and the package's MCP server fail here with
+`Failed to fetch from registry`, reproducibly, while `curl` and a plain
+`node -e "fetch(...)"` against the identical URL return 200 — so the fault is in
+that npm package's fetch path, not the network. An earlier draft of this section
+leaned on that as the reason for `gen ui`; it is too environment-specific to
+carry the decision, and the argument above stands without it.
 
 ## 7. Baseline component set
 
