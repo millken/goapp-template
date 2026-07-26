@@ -136,3 +136,34 @@ func TestAdminMenuPropIsFilteredOnBothMiddlewares(t *testing.T) {
 		}
 	}
 }
+
+// The rail must not reorder itself per user. Section order comes from the
+// unfiltered menu, so hiding a section's first-registered item leaves the
+// section where it was. Deriving the order from the filtered slice instead
+// would rank sections by whichever still had a visible item earliest — which is
+// why "Content" is registered between Access's hidden and visible items: under
+// that bug the filtered menu would lead with Content. A superuser cannot detect
+// the difference, since nothing is filtered for them.
+func TestMenuItems_SectionOrderSurvivesFiltering(t *testing.T) {
+	a := New(nil, nil)
+	a.addResourceMenuItem(MenuItem{Title: "Groups", Path: "/admin/group", Section: "Access"}, "group")
+	a.AddMenuItem(MenuItem{Title: "Posts", Path: "/admin/post", Section: "Content"})
+	a.AddMenuItem(MenuItem{Title: "Audit", Path: "/admin/audit", Section: "Access"})
+
+	sections := func(g *group) string {
+		var out []string
+		for _, m := range a.menuItems(g) {
+			out = append(out, m.Section+":"+m.Title)
+		}
+		return strings.Join(out, ",")
+	}
+
+	// Within a section, Order-then-Title still applies: Audit sorts before Groups.
+	if got, want := sections(&group{Superuser: true}), "Access:Audit,Access:Groups,Content:Posts"; got != want {
+		t.Errorf("superuser menu = %q, want %q", got, want)
+	}
+	// Access keeps first place even though the entry that earned it is hidden.
+	if got, want := sections(&group{Permissions: permSet{}}), "Access:Audit,Content:Posts"; got != want {
+		t.Errorf("filtered menu = %q, want %q", got, want)
+	}
+}
