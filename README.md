@@ -135,7 +135,7 @@ go install github.com/millken/goapp-template/cmd/goappctl@latest
 goappctl gen resource post
 goappctl gen resource blog-post   # 资源名支持 snake/kebab/CamelCase
 goappctl gen mvc post             # mvc 是 gen resource 的别名
-goappctl gen admin post           # admin 资源（鉴权保护，页面套 AdminLayout）
+goappctl gen admin post           # admin 资源（鉴权保护，页面套 AdminShell）
 goappctl gen resource post --force        # 覆盖已存在文件
 goappctl gen resource post --no-mount     # 不改 mount_gen.go，只打印接线行
 goappctl gen resource post -C ../other    # 指定项目根目录

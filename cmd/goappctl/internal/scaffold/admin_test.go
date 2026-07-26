@@ -74,7 +74,7 @@ func TestAdmin_WritesFlashOnEveryRedirect(t *testing.T) {
 			t.Fatalf("read %s: %v", rel, err)
 		}
 		if !strings.Contains(string(page), `:flash="flash"`) {
-			t.Errorf("%s does not pass flash to AdminLayout", rel)
+			t.Errorf("%s does not pass flash to AdminShell", rel)
 		}
 	}
 }
