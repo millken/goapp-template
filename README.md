@@ -98,7 +98,7 @@ myapp serve [-a :8080] [--dev-addr http://localhost:5173] [-c config.yaml]
 ```
 <!--goappctl:admin-->
 ```bash
-myapp admin create-user <username> # 创建 admin 登录用户（bcrypt）
+myapp admin create-user <username> [--group Administrators] # 创建 admin 登录用户（bcrypt）
 ```
 <!--goappctl:end-->
 ```bash
