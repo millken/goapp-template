@@ -62,6 +62,23 @@ including `status`.
 `u.status`, and returns it. Still one query per request — the constraint stage 1
 established and stage 1's reviewer verified by instrumentation.
 
+Three places read it, and all three have to change together — the struct is the
+one an implementer forgets, because the other two stop compiling without it:
+
+- `User` gains `Status int`.
+- `findUser`'s `SELECT id, username, password_hash` gains `status`, so
+  `authenticate` has something to read.
+- `authenticate` refuses a disabled account **after `verifyPassword` succeeds**,
+  never before. Checking earlier would make a disabled account distinguishable
+  from a wrong password by timing — the same leak the existing
+  `dummyPasswordHash` compare exists to prevent on the unknown-user path.
+
+Because the refusal happens only once the correct password has been supplied,
+the error may say plainly that the account is disabled rather than reusing
+`errInvalidCredentials`: whoever sees it already proved they hold the
+credential, so nothing leaks, and "invalid credentials" would send the real
+owner hunting for a password problem that does not exist.
+
 `resolve`, on `status = 0`, flashes `error` → `该账号已被禁用。` and redirects to
 the login path. Not a bare 403: a disabled user would otherwise stare at an
 empty page forever with nothing to act on. `authenticate` also refuses a
@@ -106,9 +123,19 @@ SELECT COUNT(*) FROM users u JOIN user_groups g ON g.id = u.group_id
  WHERE g.superuser = 1 AND u.status = 1
 ```
 
+**The count runs inside the same transaction, after the mutation.** That is the
+whole mechanism, not an implementation detail: the `UPDATE`/`DELETE` is staged,
+the count then reads the state that change produced, and a zero rolls it back.
+SQLite's default isolation makes a transaction see its own uncommitted writes,
+so clearing a group's `superuser` flag correctly drops every member of that group
+out of the count in one go.
+
+Moving the count outside the transaction, or before the mutation, turns it back
+into the pre-check this design rejects — a prediction of the resulting state
+rather than a reading of it, and predictions are what miss the fifth path.
+
 Zero means roll back and report. One guard covers every path, present and
-future, and it is checked against the state the change actually produced rather
-than against a prediction of it.
+future.
 
 Rules 1 and 2 answer 403 with a flash naming the rule. Rule 3 answers by
 re-rendering the form with a field-level error, since it is a consequence of the
@@ -126,6 +153,16 @@ r.GET(base+"/:id/edit", ct.Edit); r.POST(base+"/:id", ct.Update)
 r.POST(base+"/:id/delete", ct.Delete); r.POST(base+"/:id/status", ct.SetStatus)
 r.Menu("Access", "Users", base)
 ```
+
+`POST /:id/status` carries a `status` form field of `0` or `1` rather than
+toggling whatever it finds, so a double-submitted form cannot flip a user back
+on. One handler, but **the two directions are not symmetric**, and the handler
+branches on that:
+
+| | Rule 1 (self) | Rule 3 (last superuser) |
+|---|---|---|
+| `status=0` (disable) | refused | checked |
+| `status=1` (enable) | allowed — and a no-op, since a disabled user cannot reach this route to begin with | not applicable: enabling can only increase the count |
 
 `group` is the same shape, minus `status`, plus the permission grid on its edit
 page. Both sit in the `Access` menu section.
@@ -159,6 +196,11 @@ anything beyond that is silently not part of the credential. Rejecting it is
 honest; accepting it would mean two different passwords authenticate the same
 account.
 
+The username charset is **ASCII-only on purpose**: admin accounts are created by
+an operator, not chosen by a visitor, and they appear in log lines, CLI
+arguments and `create-user` invocations where a Unicode identifier is a nuisance
+rather than a feature. Recorded here so a later reader does not file it as a bug.
+
 Uniqueness is a handler closure querying the database — the pattern the
 generated scaffolding already stubs as `nameAvailable`; `internal/validate`
 itself stays stdlib-only and database-free.
@@ -182,6 +224,12 @@ grid ticks `access` when `modify` is ticked and unticks `modify` when `access` i
 unticked — and the server normalizes the same way on save. The client behaviour
 is convenience; it cannot be the enforcement point.
 
+Stale-key cleanup is **orthogonal to the superuser flag** — it runs for a
+superuser group too. The stored set should always equal what the interface
+showed, whether or not anything currently consults it; skipping the cleanup for
+superuser groups would leave a group's stored permissions silently disagreeing
+with its own edit page the moment the flag were cleared.
+
 **Stale keys.** A group may hold keys for resources that no longer register
 routes. They appear below the grid, listed, with "保存将清除以下失效权限". After
 saving, the stored set equals the checkbox state — nothing invisible survives.
@@ -202,7 +250,9 @@ frontend/pages/admin/account/password.vue
 ```
 
 Modified: `group.go` (`findGroup` gains `status`), `auth.go` (`resolve`'s third
-outcome), `user.go` (`authenticate` refuses disabled), `admin.go` (`Mount`),
+outcome), `user.go` (three changes that go together: `User` gains `Status`,
+`findUser`'s SELECT gains the column, and `authenticate` refuses a disabled
+account after the password verifies — see §4), `admin.go` (`Mount`),
 `AdminShell.vue` (the user-menu item), `components.go` (the new pages are
 admin-owned), README.
 
@@ -224,6 +274,17 @@ members per group. Both are one query.
   and cannot log back in. The test must assert the flash actually arrives —
   staging it and destroying the session are mutually exclusive, and getting that
   backwards would silently lose the only explanation the user gets.
+- **Two admin requests in a row from a disabled user** each re-stage the flash
+  and each bounce. That is the intended behaviour, not a bug to suppress: every
+  attempt should say why it failed, and the alternative — a "already told them"
+  marker in the session — is state to no purpose. The test pins it so nobody
+  later mistakes the repetition for a defect.
+- **`authenticate` rejects a disabled account only after the password verifies**,
+  and a wrong password on a disabled account is still reported as invalid
+  credentials. Asserting the order is what keeps the timing oracle closed.
+- **Enabling is not subject to rules 1 and 3**, and `status` is taken from the
+  request rather than toggled: submitting `status=1` twice leaves the user
+  enabled.
 - **The three outcomes stay distinguishable**: no group → 403, storage failure →
   500, disabled → redirect. A test per branch; conflating any two would make an
   outage or a disabled account look like the wrong thing.
