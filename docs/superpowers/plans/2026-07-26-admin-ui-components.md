@@ -1097,7 +1097,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
-  Pagination, PaginationContent, PaginationItem, PaginationNext, PaginationPrevious,
+  Pagination, PaginationContent, PaginationEllipsis, PaginationFirst,
+  PaginationItem, PaginationLast, PaginationNext, PaginationPrevious,
 } from '@/components/ui/pagination'
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
@@ -1241,16 +1242,36 @@ const setNameFilter = (v: string | number) =>
              update:page, TanStack owns the index. PaginationItem is for numbered
              pages — wrapping Prev/Next in one nests a <button> inside a <button>,
              which browsers reparse and hydration then disagrees with. -->
+        <!-- Page state lives in the table: reka-ui emits update:page and we
+             forward it, so there is one source of truth. First/Previous/Next/Last
+             are siblings of the page items, never parents — wrapping one in a
+             PaginationItem nests a <button> inside a <button>, which browsers
+             reparse and hydration then disagrees with. PaginationItem is itself
+             a button (it applies buttonVariants), so the page number goes in its
+             slot rather than in a nested Button. -->
         <Pagination
           v-if="table.getPageCount() > 1"
           :items-per-page="PAGE_SIZE"
           :total="table.getFilteredRowModel().rows.length"
           :page="table.getState().pagination.pageIndex + 1"
+          :sibling-count="1"
+          show-edges
           @update:page="(p) => table.setPageIndex(p - 1)"
         >
-          <PaginationContent class="justify-end">
+          <PaginationContent v-slot="{ items }" class="justify-end">
+            <PaginationFirst />
             <PaginationPrevious />
+            <template v-for="(item, i) in items">
+              <PaginationItem
+                v-if="item.type === 'page'"
+                :key="`page-${item.value}`"
+                :value="item.value"
+                :is-active="item.value === table.getState().pagination.pageIndex + 1"
+              >{{ item.value }}</PaginationItem>
+              <PaginationEllipsis v-else :key="`gap-${i}`" :index="i" />
+            </template>
             <PaginationNext />
+            <PaginationLast />
           </PaginationContent>
         </Pagination>
       </CardContent>
