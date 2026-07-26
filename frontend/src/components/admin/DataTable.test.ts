@@ -15,7 +15,7 @@ import DataTable from './DataTable.vue'
 function mount(props: Record<string, unknown>, slots: Record<string, unknown> = {}) {
   const el = document.createElement('div')
   document.body.appendChild(el)
-  createApp({ render: () => h(DataTable, props as any, slots as any) }).mount(el)
+  createApp({ render: () => h(DataTable, props as any, slots) }).mount(el)
   return el
 }
 
@@ -71,5 +71,20 @@ describe('DataTable', () => {
   it('shows the empty state when no rows match', () => {
     const el = mount({ columns, data: [] })
     expect(el.textContent).toContain('No results.')
+  })
+
+  // PaginationItem renders its own <button>, so using it to wrap
+  // First/Previous/Next/Last nests a button inside a button — browsers reparse
+  // that and hydration then disagrees with the server's markup. The real guard
+  // is server/ssr_fixture_test.go's maxButtonDepth, but that only reaches this
+  // component once the generated fixture consumes it; until then a regression
+  // here would be invisible. happy-dom keeps the nesting as authored rather
+  // than reparenting it, so the selector below sees what the browser would
+  // have had to fix up.
+  it('renders no button inside a button, pager included', async () => {
+    const el = mount({ columns, data: rows(45) }) // 3 pages, so the pager renders
+    await nextTick()
+    expect(el.querySelector('nav')).not.toBeNull() // the pager is actually present
+    expect(el.querySelector('button button')).toBeNull()
   })
 })
