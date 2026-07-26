@@ -50,9 +50,11 @@ implementation reads the matched route pattern inside the middleware — but
 `inertia.Context` has no `FullPath()`; its exported surface offers
 `Request.URL.Path` (the *concrete* path, `/admin/post/42/edit`) and `Params`.
 Nothing exposes `/admin/post/:id/edit`, and normalising by stripping id-shaped
-segments is guesswork. `inertia.Engine` likewise cannot enumerate its routes: its
-`router` field is unexported and `router.Router[T]` offers only `Add`, `Lookup`,
-`LookupNoAlloc` and `Map`. So the design captures `(resource, verb)` in a closure
+segments is guesswork. `inertia.Engine` likewise cannot enumerate its routes. Its `router` field is
+unexported, and `router.Router[T]` offers only `Add`, `Lookup`, `LookupNoAlloc`
+and `Map` — as do the seven per-method `Tree[T]` values it composes, which are
+themselves unexported fields. `Map` transforms handlers in place and yields no
+paths. There is no traversal entry point at any level. So the design captures `(resource, verb)` in a closure
 when the route is registered. This needs no change to the `inertia` dependency
 and yields the enumerable catalogue a management UI needs as a by-product.
 
@@ -154,8 +156,21 @@ type Permission struct {
 ## 5. The guard
 
 `AuthMiddleware()` keeps its current meaning — *authenticated*, nothing more —
-and is what the exempt routes use. Authorisation is a second, separate middleware
-the registrar attaches:
+and is what the exempt routes use. Guarded routes get `guard(key)` **instead**,
+never in addition:
+
+```go
+// what the registrar attaches — one middleware, not two
+eng.GET(path, a.guard("post.access"), handler)
+```
+
+That matters for §2's "one indexed query per admin request". `guard` does
+everything `AuthMiddleware` does *plus* the key check, so stacking both would
+resolve the group twice per request and make that claim false. Because exactly one
+of the two runs on any given route, no caching in `c.Set` is needed to keep the
+count at one — the simpler structure is also the correct one.
+
+The middleware itself:
 
 ```go
 // guard requires an authenticated user whose group holds key.
@@ -216,7 +231,9 @@ as it is, for entries outside the permission model.
 ## 6. Schema and storage
 
 New migration `003_user_groups.up.sql` / `.down.sql`, following the existing
-files' SQLite-flavoured style with dialect notes in comments:
+files' SQLite-flavoured style with dialect notes in comments.
+
+**Up:**
 
 ```sql
 CREATE TABLE IF NOT EXISTS user_groups (
@@ -228,20 +245,81 @@ CREATE TABLE IF NOT EXISTS user_groups (
 );
 
 ALTER TABLE users ADD COLUMN group_id INTEGER REFERENCES user_groups(id);
+
+INSERT INTO user_groups (name, superuser, permissions, created_at)
+VALUES ('Administrators', 1, '[]',
+        CAST(strftime('%s', 'now') AS INTEGER) * 1000000000);
+```
+
+**Down:**
+
+```sql
+ALTER TABLE users DROP COLUMN group_id;
+DROP TABLE IF EXISTS user_groups;
 ```
 
 `permissions` holds a JSON array of keys — `["post.access","post.modify"]`.
 `created_at` is UnixNano, matching the `users` and `sessions` convention — hence
-the `strftime` multiplication in the seed above, which gives second precision in
-nanosecond units. The seed is written as a guarded `INSERT … SELECT … WHERE NOT
-EXISTS` so re-running the migration cannot trip the `name` unique constraint.
+the `strftime` multiplication, which yields second precision in nanosecond units.
 
-**The groups table name is not configurable**, though `users_table` is. That
-asymmetry is deliberate: `users_table` exists so the admin can point at a table
-the project already had, whereas `user_groups` is created by this migration and
-has no pre-existing counterpart to point at. Adding a second knob would be
-speculative. The `users_table` value is still interpolated into the join above
-and stays subject to the existing `^[A-Za-z_]\w*$` guard.
+### 6.1 The down migration is clean, and that was verified
+
+`DROP COLUMN` is the part worth checking rather than assuming: SQLite only gained
+it in 3.35 (2021), and it refuses columns that are indexed, unique, or part of a
+primary key. `group_id` carries a `REFERENCES` clause, which is the case most
+likely to be refused.
+
+Tested against the driver this template actually uses: `mattn/go-sqlite3` bundles
+**SQLite 3.53.3**, and `ALTER TABLE users DROP COLUMN group_id` succeeds on a
+column declared with `REFERENCES user_groups(id)`. MySQL and PostgreSQL both
+support `DROP COLUMN` unconditionally. So the down migration rolls back cleanly on
+all three dialects the template names, and no table-rebuild dance is needed.
+
+Order matters: the column goes before the table it references.
+
+### 6.2 Migrations run once, in a transaction — so nothing here is idempotent
+
+`sqldb`'s migrator records a version and wraps each migration file in
+`BeginTx` … `Commit`, rolling back on error or panic. Each file therefore applies
+exactly once and atomically.
+
+This is why the seed is a plain `INSERT` rather than a guarded
+`INSERT … WHERE NOT EXISTS`: a guard would imply the statement might run twice,
+which the migrator prevents. It also settles `ALTER TABLE ADD COLUMN`, which is
+*not* idempotent — a second run fails with `duplicate column name: group_id`
+(verified) — but never gets a second run. Re-applying this schema to a database
+out of band is outside the migrator's contract, and pretending otherwise with
+partial guards would be worse than saying so.
+
+### 6.3 `users_table` is configurable; the migration is not — and that is a real limit
+
+The guard's join interpolates the configured `users_table` (§5), but this
+migration writes the literal `users`. Migrations are embedded at build time
+(`//go:embed migrations/*.sql` in `internal/service/db/db.go`), so no
+configuration value can reach them.
+
+**This contradiction predates this spec.** `002_users.up.sql` already does
+`CREATE TABLE IF NOT EXISTS users` while `admin.users_table` claims the table is
+configurable. This design inherits it and, by adding an `ALTER`, makes it sharper —
+so it gets stated rather than left for an implementer to discover:
+
+- Migrations own the literal `users` table.
+- `users_table` therefore redirects **runtime lookups only** — login, and the
+  guard's join.
+- Pointing it at another table means the operator owns that table's schema,
+  including adding a `group_id` column compatible with the join. The template
+  will not do it for them, and the failure is a SQL error at login rather than
+  anything friendlier.
+
+That narrows what `users_table` is good for: adopting a table whose *shape* you
+have already matched, not a free-form redirect. Widening it would mean either
+templating the migration SQL or moving group membership out of the users table
+entirely — both larger changes than this design, and neither needed to ship it.
+
+**The groups table name is not configurable**, and that asymmetry is deliberate:
+`user_groups` is created here and has no pre-existing counterpart to point at, so
+a second knob would be speculative. The `users_table` value stays subject to the
+existing `^[A-Za-z_]\w*$` guard before interpolation.
 
 ## 7. Exemptions and bootstrap
 
@@ -258,14 +336,9 @@ sidebar. They see the frame and whichever menu entries they may use — which is
 the point: the failure mode of a permission system should be a short menu, not a
 wall.
 
-**Bootstrap.** The migration seeds one group:
-
-```sql
-INSERT INTO user_groups (name, superuser, permissions, created_at)
-SELECT 'Administrators', 1, '[]',
-       CAST(strftime('%s', 'now') AS INTEGER) * 1000000000
-WHERE NOT EXISTS (SELECT 1 FROM user_groups WHERE name = 'Administrators');
-```
+**Bootstrap.** The migration seeds one group, `Administrators`, with `superuser = 1` and an empty permission set —
+the `INSERT` in §6. It is stated once there rather than repeated here, so the two
+cannot drift.
 
 `admin create-user` gains `--group <name>`, defaulting to `Administrators`, and
 fails with a clear message if the named group does not exist. Defaulting to the
@@ -318,10 +391,23 @@ untouched.
   dashboard renders, logout works.
 - **Menu filtering**: an entry whose resource the user cannot access is absent
   from `adminMenu` — asserted on **both** an exempt route (the dashboard) and a
-  guarded one, since the two middlewares must agree. An entry added through
-  `AddMenuItem`, carrying no resource, is always present.
+  guarded one, since the two middlewares must agree.
+- **The always-show convention**, asserted on `menuEntry{resource: ""}` directly
+  rather than through `AddMenuItem`. `AddMenuItem` is only one way to produce an
+  empty resource; testing it instead of the convention would leave the convention
+  itself unpinned, and a later second producer could regress without failing
+  anything. One further case covers that `AddMenuItem` does produce an empty
+  resource.
 - **Migration**: after Start, `Administrators` exists with `superuser = 1`, and
-  `users.group_id` exists.
+  `users.group_id` exists. Then **Start a second time on the same database and
+  assert it succeeds** — `ALTER TABLE ADD COLUMN` is not idempotent, so this pins
+  the property the design actually relies on (the migrator applies each file once,
+  §6.2) rather than testing the SQL for an idempotency it does not have. A
+  regression in version tracking would surface here as
+  `duplicate column name: group_id`.
+- **Down migration**: `MigrateTo` back past `003` drops the column and the table,
+  and a subsequent up re-applies cleanly. This is the only test of §6.1's claim,
+  which was verified by hand but is otherwise unguarded.
 - **`admin create-user --group`**: assigns the named group; a missing group is a
   clear error, not a user with a null group.
 - **Generated code compiles**: `TestAdmin_OutputCompiles` already renders the
