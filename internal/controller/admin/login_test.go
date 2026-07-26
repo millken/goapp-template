@@ -63,7 +63,8 @@ func loginStack(t *testing.T) (*inertia.Engine, *Admin) {
 		t.Fatalf("HashPassword: %v", err)
 	}
 	if _, err := dbSvc.DB().ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)`,
+		`INSERT INTO users (username, password_hash, created_at, group_id)
+		 VALUES (?, ?, ?, (SELECT id FROM user_groups WHERE name = 'Administrators'))`,
 		"alice", hash, time.Now().UnixNano()); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}

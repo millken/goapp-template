@@ -50,7 +50,7 @@ type Config struct {
 type Admin struct {
 	*app.Services
 	cfg  *Config
-	menu []MenuItem
+	menu []menuEntry
 	// perms maps a permission key to the routes it guards, filled during
 	// startup wiring by the registrar and read-only afterwards.
 	perms map[string][]string

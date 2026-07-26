@@ -13,18 +13,39 @@ type MenuItem struct {
 	Order int    `json:"order"` // ascending; ties broken by Title
 }
 
-// AddMenuItem registers a navigation entry. Call only during startup wiring
-// (before Serve); the menu is read at request time, so no locking is needed.
-func (a *Admin) AddMenuItem(item MenuItem) {
-	a.menu = append(a.menu, item)
+// menuEntry pairs a sidebar item with the resource whose access key gates it. An
+// empty resource means "always show" — that is what AddMenuItem produces, for
+// entries outside the permission model.
+type menuEntry struct {
+	item     MenuItem
+	resource string
 }
 
-// menuItems returns a sorted copy of the menu, injected as a shared prop.
-func (a *Admin) menuItems() []MenuItem {
-	// make+copy rather than slices.Clone: Clone preserves nil, and an empty menu
-	// must reach the frontend as [] rather than null.
-	out := make([]MenuItem, len(a.menu))
-	copy(out, a.menu)
+// AddMenuItem registers a navigation entry that no permission gates. Call only
+// during startup wiring (before Serve); the menu is read at request time, so no
+// locking is needed.
+func (a *Admin) AddMenuItem(item MenuItem) {
+	a.menu = append(a.menu, menuEntry{item: item})
+}
+
+// addResourceMenuItem registers an entry gated by resource's access key. Used by
+// the registrar; resources go through Registrar.Menu rather than calling this.
+func (a *Admin) addResourceMenuItem(item MenuItem, resource string) {
+	a.menu = append(a.menu, menuEntry{item: item, resource: resource})
+}
+
+// menuItems returns the sorted menu with entries g may not access removed. A
+// sidebar full of links that all 403 is worse than a short sidebar.
+func (a *Admin) menuItems(g *group) []MenuItem {
+	// make+append rather than slices.Clone: an empty menu must reach the
+	// frontend as [] rather than null.
+	out := make([]MenuItem, 0, len(a.menu))
+	for _, e := range a.menu {
+		if e.resource != "" && !g.Superuser && !g.Permissions.Allows(e.resource+verbAccess) {
+			continue
+		}
+		out = append(out, e.item)
+	}
 	slices.SortStableFunc(out, func(x, y MenuItem) int {
 		return cmp.Or(cmp.Compare(x.Order, y.Order), cmp.Compare(x.Title, y.Title))
 	})
