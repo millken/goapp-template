@@ -274,3 +274,33 @@ func TestExemptRoute_ReachableWithoutPermissions(t *testing.T) {
 		t.Errorf("an exempt route must be reachable with no permissions; status %d", w.Code)
 	}
 }
+
+// The registrar's whole purpose is that you cannot register a route without also
+// permissioning it, and the tests above verify the two halves separately: the
+// catalogue side of Handle, and guard driven through a hand-wired route. Neither
+// would catch a Handle that recorded a key but forgot to pass the guard to the
+// engine — so this one drives a request through a route the registrar itself
+// wired, and asserts the handler stays unreached.
+func TestRegistrar_WiredRouteIsEnforced(t *testing.T) {
+	eng, adm := loginStack(t)
+	putInGroup(t, adm, "TestGroup", false, `["other.modify"]`)
+
+	ran := false
+	adm.Resource(eng, "post").GET("/admin/post", func(ic *inertia.Context) { ran = true })
+	if err := eng.RegistrationError(); err != nil {
+		t.Fatalf("routes did not register: %v", err)
+	}
+	cookie := loginAndGetCookie(t, eng)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/post", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 — the registrar wired the route without a guard", w.Code)
+	}
+	if ran {
+		t.Error("handler ran despite the group lacking post.access")
+	}
+}
