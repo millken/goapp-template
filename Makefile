@@ -28,11 +28,24 @@ frontend-build:
 
 DEV_PORT ?= 5173
 
+# Vite runs in its own process group (setsid) so cleanup can signal the whole
+# tree. Killing just the backgrounded job's PID reaches pnpm but not the vite
+# node process it spawns, which then reparents to init and keeps DEV_PORT bound —
+# including when `serve` exits non-zero, e.g. on a missing config section.
+# `exec` makes pnpm the group leader, so $! is the PGID.
 dev:
-	@VITE_PID=""; \
-	cleanup() { [ -n "$$VITE_PID" ] && kill "$$VITE_PID" 2>/dev/null || true; }; \
+	@PGID=""; PID=""; \
+	cleanup() { \
+	  if [ -n "$$PGID" ]; then kill -TERM "-$$PGID" 2>/dev/null || true; \
+	  elif [ -n "$$PID" ]; then kill "$$PID" 2>/dev/null || true; fi; \
+	}; \
 	trap cleanup EXIT INT TERM; \
-	(cd frontend && DEV_PORT=$(DEV_PORT) pnpm dev) & VITE_PID=$$!; \
+	if command -v setsid >/dev/null 2>&1; then \
+	  setsid sh -c 'cd frontend && DEV_PORT=$(DEV_PORT) exec pnpm dev' & PGID=$$!; \
+	else \
+	  echo ">>> setsid not found: Vite may outlive make; kill it by hand if $(DEV_PORT) stays bound"; \
+	  (cd frontend && DEV_PORT=$(DEV_PORT) exec pnpm dev) & PID=$$!; \
+	fi; \
 	VITE_DEV_ADDR=http://localhost:$(DEV_PORT) MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . serve; \
 	cleanup
 
