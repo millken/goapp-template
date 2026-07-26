@@ -327,3 +327,32 @@ func TestSupported_CSS(t *testing.T) {
 		t.Error("Supported(.css) = false, want true")
 	}
 }
+
+// index.html carries the admin component's dark-mode boot script, so .html
+// needs a comment form — without one, init errors on any marker in the file.
+func TestStrip_HTMLForm(t *testing.T) {
+	src := "<head>\n<!--goappctl:admin-->\n<script>dark()</script>\n<!--goappctl:end-->\n<title>x</title>\n</head>\n"
+
+	got, n, err := Strip("index.html", []byte(src), opts("admin"))
+	if err != nil {
+		t.Fatalf("Strip: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("stripped = %d, want 1", n)
+	}
+	if want := "<head>\n<title>x</title>\n</head>\n"; string(got) != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	// Keeping the block must unwrap the markers only.
+	kept, _, err := Strip("index.html", []byte(src), opts())
+	if err != nil {
+		t.Fatalf("Strip keep: %v", err)
+	}
+	if want := "<head>\n<script>dark()</script>\n<title>x</title>\n</head>\n"; string(kept) != want {
+		t.Errorf("kept %q, want %q", kept, want)
+	}
+	if !Supported("frontend/index.html") {
+		t.Error("Supported(.html) = false")
+	}
+}

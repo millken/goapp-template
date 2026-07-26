@@ -36,6 +36,7 @@ var forms = map[string]form{
 	".yaml": {open: "#goappctl:", end: "#goappctl:end"},
 	".yml":  {open: "#goappctl:", end: "#goappctl:end"},
 	".md":   {open: "<!--goappctl:", end: "<!--goappctl:end-->", close: "-->"},
+	".html": {open: "<!--goappctl:", end: "<!--goappctl:end-->", close: "-->"},
 	".css":  {open: "/*goappctl:", end: "/*goappctl:end*/", close: "*/"},
 }
 
