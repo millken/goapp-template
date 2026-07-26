@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AdminLayout from '@/components/AdminLayout.vue'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface MenuItem { title: string; path: string; order?: number }
 
@@ -21,11 +22,15 @@ defineProps<{
     :login-path="loginPath"
     :flash="flash"
   >
-    <h1 class="text-2xl font-bold text-gray-900 mb-2">Dashboard</h1>
-    <p class="text-gray-500">Signed in as {{ adminUser }}.</p>
-    <p class="text-gray-400 mt-4 text-sm">
-      Generate an admin resource with <code>goapp gen admin &lt;name&gt;</code>; it registers
-      itself in the menu on the left.
-    </p>
+    <Card>
+      <CardHeader>
+        <CardTitle>Dashboard</CardTitle>
+        <CardDescription>Signed in as {{ adminUser }}.</CardDescription>
+      </CardHeader>
+      <CardContent class="text-sm text-muted-foreground">
+        Generate an admin resource with <code>goappctl gen admin &lt;name&gt;</code>;
+        it registers itself in the menu on the left.
+      </CardContent>
+    </Card>
   </AdminLayout>
 </template>
