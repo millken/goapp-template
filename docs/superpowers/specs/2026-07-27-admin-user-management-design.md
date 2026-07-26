@@ -191,10 +191,16 @@ established.
 | Group name | required, 2–64, unique |
 | Group id (on a user) | required, must exist |
 
-The password ceiling is not arbitrary: **bcrypt truncates at 72 bytes**, so
-anything beyond that is silently not part of the credential. Rejecting it is
-honest; accepting it would mean two different passwords authenticate the same
-account.
+The password ceiling is not arbitrary, and the unit is **bytes, not characters**:
+`x/crypto/bcrypt` returns `ErrPasswordTooLong` past 72 bytes rather than
+truncating. A character-based check therefore lets a non-ASCII password through
+— 30 Chinese characters are 90 bytes — and it fails at hashing time as a 500 the
+user cannot act on. The rule has to count bytes.
+
+(Corrected after implementation: the first draft of this spec said bcrypt
+truncates. It does not, in the version this project pins, and the difference is
+the one that matters — truncation would be a silent weakening, an error is a
+crash.)
 
 The username charset is **ASCII-only on purpose**: admin accounts are created by
 an operator, not chosen by a visitor, and they appear in log lines, CLI

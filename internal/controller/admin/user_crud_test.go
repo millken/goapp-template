@@ -237,8 +237,15 @@ func TestUserDeleteAndDisable_CannotTargetYourself(t *testing.T) {
 			}
 
 			w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d%s", id, c.path), c.form)
-			if w.Code == http.StatusFound {
-				t.Error("acting on your own account must be refused")
+			// Not a status-code assertion: a refusal and a success both redirect,
+			// on purpose — the operator gets the reason on the page they were
+			// looking at rather than a blank 403. What distinguishes them is that
+			// nothing changed, and that a reason was staged.
+			if w.Code != http.StatusFound {
+				t.Errorf("status = %d, want a redirect carrying the reason", w.Code)
+			}
+			if msg := stagedFlash(t, eng, cookie, w); !strings.Contains(msg, "不能") {
+				t.Errorf("no refusal was explained; flash = %q", msg)
 			}
 
 			var n, status int
@@ -328,4 +335,63 @@ func TestUserSetStatus_DisablesANonSuperuser(t *testing.T) {
 	if status != statusActive {
 		t.Errorf("status after two enables = %d, want %d", status, statusActive)
 	}
+}
+
+// bcrypt's limit is 72 bytes and x/crypto returns an error past it rather than
+// truncating, so a rune-based length check lets a non-ASCII password through to
+// HashPassword and turns a form mistake into a 500. 30 Chinese characters are 90
+// bytes and 30 runes: legal by character count, impossible to store.
+func TestUserCreate_RejectsAPasswordTooLongInBytes(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+	var gid int64
+	if err := adm.DB.QueryRowContext(context.Background(),
+		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		t.Fatal(err)
+	}
+
+	pw := strings.Repeat("密", 30)
+	if len(pw) <= 72 || len([]rune(pw)) > 72 {
+		t.Fatalf("fixture is wrong: %d bytes, %d runes — want >72 bytes and <=72 runes",
+			len(pw), len([]rune(pw)))
+	}
+
+	w := post(t, eng, cookie, "/admin/user", url.Values{
+		"username": {"toolong"},
+		"password": {pw},
+		"group_id": {fmt.Sprint(gid)},
+	})
+	if w.Code == http.StatusInternalServerError {
+		t.Error("a too-long password became a 500 — it must be a field error")
+	}
+	if w.Code == http.StatusFound {
+		t.Error("a too-long password was accepted")
+	}
+	var n int
+	if err := adm.DB.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM users WHERE username = 'toolong'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("the user was created anyway")
+	}
+}
+
+// stagedFlash follows a redirect and returns the flash text the next page
+// received. Staging a message is not the same as delivering one — the disabled
+// login loop was exactly that gap — so tests that care read it back.
+func stagedFlash(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, from *httptest.ResponseRecorder) string {
+	t.Helper()
+	next := cookie
+	if cs := from.Result().Cookies(); len(cs) > 0 {
+		next = &http.Cookie{Name: cs[0].Name, Value: cs[0].Value}
+	}
+	loc := from.Header().Get("Location")
+	if loc == "" {
+		return ""
+	}
+	r := httptest.NewRequest(http.MethodGet, loc, nil)
+	r.AddCookie(next)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+	return w.Body.String()
 }

@@ -22,10 +22,22 @@ import (
 // nuisance rather than a feature.
 var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
-// bcryptMaxPassword is where bcrypt truncates. A longer password is partly not
-// the credential, so two different strings would authenticate the same account
-// — refuse rather than accept it silently.
+// bcryptMaxPassword is bcrypt's hard limit, in BYTES — not characters.
+// x/crypto/bcrypt returns ErrPasswordTooLong beyond it rather than truncating,
+// so a password that passes a character-based length check can still fail at
+// hashing time: 30 Chinese characters are 90 bytes.
 const bcryptMaxPassword = 72
+
+// passwordFits rejects a password bcrypt cannot store. Separate from
+// validate.MaxLen, which counts runes — the right unit for a name, the wrong one
+// for this. Without it, a non-ASCII password of legal character length reaches
+// HashPassword and turns into a 500 the user cannot act on.
+var passwordFits validate.Rule = func(value string) error {
+	if len(value) > bcryptMaxPassword {
+		return errors.New("太长了：上限是 72 字节，中文约 24 个字")
+	}
+	return nil
+}
 
 // userRow is one row of the user list, and the edit form's model.
 type userRow struct {
@@ -231,13 +243,14 @@ func (a *Admin) userDelete(c *inertia.Context) {
 	ctx := c.Request.Context()
 	id, _ := c.Params.GetInt64("id")
 
+	// A refusal is a flash plus a redirect — the same shape the last-superuser
+	// rule gets below. Both are things the operator asked for that will not
+	// happen, and both need the reason to land on the page they were looking at.
+	// Answering one with a bare 403 would strand them on a blank response with
+	// the explanation staged but never rendered.
 	if err := a.notSelf(c, id); err != nil {
-		// Unlike the last-superuser rule below, this is not state-dependent: it
-		// is always true and a hand-made POST is the only way to reach it (the
-		// UI hides the control on your own row), so it is refused outright
-		// rather than sent through the redirect a legitimate submission gets.
 		a.flash(c, "error", "不能删除自己的账号")
-		c.AbortWithStatus(http.StatusForbidden)
+		a.redirect(c, a.userBase())
 		return
 	}
 
@@ -273,10 +286,8 @@ func (a *Admin) userSetStatus(c *inertia.Context) {
 
 	if want == statusDisabled {
 		if err := a.notSelf(c, id); err != nil {
-			// Same as userDelete: this rule is always true regardless of
-			// system state, so it is refused outright rather than redirected.
 			a.flash(c, "error", "不能禁用自己的账号")
-			c.AbortWithStatus(http.StatusForbidden)
+			a.redirect(c, a.userBase())
 			return
 		}
 	}
@@ -329,7 +340,7 @@ func (a *Admin) validateUser(ctx context.Context, item userRow, password string,
 		v.Field("password", password,
 			validate.Required,
 			validate.MinLen(8),
-			validate.Msg(validate.MaxLen(bcryptMaxPassword), "不能超过 72 个字符（bcrypt 的上限）"),
+			passwordFits,
 		)
 	}
 	v.Check(item.GroupID != 0, "group_id", "请选择一个分组")

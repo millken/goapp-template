@@ -19,7 +19,7 @@
 - **Every admin route goes through the registrar**, with exactly one exception: `GET|POST /admin/account/password`, which uses `AuthMiddleware`. The reason must appear in a comment beside the registration.
 - **The last-superuser count runs inside the transaction, after the mutation.** Outside it, or before, it is a prediction of the resulting state rather than a reading of it.
 - **Every redirect goes through `a.redirect(c, location)`, never `http.Redirect`.** Under a PJAX navigation a redirect must become a `{redirect}` payload the client can act on; a raw 3xx is followed by fetch transparently, leaving one page rendered while the address bar names another. `TestRedirects_UnderPJAX` pins this for the auth redirects and the mutations are no different. (Corrected mid-plan: the first draft copied `http.Redirect` from the generated scaffold template, which has the same latent bug — recorded separately, out of scope here.)
-- Passwords: 8–72 characters. 72 because **bcrypt truncates there**, so a longer password is partly not the credential.
+- Passwords: minimum 8 characters, maximum **72 bytes** — enforced by the `passwordFits` rule in `user_crud.go`, never by `validate.MaxLen`, which counts runes. `x/crypto/bcrypt` returns `ErrPasswordTooLong` past 72 bytes rather than truncating, so a character-based check lets 30 Chinese characters (90 bytes) through and they become a 500 at hashing time.
 - Usernames: `^[a-zA-Z0-9._-]+$`, 3–64 — ASCII-only on purpose; admin accounts are operator-created.
 - Migrations own the literal `users` table; `[admin] users_table` redirects runtime lookups only.
 - No new Go or npm dependencies. `frontend/src/styles/main.css` unchanged; token classes only.
@@ -1208,7 +1208,7 @@ func (a *Admin) validateUser(ctx context.Context, item userRow, password string,
 		v.Field("password", password,
 			validate.Required,
 			validate.MinLen(8),
-			validate.Msg(validate.MaxLen(bcryptMaxPassword), "不能超过 72 个字符（bcrypt 的上限）"),
+			passwordFits,
 		)
 	}
 	v.Check(item.GroupID != 0, "group_id", "请选择一个分组")
@@ -3037,7 +3037,7 @@ func (a *Admin) passwordSubmit(c *inertia.Context) {
 	v.Field("password", password,
 		validate.Required,
 		validate.MinLen(8),
-		validate.Msg(validate.MaxLen(bcryptMaxPassword), "不能超过 72 个字符（bcrypt 的上限）"),
+		passwordFits,
 	)
 	v.Check(password == confirm, "confirm", "两次输入不一致")
 	if !v.OK() {
