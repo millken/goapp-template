@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -29,11 +30,12 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 		return nil, false
 	}
 
-	id, ok := v.(int64)
+	id, ok := userID(v)
 	if !ok {
-		// The session holds whatever LoginSubmit stored; a different type means
-		// a stale or tampered session rather than a permission decision.
-		slog.Error("admin auth: session user id is not an int64", "value", v)
+		// The session holds whatever LoginSubmit stored; a value that is not a
+		// number at all means a stale or tampered session rather than a
+		// permission decision.
+		slog.Error("admin auth: session user id is not a number", "value", v)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return nil, false
 	}
@@ -57,6 +59,29 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 	c.Set("adminMount", a.mount())
 	c.Set("loginPath", a.LoginPath())
 	return g, true
+}
+
+// userID reads the id LoginSubmit stored back out of a session value. It cannot
+// simply assert int64: the two session stores do not agree on types. store_memory
+// returns values as written, but store_db — the production setting — marshals
+// them to JSON, so an int64 comes back as a float64. session/flash.go documents
+// the same divergence, and works around it by storing only flat strings.
+func userID(v any) (int64, bool) {
+	switch n := v.(type) {
+	case int64:
+		return n, true
+	case float64:
+		// JSON's only number type. An id beyond 2^53 would already have lost
+		// precision inside the session payload, so there is nothing to recover.
+		return int64(n), true
+	case int:
+		return int64(n), true
+	case json.Number:
+		id, err := n.Int64()
+		return id, err == nil
+	default:
+		return 0, false
+	}
 }
 
 // AuthMiddleware enforces login on the routes it guards, without requiring any

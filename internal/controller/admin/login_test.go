@@ -24,6 +24,15 @@ import (
 // (migrations on) with one seeded user (alice / "pw"), in serve.go's order.
 func loginStack(t *testing.T) (*inertia.Engine, *Admin) {
 	t.Helper()
+	return loginStackWithStore(t, session.StoreMemory)
+}
+
+// loginStackWithStore is loginStack with the session store chosen by the caller.
+// The two stores are not interchangeable: store_db round-trips values through
+// JSON, so anything read back out of a session has JSON's types, not Go's. A
+// test that only ever runs on StoreMemory cannot see that.
+func loginStackWithStore(t *testing.T, store session.StoreKind) (*inertia.Engine, *Admin) {
+	t.Helper()
 	ctx := context.Background()
 	eng := newTestEngine(t)
 
@@ -45,7 +54,7 @@ func loginStack(t *testing.T) (*inertia.Engine, *Admin) {
 	svc := app.NewServices(slog.Default())
 	svc.DB = dbSvc.DB()
 
-	sessSvc := session.New(&session.Config{Secret: "test-secret", Store: session.StoreMemory}, svc.DB)
+	sessSvc := session.New(&session.Config{Secret: "test-secret", Store: store}, svc.DB)
 	if err := sessSvc.Start(ctx); err != nil {
 		t.Fatalf("start session: %v", err)
 	}
