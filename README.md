@@ -55,6 +55,8 @@ Go + Vue 3 + Inertia.js 应用模板。
 <!--goappctl:admin-->
 ├── frontend/pages/admin/        # login / dashboard
 ├── frontend/src/components/     # AdminLayout.vue
+├── frontend/src/components/ui/   #   复制进来的 shadcn-vue 组件（admin 专属）
+├── frontend/src/lib/utils.ts     #   cn() / valueUpdater()
 <!--goappctl:end-->
 ├── frontend/src/inertia/        # 客户端 boot / pjax / view-loader
 ├── frontend/src/styles/main.css
@@ -164,6 +166,38 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 
 生成的代码是普通文件，可随意修改；生成器不锁死、不接管已写代码。重复路由会在
 `eng.RegistrationError()` 处启动前报错，不会静默覆盖。
+
+<!--goappctl:admin-->
+## 后台 UI 组件
+
+后台用 [shadcn-vue](https://www.shadcn-vue.com/)：组件**源码复制进仓库**（`frontend/src/components/ui/`），
+不是 npm 依赖 —— 和 `gen resource` 产出一样，是「你拥有的普通文件」。数据表格能力来自
+[@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。
+
+- **只服务后台。** 这些文件归 `admin` 组件所有，`goappctl init` 不选 admin 时连同
+  `main.css` 里的主题块和 8 个 npm 依赖一起消失，公开页面体积回到原样。
+- **`gen resource` 保持纯 Tailwind**，所以它在无 db / 无 session 的构建里照样可用。
+- **不含表单校验组件。** 校验在服务端（[internal/validate](internal/validate/validate.go)），
+  失败时重渲染并给出 `errors` prop —— 不需要客户端再来一套。
+
+初始带 12 个组件：`alert` `badge` `button` `card` `dialog` `dropdown-menu` `input`
+`label` `pagination` `select` `separator` `table`。加新组件：
+
+```bash
+cd frontend && pnpm dlx shadcn-vue@latest add combobox
+```
+
+**注意**：官方 CLI 拉取 registry 时可能失败（表现为 `Failed to fetch from registry`，
+即使 curl 同一个 URL 正常）。手工替代路径是从
+`https://shadcn-vue.com/r/styles/default/<name>.json` 取 JSON、按 `files[].path` 落盘
+（`ui/**` → `frontend/src/components/ui/`），并把 `@/registry/default/ui` 改写成
+`@/components/ui` —— 少了这步重写，构建会直接失败。
+
+**不要在 SSR 阶段渲染打开的弹层。** `Dialog` / `DropdownMenu` / `Select` 的浮层走
+Teleport，而 Vue 的 SSR renderer 把这类内容放进 `ctx.teleports`，
+[frontend/ssr/render.ts](frontend/ssr/render.ts) 并未收集 —— 服务端不会输出它们，
+客户端 hydration 时会凭空多出 DOM。弹层默认关闭即可。
+<!--goappctl:end-->
 
 <!--goappctl:ssr-->
 ## SSR 工作流
