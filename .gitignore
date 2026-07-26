@@ -45,3 +45,6 @@ config.yaml
 app.db
 *.db
 .superpowers/
+
+# MCP client config (local tooling, not part of the template)
+.mcp.json
