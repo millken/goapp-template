@@ -54,7 +54,7 @@ Go + Vue 3 + Inertia.js 应用模板。
 ├── frontend/pages/Home.vue      # 示例页面
 <!--goappctl:admin-->
 ├── frontend/pages/admin/        # login / dashboard
-├── frontend/src/components/     # AdminLayout.vue
+├── frontend/src/components/admin/ #   AdminShell / PageHeader / DataTable / FormField / ConfirmDialog / ThemeToggle
 ├── frontend/src/components/ui/   #   复制进来的 shadcn-vue 组件（admin 专属）
 ├── frontend/src/lib/utils.ts     #   cn() / valueUpdater()
 <!--goappctl:end-->
@@ -176,7 +176,9 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 [@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。有两处改动没有跟上游保持一致，
 `gen ui --force` 更新组件时要留意别覆盖回去：`frontend/src/components/ui/alert/index.ts` 多了一个
 `success` 变体（上游只有 `default`、`destructive`）；所有 `@/registry/default/ui` 导入都已重写成
-`@/components/ui`。
+`@/components/ui`。在这些 shadcn 拷贝之上，`frontend/src/components/admin/` 放的是拼出后台页面的
+组合组件（`AdminShell`、`PageHeader`、`DataTable`、`FormField`、`ConfirmDialog`、`ThemeToggle`）——
+生成的页面靠它们拼装，不直接摸 shadcn 层。
 
 - **只服务后台。** 这些文件归 `admin` 组件所有，`goappctl init` 不选 admin 时 `main.css` 里的
   主题块随之消失，公开页面体积回到原样。**依赖不会一起消失**：8 个 npm 包仍留在
@@ -210,6 +212,25 @@ goappctl gen ui tooltip --force          # 覆盖已存在文件（用于跟进�
 [frontend/ssr/render.ts](frontend/ssr/render.ts) 并未收集 —— 服务端不会输出它们，
 客户端 hydration 时会凭空多出 DOM。弹层默认关闭即可。
 
+### 设计约定
+
+组件本身就是规范（页面从 `frontend/src/components/admin/` 拼装，改约定就是改组件）；
+以下是组件管不住的部分：
+
+- **页面解剖**：`AdminShell` → `PageHeader`（标题 + 右侧动作）→ 卡片。内容区铺满视口；
+  唯一例外是表单卡片保持 `max-w-lg` —— 超宽输入框可用性反而差。
+- **导航两层封顶**：菜单 = 分组（图标栏）→ 条目（第二栏），由
+  `r.Menu(section, title, path)` 注册；更深的层级用面包屑尾巴表达
+  （`AdminShell` 的 `crumb` prop），不做菜单嵌套。
+- **Dialog 只用于破坏性确认**（`ConfirmDialog`，表单 POST 到真实 handler）；
+  新建和编辑一律整页。
+- **表格**：行操作收进行尾 "…" 下拉；行的自然链接（名称列）指向编辑页；
+  空态文案写业务话（"No posts yet."），不写 "No data"。
+- **语义色和主色分工**：绿点/徽章表示启用态、`destructive` 表示危险动作；
+  `--primary` 留给每页的主动作。改品牌色只动 `main.css` 的 `--primary`。
+- **暗色**：两份 HTML 壳里的启动脚本先于首屏设置 `.dark`，`ThemeToggle` 写
+  `localStorage.theme`；组件用令牌（`bg-background` 等），不写死颜色。
+
 ## 后台权限
 
 权限单元是**资源 + 动词**：`post.access`（读）和 `post.modify`（写）。动词由 HTTP 方法决定 ——
@@ -223,7 +244,7 @@ GET/HEAD 是 `access`，其余是 `modify` —— 所以没有任何路由需要
 r := adm.Resource(eng, "post")
 r.GET(ct.base, ct.Index)                 // 需要 post.access
 r.POST(ct.base+"/:id", ct.Update)        // 需要 post.modify
-r.Menu("Post", ct.base)                  // 侧边栏条目，受 post.access 控制
+r.Menu("Content", "Post", ct.base)       // 侧边栏条目，受 post.access 控制
 ```
 
 **守卫就是路由中间件**，注册即生效 —— 这是它相对手写 `if hasPermission(...)` 的关键差别：
