@@ -1,0 +1,113 @@
+package admin
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/dnsoa/go/sqldb"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// groupFixture builds the two tables this package reads and returns an open
+// handle. It creates them directly rather than running the migrator, so a
+// failure here points at the query rather than at migration wiring.
+func groupFixture(t *testing.T) *sqldb.DB {
+	t.Helper()
+	d, err := sqldb.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = d.Close() })
+
+	for _, q := range []string{
+		`CREATE TABLE user_groups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			superuser INTEGER NOT NULL DEFAULT 0,
+			permissions TEXT NOT NULL DEFAULT '[]',
+			created_at BIGINT NOT NULL)`,
+		`CREATE TABLE users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			created_at BIGINT NOT NULL,
+			group_id INTEGER REFERENCES user_groups(id))`,
+		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)
+		 VALUES (1, 'Administrators', 1, '[]', 0)`,
+		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)
+		 VALUES (2, 'Editors', 0, '["post.modify","user.access"]', 0)`,
+		`INSERT INTO users (id, username, password_hash, created_at, group_id)
+		 VALUES (1, 'root', 'x', 0, 1)`,
+		`INSERT INTO users (id, username, password_hash, created_at, group_id)
+		 VALUES (2, 'editor', 'x', 0, 2)`,
+		`INSERT INTO users (id, username, password_hash, created_at, group_id)
+		 VALUES (3, 'orphan', 'x', 0, NULL)`,
+	} {
+		if _, err := d.ExecContext(context.Background(), q); err != nil {
+			t.Fatalf("fixture %q: %v", q, err)
+		}
+	}
+	return d
+}
+
+func TestFindGroup(t *testing.T) {
+	d := groupFixture(t)
+	ctx := context.Background()
+
+	su, err := findGroup(ctx, d, "users", 1)
+	if err != nil {
+		t.Fatalf("superuser: %v", err)
+	}
+	if !su.Superuser {
+		t.Error("user 1 should be a superuser")
+	}
+
+	ed, err := findGroup(ctx, d, "users", 2)
+	if err != nil {
+		t.Fatalf("editor: %v", err)
+	}
+	if ed.Superuser {
+		t.Error("user 2 should not be a superuser")
+	}
+	if !ed.Permissions.Allows("post.modify") {
+		t.Error("editor should hold post.modify")
+	}
+	if !ed.Permissions.Allows("post.access") {
+		t.Error("post.modify should imply post.access")
+	}
+	if ed.Permissions.Allows("user.modify") {
+		t.Error("editor holds only user.access, so user.modify must fail")
+	}
+}
+
+// Fail closed: no group row is not the same as an empty permission set, but both
+// deny — and the caller must be able to tell this apart from a database error.
+func TestFindGroup_NoGroupIsErrNoGroup(t *testing.T) {
+	d := groupFixture(t)
+
+	if _, err := findGroup(context.Background(), d, "users", 3); !errors.Is(err, errNoGroup) {
+		t.Errorf("orphaned user: got %v, want errNoGroup", err)
+	}
+	if _, err := findGroup(context.Background(), d, "users", 999); !errors.Is(err, errNoGroup) {
+		t.Errorf("unknown user: got %v, want errNoGroup", err)
+	}
+}
+
+// A malformed permissions column is a storage problem, not a denial — the caller
+// turns errNoGroup into 403 and anything else into 500, so these must differ.
+func TestFindGroup_BadJSONIsNotErrNoGroup(t *testing.T) {
+	d := groupFixture(t)
+	if _, err := d.ExecContext(context.Background(),
+		`UPDATE user_groups SET permissions = 'not json' WHERE id = 2`); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := findGroup(context.Background(), d, "users", 2)
+	if err == nil {
+		t.Fatal("want an error for malformed JSON")
+	}
+	if errors.Is(err, errNoGroup) {
+		t.Error("malformed JSON must not be reported as a missing group")
+	}
+}
