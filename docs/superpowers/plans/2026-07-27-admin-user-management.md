@@ -1895,7 +1895,7 @@ func TestGroupDelete_SucceedsWhenEmpty(t *testing.T) {
 }
 
 // Clearing the superuser flag on the only superuser group strands everyone, and
-// the guard must roll it back rather than merely报错.
+// the guard must roll it back rather than merely reporting an error.
 func TestGroupUpdate_CannotClearTheLastSuperuserFlag(t *testing.T) {
 	eng, adm, cookie := groupStack(t)
 	ctx := context.Background()
