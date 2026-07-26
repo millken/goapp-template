@@ -44,3 +44,4 @@ config.yaml
 # Local dev SQLite database (dsn: app.db in config.yaml)
 app.db
 *.db
+.superpowers/
