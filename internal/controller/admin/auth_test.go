@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/millken/goapp-template/internal/service/session"
@@ -165,10 +166,50 @@ func TestResolve_DisabledIsNeitherForbiddenNorInternalError(t *testing.T) {
 	r.AddCookie(cookie)
 	eng.ServeHTTP(w, r)
 
+	// Asserting the redirect too: "neither 403 nor 500" is satisfied by a 200,
+	// so on its own this case would pass against an implementation that ignored
+	// status entirely.
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Errorf("status = %d, want a redirect", w.Code)
+	}
 	if w.Code == http.StatusForbidden {
 		t.Error("a disabled account answered 403 — that is the no-group answer")
 	}
 	if w.Code == http.StatusInternalServerError {
 		t.Error("a disabled account answered 500 — that is the storage-failure answer")
+	}
+}
+
+// The flash is the entire point of not destroying the session on this path, so
+// staging it is not enough — it has to arrive. This follows the bounce to the
+// login page and reads the message off the rendered response.
+func TestResolve_DisabledUserSeesTheReasonOnTheLoginPage(t *testing.T) {
+	eng, adm := loginStack(t)
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {})
+	cookie := loginAndGetCookie(t, eng)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	// The bounce, which stages the flash.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	// Carry whatever cookie that response set — the session was re-saved, so its
+	// id may have changed — and follow the redirect.
+	next := cookie
+	if cs := w.Result().Cookies(); len(cs) > 0 {
+		next = &http.Cookie{Name: cs[0].Name, Value: cs[0].Value}
+	}
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	r2.AddCookie(next)
+	eng.ServeHTTP(w2, r2)
+
+	if !strings.Contains(w2.Body.String(), "该账号已被禁用") {
+		t.Errorf("the login page did not carry the reason; body: %s", w2.Body.String())
 	}
 }

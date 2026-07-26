@@ -13,10 +13,21 @@ import (
 func (a *Admin) LoginForm(c *inertia.Context) {
 	sess := a.Session.Session(c)
 	if v, ok := sess.Get(a.authKey()); ok && v != nil && v != "" {
-		if err := c.Redirect(a.mount()); err != nil {
-			slog.Error("admin login: redirect to dashboard", "err", err)
+		// Authenticated — but send them to the dashboard only if their account
+		// still works. A disabled user arrives here *because* resolve bounced
+		// them, so redirecting on the strength of the session alone would send
+		// them back to the page that bounced them: an endless loop in which the
+		// explanation resolve staged is never rendered. Rendering the form
+		// instead ends the loop and lets the flash through.
+		//
+		// The extra lookup is confined to the login page, which is not the
+		// authenticated request path the one-query-per-request rule is about.
+		if !a.callerDisabled(c, v) {
+			if err := c.Redirect(a.mount()); err != nil {
+				slog.Error("admin login: redirect to dashboard", "err", err)
+			}
+			return
 		}
-		return
 	}
 
 	c.Set("loginPath", a.LoginPath())
@@ -80,4 +91,20 @@ func (a *Admin) Dashboard(c *inertia.Context) {
 	if err := c.Render("admin/dashboard"); err != nil {
 		slog.Error("render admin dashboard", "err", err)
 	}
+}
+
+// callerDisabled reports whether the session's user exists and is disabled.
+// Anything else — an unreadable id, a missing user, a storage failure — reports
+// false, so the only behaviour this can change is ending the redirect loop for a
+// user who really is disabled.
+func (a *Admin) callerDisabled(c *inertia.Context, v any) bool {
+	id, ok := userID(v)
+	if !ok {
+		return false
+	}
+	cl, err := findCaller(c.Request.Context(), a.DB, a.usersTable(), id)
+	if err != nil {
+		return false
+	}
+	return cl.status == statusDisabled
 }
