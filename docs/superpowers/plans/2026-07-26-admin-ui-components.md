@@ -221,8 +221,9 @@ func TestStripAdminDeps_Idempotent(t *testing.T) {
 // The fixture above is realistic — pnpm sorts keys, so "vue" ends up last in
 // dependencies and no admin dep is ever the final key. That means it never
 // exercises the trailing-comma repair, and would pass even if
-// dropCommaBeforeBrace were never called. These two force the cases that make
-// the repair load-bearing.
+// dropCommaBeforeBrace were never called. The first test below forces that
+// repair; the second covers an emptied block, which is valid to assert but does
+// not exercise the repair, since a lone key never carries a comma.
 func TestStripAdminDeps_LastKeyRemovedStaysValidJSON(t *testing.T) {
 	src := []byte("{\n  \"dependencies\": {\n    \"vue\": \"^3.5.40\",\n    \"reka-ui\": \"^2.10.1\"\n  }\n}\n")
 
