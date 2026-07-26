@@ -103,3 +103,15 @@ func TestOwnedPathsExist(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminOwnsCopiedUIComponents(t *testing.T) {
+	c, ok := Get("admin")
+	if !ok {
+		t.Fatal("admin component missing")
+	}
+	for _, want := range []string{"frontend/src/components/ui", "frontend/src/lib"} {
+		if !slices.Contains(c.Owned, want) {
+			t.Errorf("admin.Owned missing %q; a trimmed project would ship the shadcn source", want)
+		}
+	}
+}

@@ -46,6 +46,8 @@ var All = []Component{
 			"commands/admin_user.go",
 			"frontend/pages/admin",
 			"frontend/src/components/AdminLayout.vue",
+			"frontend/src/components/ui",
+			"frontend/src/lib",
 		},
 	},
 	{
