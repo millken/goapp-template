@@ -1,8 +1,12 @@
 package admin
 
 import (
+	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/millken/inertia"
 )
 
 func TestPermKey(t *testing.T) {
@@ -75,5 +79,198 @@ func TestPermissionsCatalogue(t *testing.T) {
 	}
 	if got[0].Routes[0] != "GET /admin/post" {
 		t.Errorf("route format = %q, want %q", got[0].Routes[0], "GET /admin/post")
+	}
+}
+
+func TestRegistrar_RegistersRoutesAndRecordsKeys(t *testing.T) {
+	eng := newTestEngine(t)
+	a := New(nil, nil)
+	noop := func(c *inertia.Context) {}
+
+	r := a.Resource(eng, "post")
+	r.GET("/admin/post", noop)
+	r.GET("/admin/post/:id/edit", noop)
+	r.POST("/admin/post", noop)
+	r.POST("/admin/post/:id/delete", noop)
+	r.Menu("Post", "/admin/post")
+
+	if err := eng.RegistrationError(); err != nil {
+		t.Fatalf("routes did not register: %v", err)
+	}
+
+	got := a.Permissions()
+	if len(got) != 2 {
+		t.Fatalf("want post.access and post.modify, got %+v", got)
+	}
+	if got[0].Key != "post.access" || len(got[0].Routes) != 2 {
+		t.Errorf("post.access = %+v", got[0])
+	}
+	if got[1].Key != "post.modify" || len(got[1].Routes) != 2 {
+		t.Errorf("post.modify = %+v", got[1])
+	}
+
+	// Menu goes through addResourceMenuItem, so it is gated by post.access.
+	if len(a.menu) != 1 || a.menu[0].resource != "post" {
+		t.Errorf("Menu should record the resource, got %+v", a.menu)
+	}
+}
+
+// A dot in the name would make permKey produce keys that alias confusingly, and
+// this is the one place a name enters the system.
+func TestResource_RejectsIllegalNames(t *testing.T) {
+	eng := newTestEngine(t)
+	a := New(nil, nil)
+	for _, bad := range []string{"post.access", "Post", "", "my post", "post/sub", ".post"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Resource(%q) should panic", bad)
+				}
+			}()
+			a.Resource(eng, bad)
+		}()
+	}
+	// And a legal one must not panic.
+	a.Resource(eng, "blog-post")
+}
+
+func TestRegistrar_HandleCoversOtherMethods(t *testing.T) {
+	eng := newTestEngine(t)
+	a := New(nil, nil)
+	a.Resource(eng, "post").Handle(http.MethodDelete, "/admin/post/:id", func(c *inertia.Context) {})
+
+	got := a.Permissions()
+	if len(got) != 1 || got[0].Key != "post.modify" {
+		t.Errorf("DELETE should record post.modify, got %+v", got)
+	}
+}
+
+// putInGroup moves the harness user into a fresh group with the given flag and
+// permission keys, and returns nothing: the caller only cares that the next
+// request is evaluated against it.
+func putInGroup(t *testing.T, adm *Admin, name string, superuser bool, keysJSON string) {
+	t.Helper()
+	ctx := context.Background()
+	su := 0
+	if superuser {
+		su = 1
+	}
+	if _, err := adm.DB.ExecContext(ctx,
+		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES (?, ?, ?, 0)`,
+		name, su, keysJSON); err != nil {
+		t.Fatalf("insert group %s: %v", name, err)
+	}
+	if _, err := adm.DB.ExecContext(ctx,
+		`UPDATE users SET group_id = (SELECT id FROM user_groups WHERE name = ?) WHERE username = 'alice'`,
+		name); err != nil {
+		t.Fatalf("move alice into %s: %v", name, err)
+	}
+}
+
+func TestGuard_EndToEnd(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		superuser bool
+		keysJSON  string
+		checkKey  string
+		wantCode  int
+		wantRun   bool
+	}{
+		{"superuser passes", true, `[]`, "post.modify", http.StatusOK, true},
+		{"key present passes", false, `["post.modify"]`, "post.modify", http.StatusOK, true},
+		{"modify implies access", false, `["post.modify"]`, "post.access", http.StatusOK, true},
+		{"key absent is forbidden", false, `["post.modify"]`, "billing.modify", http.StatusForbidden, false},
+		{"access does not imply modify", false, `["user.access"]`, "user.modify", http.StatusForbidden, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			eng, adm := loginStack(t)
+			putInGroup(t, adm, "TestGroup", c.superuser, c.keysJSON)
+
+			ran := false
+			eng.GET("/admin/probe", adm.guard(c.checkKey), func(ic *inertia.Context) { ran = true })
+			cookie := loginAndGetCookie(t, eng)
+
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+			r.AddCookie(cookie)
+			eng.ServeHTTP(w, r)
+
+			if w.Code != c.wantCode {
+				t.Errorf("status = %d, want %d", w.Code, c.wantCode)
+			}
+			if ran != c.wantRun {
+				t.Errorf("handler ran = %v, want %v", ran, c.wantRun)
+			}
+		})
+	}
+}
+
+// A user whose group was deleted from under them must be refused, not admitted.
+func TestGuard_NoGroupIsForbidden(t *testing.T) {
+	eng, adm := loginStack(t)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`UPDATE users SET group_id = NULL WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	eng.GET("/admin/probe", adm.guard("post.access"), func(ic *inertia.Context) {
+		t.Error("handler must not run for a user with no group")
+	})
+	cookie := loginAndGetCookie(t, eng)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+// The distinction the design turns on: a storage failure is a 500. Reporting it
+// as 403 would make an outage look like a permissions decision, and the operator
+// would go looking in the wrong place.
+func TestGuard_DatabaseErrorIsInternalError(t *testing.T) {
+	eng, adm := loginStack(t)
+	eng.GET("/admin/probe", adm.guard("post.access"), func(ic *inertia.Context) {
+		t.Error("handler must not run when the group cannot be loaded")
+	})
+	cookie := loginAndGetCookie(t, eng)
+
+	// Close the pool after logging in, so the session resolves but the group
+	// query cannot.
+	if err := adm.DB.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 — a storage failure is not a denial", w.Code)
+	}
+}
+
+// The dashboard is exempt from authorisation, so a user holding nothing still
+// reaches it. Its sidebar is filtered, which is the intended failure mode: a
+// short menu rather than a wall.
+func TestExemptRoute_ReachableWithoutPermissions(t *testing.T) {
+	eng, adm := loginStack(t)
+	putInGroup(t, adm, "Nobody", false, `[]`)
+
+	ran := false
+	eng.GET("/admin/exempt", adm.AuthMiddleware(), func(ic *inertia.Context) { ran = true })
+	cookie := loginAndGetCookie(t, eng)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/exempt", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if !ran {
+		t.Errorf("an exempt route must be reachable with no permissions; status %d", w.Code)
 	}
 }
