@@ -3,6 +3,15 @@
 // authenticates, sets the session cookie, and 302-redirects to the dashboard —
 // so this page needs no client-side auth logic. `loginPath` and `error` are
 // provided by the admin module's handlers.
+//
+// `error` is the form-level channel (bad credentials). Per-field messages use
+// the `errors` prop instead; the two coexist and login only needs this one.
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+
 defineProps<{
   loginPath?: string
   error?: string
@@ -10,37 +19,33 @@ defineProps<{
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50">
-    <form
-      :action="loginPath || '/admin/login'"
-      method="post"
-      class="w-80 bg-white p-6 rounded shadow space-y-4"
-    >
-      <h1 class="text-xl font-semibold text-gray-900">Admin sign in</h1>
-      <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-      <div>
-        <label class="block text-sm text-gray-600 mb-1">Username</label>
-        <input
-          name="username"
-          type="text"
-          autocomplete="username"
-          class="w-full border rounded px-3 py-2"
-          required
-        />
-      </div>
-      <div>
-        <label class="block text-sm text-gray-600 mb-1">Password</label>
-        <input
-          name="password"
-          type="password"
-          autocomplete="current-password"
-          class="w-full border rounded px-3 py-2"
-          required
-        />
-      </div>
-      <button type="submit" class="w-full bg-gray-900 text-white rounded px-3 py-2">
-        Sign in
-      </button>
-    </form>
+  <div class="min-h-screen flex items-center justify-center bg-muted/40">
+    <Card class="w-80">
+      <CardHeader>
+        <CardTitle>Admin sign in</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form :action="loginPath || '/admin/login'" method="post" class="space-y-4">
+          <Alert v-if="error" variant="destructive">
+            <AlertDescription>{{ error }}</AlertDescription>
+          </Alert>
+          <div class="space-y-1.5">
+            <Label for="username">Username</Label>
+            <Input id="username" name="username" autocomplete="username" required />
+          </div>
+          <div class="space-y-1.5">
+            <Label for="password">Password</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+          </div>
+          <Button type="submit" class="w-full">Sign in</Button>
+        </form>
+      </CardContent>
+    </Card>
   </div>
 </template>
