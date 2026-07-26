@@ -1238,10 +1238,6 @@ const setNameFilter = (v: string | number) =>
           </TableBody>
         </Table>
 
-        <!-- Controlled by the table, not by reka-ui's own page state: it emits
-             update:page, TanStack owns the index. PaginationItem is for numbered
-             pages — wrapping Prev/Next in one nests a <button> inside a <button>,
-             which browsers reparse and hydration then disagrees with. -->
         <!-- Page state lives in the table: reka-ui emits update:page and we
              forward it, so there is one source of truth. First/Previous/Next/Last
              are siblings of the page items, never parents — wrapping one in a
