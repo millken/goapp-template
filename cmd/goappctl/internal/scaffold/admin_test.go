@@ -105,6 +105,10 @@ func TestAdmin_IndexUsesTableAndOverlaysStartClosed(t *testing.T) {
 		"useVueTable",
 		`const pending = ref<Post | null>(null)`, // overlay starts closed
 		"No post yet.",
+		`:action="`+"`"+`${basePath}/${pending?.id}/delete`+"`"+`" method="post"`,
+		"`${basePath}/${row.original.id}/edit`",
+		"{{ item.value }}",
+		"@update:page",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("index.vue missing %q:\n%s", want, got)
@@ -112,5 +116,8 @@ func TestAdmin_IndexUsesTableAndOverlaysStartClosed(t *testing.T) {
 	}
 	if strings.Contains(got, `:open="true"`) {
 		t.Error("an overlay is server-rendered open; SSR does not emit teleported content")
+	}
+	if strings.Contains(got, "[[") || strings.Contains(got, "]]") {
+		t.Errorf("generated output still contains Go template delimiters:\n%s", got)
 	}
 }
