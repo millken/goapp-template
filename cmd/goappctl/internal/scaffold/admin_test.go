@@ -88,3 +88,29 @@ func TestAdmin_RefusesOverwrite(t *testing.T) {
 		t.Fatal("expected overwrite error, got nil")
 	}
 }
+
+func TestAdmin_IndexUsesTableAndOverlaysStartClosed(t *testing.T) {
+	root := t.TempDir()
+	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
+		t.Fatalf("Admin: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "frontend/pages/admin/post/index.vue"))
+	if err != nil {
+		t.Fatalf("read index.vue: %v", err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"@tanstack/vue-table",
+		"@/components/ui/table",
+		"useVueTable",
+		`const pending = ref<Post | null>(null)`, // overlay starts closed
+		"No post yet.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("index.vue missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, `:open="true"`) {
+		t.Error("an overlay is server-rendered open; SSR does not emit teleported content")
+	}
+}
