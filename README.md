@@ -156,8 +156,9 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 校验：
 
 - 生成的 `Create` / `Update` 会先把表单绑进 `item`、跑 [internal/validate](internal/validate/validate.go)，
-  失败就用同一个 `item` 重渲染表单 —— 输入自动回填（表单本来就绑 `:value="item.name"`），
-  每个坏字段配一条 `errors` prop 消息。校验错误**不进 session**，所以无 session / 无 db 的构建里同样可用。
+  失败就用同一个 `item` 重渲染表单 —— 输入自动回填（表单本来就从 `item` 取值：resource 用
+  `:value`，admin 用 shadcn `Input` 的 `:model-value`），每个坏字段配一条 `errors` prop 消息。
+  校验错误**不进 session**，所以无 session / 无 db 的构建里同样可用。
 - 唯一性这类要查库的规则是 handler 里的普通闭包（生成器给了 `nameAvailable` / `nameTaken` 桩子），
   `internal/validate` 本身只依赖标准库。
 
