@@ -124,8 +124,12 @@ const colspan = computed(() => props.columns.length + (slots['row-actions'] ? 1 
             </DropdownMenu>
           </TableCell>
         </TableRow>
+        <!-- Two different emptinesses: the #empty slot is the table's own "nothing
+             here yet" copy, which would read as a lie when 40 rows exist and the
+             search simply matched none of them. -->
         <TableEmpty v-if="!table.getRowModel().rows.length" :colspan="colspan">
-          <slot name="empty">No results.</slot>
+          <slot v-if="!data.length" name="empty">No results.</slot>
+          <template v-else>Nothing matches that filter.</template>
         </TableEmpty>
       </TableBody>
     </Table>

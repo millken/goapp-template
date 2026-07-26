@@ -29,7 +29,6 @@ const props = defineProps<{
   menu?: MenuItem[]
   user?: { id?: number; username?: string }
   mount?: string
-  loginPath?: string
   currentPath?: string
   flash?: Record<string, string>
   crumb?: string
@@ -45,7 +44,9 @@ const path = computed(() =>
 const sections = computed(() => {
   const home = { title: 'Home', items: [{ title: 'Overview', path: base.value }] }
   const out: { title: string; items: MenuItem[] }[] = [home]
-  const idx = new Map<string, number>()
+  // Seeded with Home already at 0, so an item registered under that section name
+  // joins the built-in column instead of pushing a second one with the same title.
+  const idx = new Map<string, number>([[home.title, 0]])
   for (const item of props.menu ?? []) {
     const name = item.section || 'Content'
     let i = idx.get(name)

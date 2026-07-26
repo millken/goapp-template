@@ -21,7 +21,6 @@ defineProps<{
     :menu="adminMenu"
     :user="adminUser"
     :mount="adminMount"
-    :login-path="loginPath"
     :current-path="currentPath"
     :flash="flash"
   >

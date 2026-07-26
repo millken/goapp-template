@@ -68,9 +68,24 @@ describe('DataTable', () => {
     expect(el.querySelectorAll('tbody em').length).toBe(2)
   })
 
-  it('shows the empty state when no rows match', () => {
+  it('shows the empty state when the table itself is empty', () => {
     const el = mount({ columns, data: [] })
     expect(el.textContent).toContain('No results.')
+  })
+
+  // A filter that matches nothing is not an empty table. Saying "No posts yet."
+  // over 25 hidden rows reads as data loss.
+  it('distinguishes an empty table from a filter that matches nothing', async () => {
+    const el = mount(
+      { columns, data: rows(25), searchKey: 'name' },
+      { empty: () => 'No posts yet.' },
+    )
+    const input = el.querySelector('input')!
+    input.value = 'zzz'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(el.textContent).toContain('Nothing matches that filter.')
+    expect(el.textContent).not.toContain('No posts yet.')
   })
 
   // PaginationItem renders its own <button>, so using it to wrap

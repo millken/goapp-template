@@ -51,7 +51,7 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 	// (Overview visible) or "Content is active" (Posts visible), never both;
 	// two renders, one per currentPath, cover both without weakening either.
 	html, err := vm.RenderComponent(ctx, "admin/dashboard", map[string]any{
-		"adminUser":   map[string]any{"id": 1, "username": "admin"},
+		"adminUser":   map[string]any{"id": 1, "username": "topbaruser"},
 		"adminMount":  "/admin",
 		"loginPath":   "/admin/login",
 		"currentPath": "/admin",
@@ -70,7 +70,11 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 	// submits, since reka-ui only intercepts a synthetic "select" event, not
 	// the underlying DOM click) is a hydrated-client concern verified
 	// separately, not something an SSR string match can observe.
-	for _, want := range []string{"Dashboard", "Saved", "admin", "Content", "Overview"} {
+	// "topbaruser" rather than "admin": the shell renders /admin/logout in two
+	// attributes, so asserting "admin" passed whether or not the username ever
+	// reached the topbar — and that hop, page prop → shell prop, is otherwise
+	// untested. A name that cannot appear in a path makes the check real.
+	for _, want := range []string{"Dashboard", "Saved", "topbaruser", "Content", "Overview"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("SSR output (currentPath=/admin) missing %q", want)
 		}
@@ -80,7 +84,7 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 	}
 
 	htmlContent, err := vm.RenderComponent(ctx, "admin/dashboard", map[string]any{
-		"adminUser":   map[string]any{"id": 1, "username": "admin"},
+		"adminUser":   map[string]any{"id": 1, "username": "topbaruser"},
 		"adminMount":  "/admin",
 		"loginPath":   "/admin/login",
 		"currentPath": "/admin/posts",

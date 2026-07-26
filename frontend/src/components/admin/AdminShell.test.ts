@@ -99,6 +99,22 @@ describe('AdminShell', () => {
     expect(submitted).toHaveBeenCalled()
   })
 
+  // The rail seeds Home itself, so a resource registering that exact section name
+  // used to push a second column with the same title and a duplicate key.
+  it('merges a section named Home into the built-in one', () => {
+    const el = mount({
+      ...props,
+      menu: [{ title: 'Settings', path: '/admin/settings', section: 'Home' }],
+      currentPath: '/admin/settings',
+    })
+    const rail = el.querySelectorAll('aside')[0]
+    expect(rail.textContent!.match(/Home/g)).toHaveLength(1)
+    // And the registered item lands in Home's own panel, beside Overview.
+    const panel = el.querySelectorAll('aside')[1]
+    expect(panel.textContent).toContain('Overview')
+    expect(panel.textContent).toContain('Settings')
+  })
+
   it('renders no button inside a button', () => {
     const el = mount(props)
     expect(el.querySelector('button button')).toBeNull()

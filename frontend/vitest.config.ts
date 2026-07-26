@@ -10,8 +10,8 @@ import { defineConfig } from 'vitest/config'
 // its entries (src/main.ts, ssr-esm-render.ts); *.test.ts is neither an entry
 // nor imported by one, and the Go binary embeds only frontend/dist.
 export default defineConfig({
-  // SFC support: DataTable.test.ts mounts a .vue component. The pjax tests are
-  // plain TS and never needed this.
+  // SFC support: any test that mounts a .vue component needs this. The pjax
+  // tests are plain TS, which is why the config went without it for so long.
   plugins: [vue()],
   test: {
     // The pjax modules drive history, scroll and DOM events, so they need a
