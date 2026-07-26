@@ -49,6 +49,10 @@ var All = []Component{
 			"frontend/src/components/ui",
 			"frontend/src/lib",
 			"server/ssr_admin_test.go",
+			// The dark-mode boot script it covers is admin-only wiring (a
+			// goappctl:admin block in rootHTML); without admin the script is
+			// stripped to empty and the test's assertions would fail.
+			"server/roothtml_test.go",
 		},
 	},
 	{

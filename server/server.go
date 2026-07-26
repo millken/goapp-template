@@ -117,6 +117,13 @@ func rootHTML(distFS fs.FS) string {
 	if js := firstAsset(distFS, "assets/main-*.js"); js != "" {
 		jsTag = fmt.Sprintf(`<script type="module" src="/%s"></script>`, js)
 	}
+	// Set the dark class before first paint, or the page flashes light. The
+	// assignment (not the string) carries the markers: this HTML lives in a Go
+	// string literal, where a marker line would be served to browsers as text.
+	darkBoot := ""
+	//goappctl:admin
+	darkBoot = `<script>try{if(localStorage.theme==='dark'||(!('theme' in localStorage)&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>`
+	//goappctl:end
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -125,11 +132,12 @@ func rootHTML(distFS fs.FS) string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>App</title>
   %s
+  %s
 </head>
 <body>
   <div id="app"><!--inertia-ssr-content-inertia--></div>
   <script>window.__INERTIA_PAGE_DATA__="<!--inertia-data-page-inertia-->";</script>
   %s
 </body>
-</html>`, cssLink, jsTag)
+</html>`, darkBoot, cssLink, jsTag)
 }
