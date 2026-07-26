@@ -787,6 +787,19 @@ Rewritten in place. A second parallel layout would only drift.
 
 **Interfaces:**
 - Consumes: `@/components/ui/{alert,button,separator}`, `lucide-vue-next`.
+
+**First, add a `success` variant to the Alert.** Upstream shadcn ships only
+`default` and `destructive`, but the shell distinguishes three flash kinds — the
+hand-written version this replaces gave success green, error red, other grey.
+Losing that is a regression in a shipped feature. The copied component is ours, so
+extend it: in `frontend/src/components/ui/alert/index.ts`, add a third entry
+beside `default` and `destructive`, leaving the base class string and
+`defaultVariants` alone:
+
+```ts
+        success:
+          "border-emerald-500/50 text-emerald-700 dark:border-emerald-500 dark:text-emerald-400 [&>svg]:text-emerald-600",
+```
 - Produces: unchanged props — `menu?: MenuItem[]`, `user?: unknown`, `mount?: string`, `loginPath?: string`, `flash?: Record<string, string>` — and a default slot. Every admin page keeps working without edits.
 
 - [ ] **Step 1: Replace the file**
@@ -813,8 +826,8 @@ interface MenuItem {
   order?: number
 }
 
-// `user` is unused here but declared so Vue treats it as a prop rather than
-// leaking it onto the root element as an attribute.
+// `user` and `loginPath` are unused here but declared so Vue treats them as
+// props rather than leaking them onto the root element as attributes.
 const props = defineProps<{
   menu?: MenuItem[]
   user?: unknown
@@ -827,8 +840,9 @@ const base = computed(() => props.mount || '/admin')
 
 // One-shot messages staged by the server before a redirect (sess.Flash), keyed
 // by kind. The session middleware consumes them, so they vanish on the next
-// navigation — no dismiss button needed. Only `error` gets the loud treatment.
-const flashVariant = (kind: string) => (kind === 'error' ? 'destructive' : 'default')
+// navigation — no dismiss button needed.
+const flashVariant = (kind: string) =>
+  kind === 'error' ? 'destructive' : kind === 'success' ? 'success' : 'default'
 </script>
 
 <template>
