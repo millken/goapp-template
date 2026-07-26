@@ -43,29 +43,68 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 			"and no page can render: %v", err)
 	}
 
+	menu := []map[string]any{{"title": "Posts", "path": "/admin/posts", "section": "Content"}}
+
+	// AdminShell shows only the *active* section's items in the panel — that's
+	// the point of the two-column design, one full column per section instead
+	// of a nested tree. So a single render can prove either "Home is active"
+	// (Overview visible) or "Content is active" (Posts visible), never both;
+	// two renders, one per currentPath, cover both without weakening either.
 	html, err := vm.RenderComponent(ctx, "admin/dashboard", map[string]any{
-		"adminUser":  "admin",
-		"adminMount": "/admin",
-		"loginPath":  "/admin/login",
-		"adminMenu":  []map[string]any{{"title": "Posts", "path": "/admin/posts"}},
-		"flash":      map[string]string{"success": "Saved"},
+		"adminUser":   map[string]any{"id": 1, "username": "admin"},
+		"adminMount":  "/admin",
+		"loginPath":   "/admin/login",
+		"currentPath": "/admin",
+		"adminMenu":   menu,
+		"flash":       map[string]string{"success": "Saved"},
 	})
 	if err != nil {
 		t.Fatalf("RenderComponent(admin/dashboard): %v", err)
 	}
-	for _, want := range []string{"Dashboard", "Posts", "Log out", "Saved"} {
+	// "Log out" is deliberately not asserted here: it lives inside
+	// DropdownMenuContent, which reka-ui gates behind <Presence
+	// :present="open">. The dropdown starts closed, so its slot content never
+	// reaches server-rendered markup at all — the same reason
+	// ssr_fixture_test.go never asserts text from its own row-action dropdown.
+	// The logout form's real behavior (that clicking the menu item still
+	// submits, since reka-ui only intercepts a synthetic "select" event, not
+	// the underlying DOM click) is a hydrated-client concern verified
+	// separately, not something an SSR string match can observe.
+	for _, want := range []string{"Dashboard", "Saved", "admin", "Content", "Overview"} {
 		if !strings.Contains(html, want) {
-			t.Errorf("SSR output missing %q", want)
+			t.Errorf("SSR output (currentPath=/admin) missing %q", want)
+		}
+	}
+	if strings.Contains(html, "Posts") {
+		t.Error("SSR output (currentPath=/admin) unexpectedly shows Posts; Home should be the active section")
+	}
+
+	htmlContent, err := vm.RenderComponent(ctx, "admin/dashboard", map[string]any{
+		"adminUser":   map[string]any{"id": 1, "username": "admin"},
+		"adminMount":  "/admin",
+		"loginPath":   "/admin/login",
+		"currentPath": "/admin/posts",
+		"adminMenu":   menu,
+		"flash":       map[string]string{"success": "Saved"},
+	})
+	if err != nil {
+		t.Fatalf("RenderComponent(admin/dashboard, currentPath=/admin/posts): %v", err)
+	}
+	for _, want := range []string{"Posts", "Content"} {
+		if !strings.Contains(htmlContent, want) {
+			t.Errorf("SSR output (currentPath=/admin/posts) missing %q", want)
 		}
 	}
 
 	// A <button> inside a <button> is invalid, and browsers reparse it into a
 	// DOM that hydration then disagrees with. The generated list page hit this
 	// by misusing a component that renders its own button; this guards the
-	// shell against the same mistake.
-	if d := maxButtonDepth(html); d > 1 {
-		t.Errorf("nested <button> at depth %d; an element that renders its own "+
-			"button was used as a wrapper", d)
+	// shell against the same mistake, on both renders.
+	for _, h := range []string{html, htmlContent} {
+		if d := maxButtonDepth(h); d > 1 {
+			t.Errorf("nested <button> at depth %d; an element that renders its own "+
+				"button was used as a wrapper", d)
+		}
 	}
 }
 

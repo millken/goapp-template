@@ -45,7 +45,7 @@ var All = []Component{
 			"internal/controller/admin",
 			"commands/admin_user.go",
 			"frontend/pages/admin",
-			"frontend/src/components/AdminLayout.vue",
+			"frontend/src/components/admin",
 			"frontend/src/components/ui",
 			"frontend/src/lib",
 			"server/ssr_admin_test.go",
