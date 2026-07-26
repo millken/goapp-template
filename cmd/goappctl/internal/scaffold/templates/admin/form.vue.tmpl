@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import AdminLayout from '@/components/AdminLayout.vue'
+import AdminShell from '@/components/admin/AdminShell.vue'
+import FormField from '@/components/admin/FormField.vue'
+import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 
-interface MenuItem { title: string; path: string; order?: number }
+interface MenuItem { title: string; path: string; order?: number; section?: string }
 
 defineProps<{
   item: { id: number; name: string }
@@ -16,43 +17,41 @@ defineProps<{
   errors?: Record<string, string>
   // Injected by the admin auth middleware for the shell:
   adminMenu?: MenuItem[]
-  adminUser?: unknown
+  adminUser?: { id?: number; username?: string }
   adminMount?: string
   loginPath?: string
+  currentPath?: string
   // One-shot messages staged by the handlers before their redirects:
   flash?: Record<string, string>
 }>()
 </script>
 
 <template>
-  <AdminLayout
+  <AdminShell
     :menu="adminMenu"
     :user="adminUser"
     :mount="adminMount"
     :login-path="loginPath"
+    :current-path="currentPath"
     :flash="flash"
+    :crumb="item.id ? 'Edit' : 'New'"
   >
+    <PageHeader :title="`${item.id ? 'Edit' : 'New'} [[.Type]]`" />
     <Card class="max-w-lg">
-      <CardHeader>
-        <CardTitle>{{ item.id ? 'Edit' : 'New' }} [[.Type]]</CardTitle>
-      </CardHeader>
-      <CardContent>
+      <CardContent class="pt-6">
         <form
           :action="item.id ? `${basePath}/${item.id}` : basePath"
           method="post"
           class="space-y-4"
         >
-          <div class="space-y-1.5">
-            <Label for="name">Name</Label>
+          <FormField name="name" label="Name" :error="errors?.name">
             <Input
               id="name"
               name="name"
               :model-value="item.name"
               :aria-invalid="!!errors?.name"
-              :class="errors?.name ? 'border-destructive' : ''"
             />
-            <p v-if="errors?.name" class="text-sm text-destructive">{{ errors.name }}</p>
-          </div>
+          </FormField>
           <div class="flex gap-2">
             <Button type="submit">Save</Button>
             <Button as="a" :href="basePath" variant="outline">Cancel</Button>
@@ -60,5 +59,5 @@ defineProps<{
         </form>
       </CardContent>
     </Card>
-  </AdminLayout>
+  </AdminShell>
 </template>

@@ -100,15 +100,14 @@ func TestAdmin_IndexUsesTableAndOverlaysStartClosed(t *testing.T) {
 	}
 	got := string(data)
 	for _, want := range []string{
-		"@tanstack/vue-table",
-		"@/components/ui/table",
-		"useVueTable",
+		`import DataTable from '@/components/admin/DataTable.vue'`,
+		`import AdminShell from '@/components/admin/AdminShell.vue'`,
+		`import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'`,
 		`const pending = ref<Post | null>(null)`, // overlay starts closed
 		"No post yet.",
-		`:action="` + "`" + `${basePath}/${pending?.id}/delete` + "`" + `" method="post"`,
-		"`${basePath}/${row.original.id}/edit`",
-		"{{ item.value }}",
-		"@update:page",
+		"`${basePath}/${pending?.id}/delete`",
+		"`${basePath}/${row.id}/edit`",
+		`search-key="name"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("index.vue missing %q:\n%s", want, got)
