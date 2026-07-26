@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 // Standalone rather than merged into vite.config.ts: the build config carries a
@@ -9,6 +10,9 @@ import { defineConfig } from 'vitest/config'
 // its entries (src/main.ts, ssr-esm-render.ts); *.test.ts is neither an entry
 // nor imported by one, and the Go binary embeds only frontend/dist.
 export default defineConfig({
+  // SFC support: DataTable.test.ts mounts a .vue component. The pjax tests are
+  // plain TS and never needed this.
+  plugins: [vue()],
   test: {
     // The pjax modules drive history, scroll and DOM events, so they need a
     // document. happy-dom is the lighter of the two usual choices.
