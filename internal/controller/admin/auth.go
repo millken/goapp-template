@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 
 	"github.com/millken/inertia"
@@ -74,8 +75,13 @@ func userID(v any) (int64, bool) {
 	case int64:
 		return n, true
 	case float64:
-		// JSON's only number type. An id beyond 2^53 would already have lost
-		// precision inside the session payload, so there is nothing to recover.
+		// JSON's only number type. A non-integral value is not an id this code
+		// ever wrote, so refuse it rather than truncate it into a valid one. An
+		// id beyond 2^53 would already have lost precision inside the session
+		// payload, so there is nothing to recover there.
+		if n != math.Trunc(n) {
+			return 0, false
+		}
 		return int64(n), true
 	case int:
 		return int64(n), true

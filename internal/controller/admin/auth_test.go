@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,5 +34,30 @@ func TestResolve_WorksWithTheDatabaseSessionStore(t *testing.T) {
 	}
 	if !ran {
 		t.Error("handler did not run")
+	}
+}
+
+// userID coerces because the two session stores disagree about number types, but
+// coercion must not turn a value this code never wrote into a valid id.
+func TestUserID(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		v    any
+		want int64
+		ok   bool
+	}{
+		{"int64 as store_memory returns it", int64(7), 7, true},
+		{"float64 as store_db returns it", float64(7), 7, true},
+		{"int", 7, 7, true},
+		{"json.Number", json.Number("7"), 7, true},
+		{"non-integral float is not an id", 7.5, 0, false},
+		{"string", "7", 0, false},
+		{"nil", nil, 0, false},
+		{"map", map[string]any{}, 0, false},
+	} {
+		got, ok := userID(c.v)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s: userID(%#v) = (%d, %v), want (%d, %v)", c.name, c.v, got, ok, c.want, c.ok)
+		}
 	}
 }
