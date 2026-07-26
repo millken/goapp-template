@@ -120,3 +120,40 @@ func TestFetchItem_UnreachableRegistrySaysSo(t *testing.T) {
 		t.Errorf("error should mention the registry, got: %v", err)
 	}
 }
+
+func TestUIDestPath(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"ui/button/Button.vue", "frontend/src/components/ui/button/Button.vue"},
+		{"ui/button/index.ts", "frontend/src/components/ui/button/index.ts"},
+		{"lib/utils.ts", "frontend/src/lib/utils.ts"},
+		{"composables/useFoo.ts", "frontend/src/composables/useFoo.ts"},
+	} {
+		if got := uiDestPath(c.in); got != c.want {
+			t.Errorf("uiDestPath(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// The registry ships imports pointing at its own layout. The upstream CLI
+// rewrites them from components.json; skipping this writes code that cannot
+// build — Pagination*.vue imports buttonVariants that way.
+func TestRewriteRegistryImports(t *testing.T) {
+	in := `import { buttonVariants } from "@/registry/default/ui/button"
+import { cn } from "@/lib/utils"
+import { Primitive } from "reka-ui"`
+	want := `import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { Primitive } from "reka-ui"`
+
+	if got := rewriteRegistryImports(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestRewriteRegistryImports_LeavesUnrelatedPathsAlone(t *testing.T) {
+	in := `import x from "@/components/ui/button"
+const s = "registry/default/ui is not an import"`
+	if got := rewriteRegistryImports(in); got != in {
+		t.Errorf("rewrote something it should not have:\n%s", got)
+	}
+}

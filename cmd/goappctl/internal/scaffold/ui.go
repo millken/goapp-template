@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -93,4 +94,27 @@ func resolveItems(base string, names []string) ([]registryItem, error) {
 		}
 	}
 	return out, nil
+}
+
+// registryImportPrefix is how the registry refers to its own components. The
+// upstream CLI rewrites this from components.json; we have no such file, so the
+// mapping is fixed here — and it is not optional: Pagination*.vue imports
+// buttonVariants through it, so skipping the rewrite writes code that will not
+// build.
+const registryImportPrefix = "@/registry/default/ui"
+
+// uiDestPath maps a registry-relative path to a project-relative one. Component
+// files live under ui/, which belongs beneath frontend/src/components/;
+// everything else (lib/utils.ts) is already relative to frontend/src.
+func uiDestPath(registryPath string) string {
+	if strings.HasPrefix(registryPath, "ui/") {
+		return "frontend/src/components/" + registryPath
+	}
+	return "frontend/src/" + registryPath
+}
+
+// rewriteRegistryImports points registry-internal imports at where the files
+// actually land.
+func rewriteRegistryImports(content string) string {
+	return strings.ReplaceAll(content, registryImportPrefix, "@/components/ui")
 }
