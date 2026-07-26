@@ -3,8 +3,11 @@ package scaffold
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -136,4 +139,79 @@ func uiDestPath(registryPath string) (string, error) {
 // actually land.
 func rewriteRegistryImports(content string) string {
 	return strings.ReplaceAll(content, registryImportPrefix, "@/components/ui")
+}
+
+// UIOptions controls `gen ui`.
+type UIOptions struct {
+	// ModuleRoot is the project root; empty means paths are relative to the cwd.
+	ModuleRoot string
+	// Force overwrites existing files, which is how you take an upstream update.
+	Force bool
+	// DryRun prints the plan and writes nothing.
+	DryRun bool
+	// BaseURL overrides the registry root. Empty uses DefaultRegistry; tests
+	// point it at an httptest server so the suite stays offline.
+	BaseURL string
+	// Out receives the progress and dependency report.
+	Out io.Writer
+}
+
+// UI fetches components from the registry and writes their source into the
+// project. Every item is resolved before anything is written, so a bad name or
+// an unreachable registry leaves the working tree untouched.
+func UI(names []string, opts UIOptions) error {
+	if len(names) == 0 {
+		return fmt.Errorf("gen ui: name at least one component")
+	}
+	base := opts.BaseURL
+	if base == "" {
+		base = DefaultRegistry
+	}
+	out := opts.Out
+	if out == nil {
+		out = io.Discard
+	}
+
+	items, err := resolveItems(base, names)
+	if err != nil {
+		return err
+	}
+
+	// Resolve every destination before writing anything, so a hostile path or an
+	// existing file stops the run rather than leaving it half applied.
+	type placement struct{ dest, content string }
+	var plan []placement
+	for _, item := range items {
+		for _, f := range item.Files {
+			dest, err := uiDestPath(f.Path)
+			if err != nil {
+				return fmt.Errorf("gen ui: component %q: %w", item.Name, err)
+			}
+			plan = append(plan, placement{dest: dest, content: f.Content})
+		}
+	}
+
+	if !opts.Force && !opts.DryRun {
+		for _, p := range plan {
+			full := filepath.Join(opts.ModuleRoot, p.dest)
+			if _, err := os.Stat(full); err == nil {
+				return fmt.Errorf("file exists (use --force to overwrite): %s", full)
+			}
+		}
+	}
+
+	for _, p := range plan {
+		fmt.Fprintf(out, "  %s\n", p.dest)
+		if opts.DryRun {
+			continue
+		}
+		full := filepath.Join(opts.ModuleRoot, p.dest)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("gen ui: mkdir for %s: %w", p.dest, err)
+		}
+		if err := os.WriteFile(full, []byte(rewriteRegistryImports(p.content)), 0o644); err != nil {
+			return fmt.Errorf("gen ui: write %s: %w", p.dest, err)
+		}
+	}
+	return nil
 }

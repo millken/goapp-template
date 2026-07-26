@@ -1,9 +1,12 @@
 package scaffold
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -178,5 +181,100 @@ func TestRewriteRegistryImports_LeavesUnrelatedPathsAlone(t *testing.T) {
 const s = "registry/default/ui is not an import"`
 	if got := rewriteRegistryImports(in); got != in {
 		t.Errorf("rewrote something it should not have:\n%s", got)
+	}
+}
+
+func twoItemStub(t *testing.T) string {
+	t.Helper()
+	return registryStub(t, map[string]registryItem{
+		"button": {
+			Name:                 "button",
+			Dependencies:         []string{"reka-ui"},
+			RegistryDependencies: []string{"utils"},
+			Files: []registryFile{
+				{Path: "ui/button/Button.vue", Content: "import { cn } from \"@/registry/default/ui/button\"\n"},
+			},
+		},
+		"utils": {
+			Name:  "utils",
+			Files: []registryFile{{Path: "lib/utils.ts", Content: "export const cn = 1\n"}},
+		},
+	})
+}
+
+func TestUI_WritesFilesWithRewrittenImports(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+
+	if err := UI([]string{"button"}, UIOptions{
+		ModuleRoot: root, BaseURL: twoItemStub(t), Out: &out,
+	}); err != nil {
+		t.Fatalf("UI: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(root, "frontend/src/components/ui/button/Button.vue"))
+	if err != nil {
+		t.Fatalf("read Button.vue: %v", err)
+	}
+	if strings.Contains(string(got), "@/registry") {
+		t.Errorf("registry import survived:\n%s", got)
+	}
+	if !strings.Contains(string(got), "@/components/ui/button") {
+		t.Errorf("import was not rewritten:\n%s", got)
+	}
+	// The transitive dependency must land too, or the file above imports nothing.
+	if _, err := os.Stat(filepath.Join(root, "frontend/src/lib/utils.ts")); err != nil {
+		t.Errorf("transitive dependency not written: %v", err)
+	}
+}
+
+func TestUI_RefusesToOverwriteWithoutForce(t *testing.T) {
+	root := t.TempDir()
+	base := twoItemStub(t)
+	var out bytes.Buffer
+
+	if err := UI([]string{"button"}, UIOptions{ModuleRoot: root, BaseURL: base, Out: &out}); err != nil {
+		t.Fatalf("first UI: %v", err)
+	}
+	err := UI([]string{"button"}, UIOptions{ModuleRoot: root, BaseURL: base, Out: &out})
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("want an overwrite refusal mentioning --force, got %v", err)
+	}
+	if err := UI([]string{"button"}, UIOptions{ModuleRoot: root, BaseURL: base, Force: true, Out: &out}); err != nil {
+		t.Fatalf("UI with Force: %v", err)
+	}
+}
+
+func TestUI_DryRunWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+
+	if err := UI([]string{"button"}, UIOptions{
+		ModuleRoot: root, BaseURL: twoItemStub(t), DryRun: true, Out: &out,
+	}); err != nil {
+		t.Fatalf("UI: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "frontend/src/components")); err == nil {
+		t.Error("dry run created files")
+	}
+	if !strings.Contains(out.String(), "frontend/src/components/ui/button/Button.vue") {
+		t.Errorf("dry run should still print the plan, got:\n%s", out.String())
+	}
+}
+
+// A failure partway through the requested set must not leave half a component
+// on disk: everything is fetched before anything is written.
+func TestUI_WritesNothingWhenAnyItemFails(t *testing.T) {
+	root := t.TempDir()
+	var out bytes.Buffer
+
+	err := UI([]string{"button", "nosuchthing"}, UIOptions{
+		ModuleRoot: root, BaseURL: twoItemStub(t), Out: &out,
+	})
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if _, err := os.Stat(filepath.Join(root, "frontend/src/components")); err == nil {
+		t.Error("a failed run left files behind")
 	}
 }
