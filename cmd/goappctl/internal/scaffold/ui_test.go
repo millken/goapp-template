@@ -128,8 +128,30 @@ func TestUIDestPath(t *testing.T) {
 		{"lib/utils.ts", "frontend/src/lib/utils.ts"},
 		{"composables/useFoo.ts", "frontend/src/composables/useFoo.ts"},
 	} {
-		if got := uiDestPath(c.in); got != c.want {
+		got, err := uiDestPath(c.in)
+		if err != nil {
+			t.Errorf("uiDestPath(%q): unexpected error %v", c.in, err)
+			continue
+		}
+		if got != c.want {
 			t.Errorf("uiDestPath(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// Registry content is third-party JSON fetched over HTTP, and the base URL is
+// overridable, so a path that escapes the project root must be refused rather
+// than written.
+func TestUIDestPath_RejectsPathsThatEscape(t *testing.T) {
+	for _, bad := range []string{
+		"ui/../../../etc/cron.d/x",
+		"../outside.ts",
+		"/etc/passwd",
+		"ui/./button/Button.vue",
+		"",
+	} {
+		if got, err := uiDestPath(bad); err == nil {
+			t.Errorf("uiDestPath(%q) = %q, want an error", bad, got)
 		}
 	}
 }

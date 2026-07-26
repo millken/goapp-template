@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 )
@@ -106,11 +107,22 @@ const registryImportPrefix = "@/registry/default/ui"
 // uiDestPath maps a registry-relative path to a project-relative one. Component
 // files live under ui/, which belongs beneath frontend/src/components/;
 // everything else (lib/utils.ts) is already relative to frontend/src.
-func uiDestPath(registryPath string) string {
-	if strings.HasPrefix(registryPath, "ui/") {
-		return "frontend/src/components/" + registryPath
+//
+// The path comes from a third party over HTTP, and this is where it turns into
+// somewhere we write, so it is also where it gets checked: anything that is not
+// already a plain relative path is refused rather than cleaned, because a
+// registry emitting `..` is broken or hostile and either way should not be
+// silently accommodated.
+func uiDestPath(registryPath string) (string, error) {
+	cleanPath := path.Clean(registryPath)
+	if registryPath == "" || strings.HasPrefix(registryPath, "/") ||
+		strings.HasPrefix(cleanPath, "..") || cleanPath != registryPath {
+		return "", fmt.Errorf("registry file path %q is not a plain relative path", registryPath)
 	}
-	return "frontend/src/" + registryPath
+	if strings.HasPrefix(registryPath, "ui/") {
+		return "frontend/src/components/" + registryPath, nil
+	}
+	return "frontend/src/" + registryPath, nil
 }
 
 // rewriteRegistryImports points registry-internal imports at where the files
