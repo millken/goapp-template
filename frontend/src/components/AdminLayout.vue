@@ -19,8 +19,8 @@ interface MenuItem {
   order?: number
 }
 
-// `user` is unused here but declared so Vue treats it as a prop rather than
-// leaking it onto the root element as an attribute.
+// `user` and `loginPath` are unused here but declared so Vue treats them as
+// props rather than leaking them onto the root element as attributes.
 const props = defineProps<{
   menu?: MenuItem[]
   user?: unknown
@@ -33,8 +33,9 @@ const base = computed(() => props.mount || '/admin')
 
 // One-shot messages staged by the server before a redirect (sess.Flash), keyed
 // by kind. The session middleware consumes them, so they vanish on the next
-// navigation — no dismiss button needed. Only `error` gets the loud treatment.
-const flashVariant = (kind: string) => (kind === 'error' ? 'destructive' : 'default')
+// navigation — no dismiss button needed.
+const flashVariant = (kind: string) =>
+  kind === 'error' ? 'destructive' : kind === 'success' ? 'success' : 'default'
 </script>
 
 <template>
