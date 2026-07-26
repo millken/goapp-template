@@ -1237,25 +1237,20 @@ const setNameFilter = (v: string | number) =>
           </TableBody>
         </Table>
 
+        <!-- Controlled by the table, not by reka-ui's own page state: it emits
+             update:page, TanStack owns the index. PaginationItem is for numbered
+             pages — wrapping Prev/Next in one nests a <button> inside a <button>,
+             which browsers reparse and hydration then disagrees with. -->
         <Pagination
           v-if="table.getPageCount() > 1"
           :items-per-page="PAGE_SIZE"
           :total="table.getFilteredRowModel().rows.length"
-          :default-page="1"
+          :page="table.getState().pagination.pageIndex + 1"
+          @update:page="(p) => table.setPageIndex(p - 1)"
         >
           <PaginationContent class="justify-end">
-            <PaginationItem :value="1">
-              <PaginationPrevious
-                :disabled="!table.getCanPreviousPage()"
-                @click="table.previousPage()"
-              />
-            </PaginationItem>
-            <PaginationItem :value="2">
-              <PaginationNext
-                :disabled="!table.getCanNextPage()"
-                @click="table.nextPage()"
-              />
-            </PaginationItem>
+            <PaginationPrevious />
+            <PaginationNext />
           </PaginationContent>
         </Pagination>
       </CardContent>
