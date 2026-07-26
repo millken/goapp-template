@@ -16,6 +16,7 @@ func newGenCmd() *cobra.Command {
 	var (
 		force   bool
 		noMount bool
+		dryRun  bool
 		root    string
 	)
 
@@ -100,11 +101,37 @@ func newGenCmd() *cobra.Command {
 		},
 	}
 
+	uiCmd := &cobra.Command{
+		Use:   "ui <component>…",
+		Short: "Copy shadcn-vue component source into frontend/src/components/ui/",
+		Long: "Fetches components from the shadcn-vue registry and writes their source into\n" +
+			"the project, following registryDependencies. Files are yours to edit; nothing\n" +
+			"is installed — the pnpm add line for any missing packages is printed.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			p, err := scaffold.Detect(root)
+			if err != nil {
+				return err
+			}
+			if !p.HasAdmin {
+				return fmt.Errorf("this project has no internal/controller/admin/ — the copied components belong to the admin area, so there is nothing here to add them to")
+			}
+			out := cmd.OutOrStdout()
+			return scaffold.UI(args, scaffold.UIOptions{
+				ModuleRoot: p.Root,
+				Force:      force,
+				DryRun:     dryRun,
+				Out:        out,
+			})
+		},
+	}
+
 	gen.PersistentFlags().BoolVar(&force, "force", false, "Overwrite existing files")
 	gen.PersistentFlags().StringVarP(&root, "dir", "C", ".", "Project root")
 	resourceCmd.Flags().BoolVar(&noMount, "no-mount", false,
 		"Skip editing "+scaffold.MountGenPath+"; print the Mount line instead")
-	gen.AddCommand(resourceCmd, adminCmd)
+	uiCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print what would be written, write nothing")
+	gen.AddCommand(resourceCmd, adminCmd, uiCmd)
 	return gen
 }
 

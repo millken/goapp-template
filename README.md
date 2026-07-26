@@ -188,17 +188,21 @@ goappctl gen resource post -C ../other    # 指定项目根目录
   失败时重渲染并给出 `errors` prop —— 不需要客户端再来一套。
 
 初始带 12 个组件：`alert` `badge` `button` `card` `dialog` `dropdown-menu` `input`
-`label` `pagination` `select` `separator` `table`。加新组件：
+`label` `pagination` `select` `separator` `table`。加新组件用生成器：
 
 ```bash
-cd frontend && pnpm dlx shadcn-vue@latest add combobox
+goappctl gen ui tooltip                  # 可一次多个：gen ui tooltip popover
+goappctl gen ui tooltip --dry-run        # 只打印计划，不写文件
+goappctl gen ui tooltip --force          # 覆盖已存在文件（用于跟进上游更新）
 ```
 
-**注意**：官方 CLI 拉取 registry 时可能失败（表现为 `Failed to fetch from registry`，
-即使 curl 同一个 URL 正常）。手工替代路径是从
-`https://shadcn-vue.com/r/styles/default/<name>.json` 取 JSON、按 `files[].path` 落盘
-（`ui/**` → `frontend/src/components/ui/`），并把 `@/registry/default/ui` 改写成
-`@/components/ui` —— 少了这步重写，构建会直接失败。
+它从 shadcn-vue registry 取源码、递归拉上 `registryDependencies`、写进
+`frontend/src/components/ui/`，并把 registry 内部的 `@/registry/default/ui` 导入改写成
+`@/components/ui`（少了这步重写，构建会直接失败）。**不装依赖** —— 缺哪些 npm 包会打印一条
+`pnpm add` 让你自己跑，和 `gen admin` 打印 mount 行是同一个原则。
+
+用生成器而不是官方 CLI，是因为运行它的人不同：派生项目的开发者手上一定有 Go 工具链，
+未必配好了 Node 和 `pnpm dlx`。
 
 **（仅 SSR 构建适用）不要在 SSR 阶段渲染打开的弹层。** `admin` 开、`ssr` 关的项目没有
 `frontend/ssr/render.ts` 这个文件，下面这条不适用。启用 SSR 时，`Dialog` / `DropdownMenu` /
