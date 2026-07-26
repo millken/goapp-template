@@ -121,3 +121,33 @@ func TestAdmin_IndexUsesTableAndOverlaysStartClosed(t *testing.T) {
 		t.Errorf("generated output still contains Go template delimiters:\n%s", got)
 	}
 }
+
+func TestAdmin_RoutesGoThroughTheRegistrar(t *testing.T) {
+	root := t.TempDir()
+	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
+		t.Fatalf("Admin: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "internal/controller/adminpost/handler.go"))
+	if err != nil {
+		t.Fatalf("read handler.go: %v", err)
+	}
+	got := string(data)
+
+	for _, want := range []string{
+		`r := adm.Resource(eng, "post")`,
+		"r.GET(ct.base, ct.Index)",
+		"r.POST(ct.base+\"/:id/delete\", ct.Delete)",
+		`r.Menu("Post", ct.base)`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("handler.go missing %q:\n%s", want, got)
+		}
+	}
+	// A route registered outside the registrar has no permission check, which is
+	// the hole this design exists to close.
+	for _, gone := range []string{"adm.AuthMiddleware()", "eng.GET(", "eng.POST(", "adm.AddMenuItem("} {
+		if strings.Contains(got, gone) {
+			t.Errorf("handler.go still contains %q — routes must go through the registrar:\n%s", gone, got)
+		}
+	}
+}

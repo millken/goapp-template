@@ -30,20 +30,20 @@ type Controller struct {
 	base string
 }
 
-// Mount registers the admin [[.Type]] routes (guarded by the admin auth
-// middleware) and adds a menu entry.
+// Mount registers the admin [[.Type]] routes and adds a menu entry. Each route
+// is guarded by the permission its method implies — [[.Route]].access for reads,
+// [[.Route]].modify for writes — so a route cannot be added without its check.
 func Mount(eng *inertia.Engine, svc *app.Services, adm *admin.Admin) {
 	ct := &Controller{Services: svc, base: adm.Prefix() + "/[[.Route]]"}
-	auth := adm.AuthMiddleware()
+	r := adm.Resource(eng, "[[.Route]]")
 
-	eng.GET(ct.base, auth, ct.Index)
-	eng.GET(ct.base+"/new", auth, ct.New)
-	eng.POST(ct.base, auth, ct.Create)
-	eng.GET(ct.base+"/:id/edit", auth, ct.Edit)
-	eng.POST(ct.base+"/:id", auth, ct.Update)
-	eng.POST(ct.base+"/:id/delete", auth, ct.Delete)
-
-	adm.AddMenuItem(admin.MenuItem{Title: "[[.Type]]", Path: ct.base})
+	r.GET(ct.base, ct.Index)
+	r.GET(ct.base+"/new", ct.New)
+	r.POST(ct.base, ct.Create)
+	r.GET(ct.base+"/:id/edit", ct.Edit)
+	r.POST(ct.base+"/:id", ct.Update)
+	r.POST(ct.base+"/:id/delete", ct.Delete)
+	r.Menu("[[.Type]]", ct.base)
 }
 
 // Index lists all [[.Table]].
