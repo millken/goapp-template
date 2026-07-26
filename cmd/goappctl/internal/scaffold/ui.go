@@ -181,12 +181,19 @@ func UI(names []string, opts UIOptions) error {
 	// existing file stops the run rather than leaving it half applied.
 	type placement struct{ dest, content string }
 	var plan []placement
+	claimed := map[string]string{} // destination -> the component that wants it
 	for _, item := range items {
 		for _, f := range item.Files {
 			dest, err := uiDestPath(f.Path)
 			if err != nil {
 				return fmt.Errorf("gen ui: component %q: %w", item.Name, err)
 			}
+			// Two components wanting the same file is a registry problem, and
+			// silently letting the second win would hide it.
+			if owner, dup := claimed[dest]; dup {
+				return fmt.Errorf("gen ui: %q and %q both write %s", owner, item.Name, dest)
+			}
+			claimed[dest] = item.Name
 			plan = append(plan, placement{dest: dest, content: f.Content})
 		}
 	}
