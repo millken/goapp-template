@@ -51,6 +51,9 @@ type Admin struct {
 	*app.Services
 	cfg  *Config
 	menu []MenuItem
+	// perms maps a permission key to the routes it guards, filled during
+	// startup wiring by the registrar and read-only afterwards.
+	perms map[string][]string
 }
 
 // New constructs the admin controller. cfg may be nil; accessors apply defaults.
