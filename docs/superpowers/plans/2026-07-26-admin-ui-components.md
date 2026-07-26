@@ -1573,6 +1573,33 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 			t.Errorf("SSR output missing %q", want)
 		}
 	}
+
+	// A <button> inside a <button> is invalid, and browsers reparse it into a
+	// DOM that hydration then disagrees with. The generated list page hit this
+	// by misusing a component that renders its own button; this guards the
+	// shell against the same mistake.
+	if d := maxButtonDepth(html); d > 1 {
+		t.Errorf("nested <button> at depth %d; an element that renders its own "+
+			"button was used as a wrapper", d)
+	}
+}
+
+// maxButtonDepth walks markup counting button opens and closes. Deliberately
+// crude: it needs to spot nesting, not parse HTML.
+func maxButtonDepth(html string) int {
+	depth, max := 0, 0
+	for i := range len(html) {
+		switch {
+		case strings.HasPrefix(html[i:], "</button"):
+			depth--
+		case strings.HasPrefix(html[i:], "<button"):
+			depth++
+			if depth > max {
+				max = depth
+			}
+		}
+	}
+	return max
 }
 ```
 
