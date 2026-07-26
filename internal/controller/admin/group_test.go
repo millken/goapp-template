@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/dnsoa/go/sqldb"
@@ -109,5 +110,30 @@ func TestFindGroup_BadJSONIsNotErrNoGroup(t *testing.T) {
 	}
 	if errors.Is(err, errNoGroup) {
 		t.Error("malformed JSON must not be reported as a missing group")
+	}
+}
+
+func TestFindGroupID(t *testing.T) {
+	d := groupFixture(t)
+	ctx := context.Background()
+
+	id, err := FindGroupID(ctx, d, "Editors")
+	if err != nil {
+		t.Fatalf("Editors: %v", err)
+	}
+	if id != 2 {
+		t.Errorf("Editors id = %d, want 2", id)
+	}
+
+	_, err = FindGroupID(ctx, d, "Nope")
+	if err == nil {
+		t.Fatal("want an error for an unknown group")
+	}
+	// The message has to name both what was asked for and what exists, because
+	// this is the error an operator meets when bootstrapping.
+	for _, want := range []string{"Nope", "Administrators", "--group"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got: %v", want, err)
+		}
 	}
 }

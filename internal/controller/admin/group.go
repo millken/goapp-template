@@ -50,3 +50,20 @@ func findGroup(ctx context.Context, d *sqldb.DB, usersTable string, userID int64
 	}
 	return &group{Superuser: superuser != 0, Permissions: set}, nil
 }
+
+// FindGroupID resolves a group name to its id. Exported for
+// `myapp admin create-user --group`, which must fail on an unknown name rather
+// than leave a user with a null group_id — such a user logs in successfully and
+// is then refused everything, which reads as a bug rather than a misconfiguration.
+func FindGroupID(ctx context.Context, d *sqldb.DB, name string) (int64, error) {
+	var id int64
+	err := d.QueryRowContext(ctx, `SELECT id FROM user_groups WHERE name = ?`, name).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, fmt.Errorf("no permission group named %q — the migration seeds "+
+			"'Administrators'; pass --group with an existing name", name)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("admin: look up group %q: %w", name, err)
+	}
+	return id, nil
+}

@@ -31,6 +31,7 @@ func newAdminCmd() *cobra.Command {
 
 func newAdminCreateUserCmd() *cobra.Command {
 	var password string
+	var groupName string
 
 	cmd := &cobra.Command{
 		Use:   "create-user <username>",
@@ -72,8 +73,13 @@ func newAdminCreateUserCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			q := fmt.Sprintf(`INSERT INTO %s (username, password_hash, created_at) VALUES (?, ?, ?)`, table)
-			if _, err := dbSvc.DB().ExecContext(ctx, q, username, hash, time.Now().UnixNano()); err != nil {
+			groupID, err := admin.FindGroupID(ctx, dbSvc.DB(), groupName)
+			if err != nil {
+				return err
+			}
+			q := fmt.Sprintf(`INSERT INTO %s (username, password_hash, created_at, group_id)
+				VALUES (?, ?, ?, ?)`, table)
+			if _, err := dbSvc.DB().ExecContext(ctx, q, username, hash, time.Now().UnixNano(), groupID); err != nil {
 				return fmt.Errorf("create user %q: %w", username, err)
 			}
 			fmt.Printf("created admin user %q\n", username)
@@ -81,5 +87,7 @@ func newAdminCreateUserCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&password, "password", "", "Password (if empty, read from stdin)")
+	cmd.Flags().StringVar(&groupName, "group", "Administrators",
+		"Permission group to place the user in")
 	return cmd
 }
