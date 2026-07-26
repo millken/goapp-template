@@ -18,6 +18,7 @@
 - **`authenticate` checks `status` only after `verifyPassword` succeeds.** Checking earlier makes a disabled account distinguishable from a wrong password by timing, which is the leak `dummyPasswordHash` exists to prevent.
 - **Every admin route goes through the registrar**, with exactly one exception: `GET|POST /admin/account/password`, which uses `AuthMiddleware`. The reason must appear in a comment beside the registration.
 - **The last-superuser count runs inside the transaction, after the mutation.** Outside it, or before, it is a prediction of the resulting state rather than a reading of it.
+- **Every redirect goes through `a.redirect(c, location)`, never `http.Redirect`.** Under a PJAX navigation a redirect must become a `{redirect}` payload the client can act on; a raw 3xx is followed by fetch transparently, leaving one page rendered while the address bar names another. `TestRedirects_UnderPJAX` pins this for the auth redirects and the mutations are no different. (Corrected mid-plan: the first draft copied `http.Redirect` from the generated scaffold template, which has the same latent bug — recorded separately, out of scope here.)
 - Passwords: 8–72 characters. 72 because **bcrypt truncates there**, so a longer password is partly not the credential.
 - Usernames: `^[a-zA-Z0-9._-]+$`, 3–64 — ASCII-only on purpose; admin accounts are operator-created.
 - Migrations own the literal `users` table; `[admin] users_table` redirects runtime lookups only.
@@ -237,7 +238,7 @@ func TestResolve_DisabledUserIsBouncedToLoginWithAFlash(t *testing.T) {
 	r.AddCookie(cookie)
 	eng.ServeHTTP(w, r)
 
-	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+	if w.Code != http.StatusFound && w.Code != http.StatusFound {
 		t.Errorf("status = %d, want a redirect to login", w.Code)
 	}
 	if loc := w.Header().Get("Location"); loc != "/admin/login" {
@@ -822,8 +823,8 @@ func TestUserCreate_StoresAHashedPasswordAndTheGroup(t *testing.T) {
 		"password": {"s3cretpw"},
 		"group_id": {fmt.Sprint(gid)},
 	})
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 
 	var hash string
@@ -869,7 +870,7 @@ func TestUserCreate_RejectsBadInput(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			w := post(t, eng, cookie, "/admin/user", c.form)
 			// A rejected submit re-renders the form rather than redirecting.
-			if w.Code == http.StatusSeeOther {
+			if w.Code == http.StatusFound {
 				t.Errorf("status = 303, want the form re-rendered with an error")
 			}
 			var n int
@@ -906,8 +907,8 @@ func TestUserUpdate_BlankPasswordKeepsTheOldOne(t *testing.T) {
 		"password": {""},
 		"group_id": {fmt.Sprint(gid)},
 	})
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 
 	var after, name string
@@ -945,7 +946,7 @@ func TestUserUpdate_CannotChangeYourOwnGroup(t *testing.T) {
 		"password": {""},
 		"group_id": {fmt.Sprint(other)},
 	})
-	if w.Code == http.StatusSeeOther {
+	if w.Code == http.StatusFound {
 		t.Error("changing your own group must be refused")
 	}
 	var gid int64
@@ -1104,7 +1105,7 @@ func (a *Admin) userCreate(c *inertia.Context) {
 	}
 
 	a.flash(c, "success", "用户已创建")
-	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+	a.redirect(c, a.userBase())
 }
 
 func (a *Admin) userEdit(c *inertia.Context) {
@@ -1184,7 +1185,7 @@ func (a *Admin) userUpdate(c *inertia.Context) {
 	}
 
 	a.flash(c, "success", "用户已更新")
-	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+	a.redirect(c, a.userBase())
 }
 
 // validateUser checks a submitted user. requirePassword is false on an update
@@ -1601,7 +1602,7 @@ func TestUserDeleteAndDisable_CannotTargetYourself(t *testing.T) {
 			}
 
 			w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d%s", id, c.path), c.form)
-			if w.Code == http.StatusSeeOther {
+			if w.Code == http.StatusFound {
 				t.Error("acting on your own account must be refused")
 			}
 
@@ -1636,7 +1637,7 @@ func TestUserDelete_KeepsOneEnabledSuperuser(t *testing.T) {
 	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE username = 'bob'`).Scan(&bob); err != nil {
 		t.Fatal(err)
 	}
-	if w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/delete", bob), nil); w.Code != http.StatusSeeOther {
+	if w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/delete", bob), nil); w.Code != http.StatusFound {
 		t.Fatalf("deleting a second superuser: status = %d, want 303", w.Code)
 	}
 
@@ -1668,8 +1669,8 @@ func TestUserSetStatus_DisablesANonSuperuser(t *testing.T) {
 	}
 
 	w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/status", erin), url.Values{"status": {"0"}})
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 	var status int
 	if err := adm.DB.QueryRowContext(ctx, `SELECT status FROM users WHERE id = ?`, erin).Scan(&status); err != nil {
@@ -1682,7 +1683,7 @@ func TestUserSetStatus_DisablesANonSuperuser(t *testing.T) {
 	// Enabling again is not subject to rules 1 or 3, and the value comes from the
 	// request rather than being toggled: submitting 1 twice leaves it enabled.
 	for range 2 {
-		if w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/status", erin), url.Values{"status": {"1"}}); w.Code != http.StatusSeeOther {
+		if w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/status", erin), url.Values{"status": {"1"}}); w.Code != http.StatusFound {
 			t.Fatalf("enable: status = %d, want 303", w.Code)
 		}
 	}
@@ -1711,7 +1712,7 @@ func (a *Admin) userDelete(c *inertia.Context) {
 
 	if err := a.notSelf(c, id); err != nil {
 		a.flash(c, "error", "不能删除自己的账号")
-		http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+		a.redirect(c, a.userBase())
 		return
 	}
 
@@ -1729,7 +1730,7 @@ func (a *Admin) userDelete(c *inertia.Context) {
 	default:
 		a.flash(c, "success", "用户已删除")
 	}
-	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+	a.redirect(c, a.userBase())
 }
 
 // userSetStatus enables or disables a user. The value comes from the request
@@ -1748,7 +1749,7 @@ func (a *Admin) userSetStatus(c *inertia.Context) {
 	if want == statusDisabled {
 		if err := a.notSelf(c, id); err != nil {
 			a.flash(c, "error", "不能禁用自己的账号")
-			http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+			a.redirect(c, a.userBase())
 			return
 		}
 	}
@@ -1778,7 +1779,7 @@ func (a *Admin) userSetStatus(c *inertia.Context) {
 	default:
 		a.flash(c, "success", "用户已启用")
 	}
-	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+	a.redirect(c, a.userBase())
 }
 ```
 
@@ -1857,7 +1858,7 @@ func TestGroupDelete_RefusedWhileItHasMembers(t *testing.T) {
 	}
 
 	w := post(t, eng, cookie, fmt.Sprintf("/admin/group/%d/delete", gid), nil)
-	if w.Code != http.StatusSeeOther {
+	if w.Code != http.StatusFound {
 		t.Fatalf("status = %d, want a redirect carrying the refusal", w.Code)
 	}
 	var n int
@@ -1882,7 +1883,7 @@ func TestGroupDelete_SucceedsWhenEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if w := post(t, eng, cookie, fmt.Sprintf("/admin/group/%d/delete", gid), nil); w.Code != http.StatusSeeOther {
+	if w := post(t, eng, cookie, fmt.Sprintf("/admin/group/%d/delete", gid), nil); w.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 303", w.Code)
 	}
 	var n int
@@ -1909,7 +1910,7 @@ func TestGroupUpdate_CannotClearTheLastSuperuserFlag(t *testing.T) {
 		"name": {"Administrators"},
 		// superuser checkbox absent = unchecked
 	})
-	if w.Code == http.StatusSeeOther {
+	if w.Code == http.StatusFound {
 		t.Error("clearing the last superuser flag must be refused")
 	}
 	var superuser int
@@ -1931,7 +1932,7 @@ func TestGroupCreate_ValidatesTheName(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			w := post(t, eng, cookie, "/admin/group", url.Values{"name": {c.value}})
-			if w.Code == http.StatusSeeOther {
+			if w.Code == http.StatusFound {
 				t.Error("want the form re-rendered with an error")
 			}
 		})
@@ -2065,7 +2066,7 @@ func (a *Admin) groupCreate(c *inertia.Context) {
 	}
 
 	a.flash(c, "success", "分组已创建")
-	http.Redirect(c.Writer, c.Request, a.groupBase(), http.StatusSeeOther)
+	a.redirect(c, a.groupBase())
 }
 
 func (a *Admin) groupEdit(c *inertia.Context) {
@@ -2132,7 +2133,7 @@ func (a *Admin) groupUpdate(c *inertia.Context) {
 	}
 
 	a.flash(c, "success", "分组已更新")
-	http.Redirect(c.Writer, c.Request, a.groupBase(), http.StatusSeeOther)
+	a.redirect(c, a.groupBase())
 }
 
 // groupDelete refuses while the group still has members: a user with no group is
@@ -2146,12 +2147,12 @@ func (a *Admin) groupDelete(c *inertia.Context) {
 	if err := a.DB.QueryRowContext(ctx, q, id).Scan(&members); err != nil {
 		slog.Error("admin: count group members", "err", err, "group", id)
 		a.flash(c, "error", "删除失败，请查看日志")
-		http.Redirect(c.Writer, c.Request, a.groupBase(), http.StatusSeeOther)
+		a.redirect(c, a.groupBase())
 		return
 	}
 	if members > 0 {
 		a.flash(c, "error", fmt.Sprintf("该分组还有 %d 个成员，请先把他们转到别的分组", members))
-		http.Redirect(c.Writer, c.Request, a.groupBase(), http.StatusSeeOther)
+		a.redirect(c, a.groupBase())
 		return
 	}
 
@@ -2163,7 +2164,7 @@ func (a *Admin) groupDelete(c *inertia.Context) {
 	} else {
 		a.flash(c, "success", "分组已删除")
 	}
-	http.Redirect(c.Writer, c.Request, a.groupBase(), http.StatusSeeOther)
+	a.redirect(c, a.groupBase())
 }
 
 func (a *Admin) validateGroup(ctx context.Context, item groupRow, exceptID int64) *validate.Validator {
@@ -2475,8 +2476,8 @@ func TestGroupUpdate_NormalisesModifyImpliesAccess(t *testing.T) {
 		"name":        {"Editors"},
 		"permissions": {"post.modify"},
 	})
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 
 	var raw string
@@ -2916,8 +2917,8 @@ func TestAccountPassword_ChangesThePassword(t *testing.T) {
 		"password": {"newpassword"},
 		"confirm":  {"newpassword"},
 	})
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 
 	var hash string
@@ -2947,7 +2948,7 @@ func TestAccountPassword_Rejections(t *testing.T) {
 			w := post(t, eng, cookie, "/admin/account/password", c.form)
 			// A field error, not a 403: the user is allowed here, they just got
 			// something wrong.
-			if w.Code == http.StatusSeeOther {
+			if w.Code == http.StatusFound {
 				t.Error("want the form re-rendered with an error")
 			}
 			if w.Code == http.StatusForbidden {
@@ -3060,7 +3061,7 @@ func (a *Admin) passwordSubmit(c *inertia.Context) {
 	// The session is untouched: the password changed, not the identity, and
 	// signing the user out of the page they just used would be gratuitous.
 	a.flash(c, "success", "密码已修改")
-	http.Redirect(c.Writer, c.Request, a.mount(), http.StatusSeeOther)
+	a.redirect(c, a.mount())
 }
 
 func (a *Admin) renderPasswordForm(c *inertia.Context, errs map[string]string) {

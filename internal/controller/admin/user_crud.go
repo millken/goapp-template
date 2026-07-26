@@ -137,7 +137,12 @@ func (a *Admin) userCreate(c *inertia.Context) {
 	}
 
 	a.flash(c, "success", "用户已创建")
-	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+	// c.Redirect, not http.Redirect: under a PJAX navigation this has to become a
+	// {redirect} payload the client can act on. A raw 3xx is followed by fetch
+	// transparently, leaving the list rendered while the address bar still names
+	// the URL that was posted to — which is what TestRedirects_UnderPJAX exists
+	// to prevent.
+	a.redirect(c, a.userBase())
 }
 
 func (a *Admin) userEdit(c *inertia.Context) {
@@ -217,7 +222,7 @@ func (a *Admin) userUpdate(c *inertia.Context) {
 	}
 
 	a.flash(c, "success", "用户已更新")
-	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+	a.redirect(c, a.userBase())
 }
 
 // userDelete and userSetStatus are implemented in the next task; the routes are
@@ -352,6 +357,16 @@ func (a *Admin) flash(c *inertia.Context, kind, message string) {
 	sess.Flash(kind, message)
 	if _, err := sess.Save(c.Request.Context()); err != nil {
 		slog.Error("admin: stage flash", "err", err)
+	}
+}
+
+// redirect sends the caller to location, as a {redirect} payload under PJAX and
+// a 302 otherwise. Every redirect in the admin area goes through here rather than
+// http.Redirect, so a PJAX client is never left showing one page while the
+// address bar names another.
+func (a *Admin) redirect(c *inertia.Context, location string) {
+	if err := c.Redirect(location); err != nil {
+		slog.Error("admin: redirect", "err", err, "to", location)
 	}
 }
 

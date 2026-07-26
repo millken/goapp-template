@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -49,8 +50,8 @@ func TestUserCreate_StoresAHashedPasswordAndTheGroup(t *testing.T) {
 		"password": {"s3cretpw"},
 		"group_id": {fmt.Sprint(gid)},
 	})
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 
 	var hash string
@@ -96,8 +97,8 @@ func TestUserCreate_RejectsBadInput(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			w := post(t, eng, cookie, "/admin/user", c.form)
 			// A rejected submit re-renders the form rather than redirecting.
-			if w.Code == http.StatusSeeOther {
-				t.Errorf("status = 303, want the form re-rendered with an error")
+			if w.Code == http.StatusFound {
+				t.Errorf("status = 302, want the form re-rendered with an error")
 			}
 			var n int
 			if err := adm.DB.QueryRowContext(context.Background(),
@@ -133,8 +134,8 @@ func TestUserUpdate_BlankPasswordKeepsTheOldOne(t *testing.T) {
 		"password": {""},
 		"group_id": {fmt.Sprint(gid)},
 	})
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 
 	var after, name string
@@ -172,7 +173,7 @@ func TestUserUpdate_CannotChangeYourOwnGroup(t *testing.T) {
 		"password": {""},
 		"group_id": {fmt.Sprint(other)},
 	})
-	if w.Code == http.StatusSeeOther {
+	if w.Code == http.StatusFound {
 		t.Error("changing your own group must be refused")
 	}
 	var gid int64
@@ -181,5 +182,37 @@ func TestUserUpdate_CannotChangeYourOwnGroup(t *testing.T) {
 	}
 	if gid == other {
 		t.Error("the group changed anyway")
+	}
+}
+
+// Every admin redirect must become a payload under PJAX, or the client follows
+// the 3xx transparently and shows the list while the address bar still names the
+// URL it posted to. The same rule TestRedirects_UnderPJAX pins for the auth
+// redirects applies to the mutations.
+func TestUserCreate_RedirectIsAPayloadUnderPJAX(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+	var gid int64
+	if err := adm.DB.QueryRowContext(context.Background(),
+		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		t.Fatal(err)
+	}
+
+	form := url.Values{"username": {"pjaxuser"}, "password": {"s3cretpw"}, "group_id": {fmt.Sprint(gid)}}
+	r := httptest.NewRequest(http.MethodPost, "/admin/user", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("X-Pjax", "true")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: a PJAX redirect is a payload", w.Code)
+	}
+	var body map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v (raw: %q)", err, w.Body.String())
+	}
+	if got := body["redirect"]; got != "/admin/user" {
+		t.Errorf(`body["redirect"] = %v, want /admin/user`, got)
 	}
 }
