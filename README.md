@@ -209,6 +209,48 @@ goappctl gen ui tooltip --force          # 覆盖已存在文件（用于跟进�
 `Select` 的浮层走 Teleport，而 Vue 的 SSR renderer 把这类内容放进 `ctx.teleports`，
 [frontend/ssr/render.ts](frontend/ssr/render.ts) 并未收集 —— 服务端不会输出它们，
 客户端 hydration 时会凭空多出 DOM。弹层默认关闭即可。
+
+## 后台权限
+
+权限单元是**资源 + 动词**：`post.access`（读）和 `post.modify`（写）。动词由 HTTP 方法决定 ——
+GET/HEAD 是 `access`，其余是 `modify` —— 所以没有任何路由需要自己声明权限。
+
+`modify` **蕴含** `access`：能改的人当然能读。反向不成立。
+
+生成的 `Mount` 通过注册器登记路由，一次调用同时做三件事：注册、挂上守卫、记入权限目录。
+
+```go
+r := adm.Resource(eng, "post")
+r.GET(ct.base, ct.Index)                 // 需要 post.access
+r.POST(ct.base+"/:id", ct.Update)        // 需要 post.modify
+r.Menu("Post", ct.base)                  // 侧边栏条目，受 post.access 控制
+```
+
+**守卫就是路由中间件**，注册即生效 —— 这是它相对手写 `if hasPermission(...)` 的关键差别：
+后者漏一处就是静默的洞，前者漏不掉，因为没有不经注册器的注册路径。
+
+权限存在分组上：`user_groups.permissions` 是一个 JSON 键数组，`superuser = 1` 直接放行。
+迁移会播种一个 `Administrators` 超管组，`admin create-user` 默认把用户放进去：
+
+```bash
+myapp admin create-user alice                      # 进 Administrators（超管）
+myapp admin create-user bob --group Editors        # 进指定组
+```
+
+**豁免路由**：登录页完全公开，不经过任何中间件；登出和 `/admin` 仪表盘经过 `AuthMiddleware`——
+要求登录，但不做权限检查。仪表盘必须豁免 —— 否则权限为空的用户登录后只看到 403，无法自助。
+侧边栏会按权限过滤，所以他看到的是一个短菜单而不是一堵墙。
+
+第一期没有分组管理界面，权限集用 SQL 设定：
+
+```sql
+UPDATE user_groups SET permissions = '["post.access","post.modify"]' WHERE name = 'Editors';
+```
+
+`adm.Permissions()` 返回全部已注册的权限键及各自覆盖的路由，供将来的权限编辑界面使用。
+
+**`users_table` 只影响运行时查询。** 迁移操作字面量 `users` 表（嵌入的 SQL 读不到配置），
+所以把它指向别的表意味着那张表的结构由你负责，包括 `group_id` 列。
 <!--goappctl:end-->
 
 <!--goappctl:ssr-->
