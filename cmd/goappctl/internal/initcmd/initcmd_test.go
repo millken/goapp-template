@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/millken/goapp-template/cmd/goappctl/internal/scaffold"
+	"sort"
 )
 
 // repoRoot is four levels up from this package.
@@ -306,5 +308,46 @@ func assertNoMarkers(t *testing.T, root string) {
 	})
 	if err != nil {
 		t.Fatalf("walk: %v", err)
+	}
+}
+
+// A stray marker string in a dot-directory used to make init refuse to run: the
+// marker pass errors on a marker in a file type it has no comment form for, and
+// the walk descended into scratch and editor directories. Real case: this
+// project's own .superpowers scratch notes contain diffs full of marker lines.
+func TestWalkFiles_SkipsDotDirectories(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{
+		"main.go",
+		".superpowers/sdd/review.diff", // marker text, unsupported extension
+		".vscode/settings.json",
+		"node_modules/pkg/index.js",
+		"internal/keep.go",
+	} {
+		full := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("goappctl:admin\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var seen []string
+	if err := walkFiles(root, func(p string, d fs.DirEntry) error {
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		seen = append(seen, filepath.ToSlash(rel))
+		return nil
+	}); err != nil {
+		t.Fatalf("walkFiles: %v", err)
+	}
+
+	sort.Strings(seen)
+	want := []string{"internal/keep.go", "main.go"}
+	if strings.Join(seen, ",") != strings.Join(want, ",") {
+		t.Errorf("visited %v, want %v", seen, want)
 	}
 }

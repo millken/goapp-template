@@ -38,18 +38,28 @@ const (
 	templateAppName = "myapp"
 )
 
-// skipDirs are never walked: VCS metadata and build output.
-var skipDirs = map[string]bool{".git": true, "node_modules": true, "dist": true, "bin": true}
+// skipDirs are never walked: build output and dependencies. Dot-directories are
+// pruned by name instead — see walkFiles.
+var skipDirs = map[string]bool{"node_modules": true, "dist": true, "bin": true}
 
-// walkFiles visits every file under root, pruning skipDirs. The passes that
-// rewrite the tree (markers, identity, goimports) all want exactly this.
+// walkFiles visits every file under root, pruning skipDirs and every
+// dot-directory. The passes that rewrite the tree (markers, identity, goimports)
+// all want exactly this.
+//
+// Dot-directories are pruned wholesale because they hold things this tool has no
+// business rewriting — .git, editor state, scratch notes — and because the marker
+// pass errors on a marker in a file type it has no comment form for. A stray
+// "goappctl:" in someone's notes under .something would otherwise make init
+// refuse to run at all, which is a confusing failure for a file that is not part
+// of the project.
 func walkFiles(root string, visit func(path string, d fs.DirEntry) error) error {
 	return filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if skipDirs[d.Name()] {
+			// Not the root itself, which may legitimately be a dot-path.
+			if p != root && (skipDirs[d.Name()] || strings.HasPrefix(d.Name(), ".")) {
 				return fs.SkipDir
 			}
 			return nil
