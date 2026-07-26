@@ -1,11 +1,16 @@
-// Package admin is the authenticated admin controller area: an auth middleware
-// guarding the admin routes, a login/logout flow backed by a users table and the
-// session service, a dashboard, and a menu registry that generated admin
-// resources register into.
+// Package admin is the authenticated admin controller area: a login/logout flow
+// backed by a users table and the session service, a dashboard, per-resource
+// permissions, and a menu registry filtered to what the caller may reach.
+//
+// Routes come in through Resource, the registrar: one call registers the route,
+// attaches the permission guard, records the permission in an enumerable
+// catalogue, and — for Menu — adds a sidebar entry gated by the same key. Login
+// runs no middleware at all; logout and the dashboard require a session but no
+// permission, so a user whose group grants nothing can still sign in and out.
 //
 // It needs its own *Config (mount, auth key, users table), so serve.go wires it
-// explicitly rather than through the generated MountAll. The auth middleware
-// guards only the protected routes, so it never filters by path.
+// explicitly rather than through the generated MountAll. The middlewares are
+// attached per route, so neither ever filters by path.
 package admin
 
 import (

@@ -2,7 +2,8 @@
 // re-running the generator without --force won't overwrite.
 //
 // Wire it once in commands/serve.go, AFTER the admin area is constructed, so it
-// can mount under the admin prefix and share the auth middleware:
+// can mount under the admin prefix and register through the admin's permission
+// registrar:
 //
 //	adm := admin.New(svc, cfg.Admin)
 //	_ = adm.Validate()

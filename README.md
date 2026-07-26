@@ -227,7 +227,8 @@ r.Menu("Post", ct.base)                  // 侧边栏条目，受 post.access �
 ```
 
 **守卫就是路由中间件**，注册即生效 —— 这是它相对手写 `if hasPermission(...)` 的关键差别：
-后者漏一处就是静默的洞，前者漏不掉，因为没有不经注册器的注册路径。
+后者漏一处就是静默的洞。生成的代码漏不掉（`gen admin` 只经注册器，有测试钉住）；
+手写路由仍可以直接调 `eng.GET`，那就绕过了守卫 —— 所以后台路由请一律走 `adm.Resource(...)`。
 
 权限存在分组上：`user_groups.permissions` 是一个 JSON 键数组，`superuser = 1` 直接放行。
 迁移会播种一个 `Administrators` 超管组，`admin create-user` 默认把用户放进去：

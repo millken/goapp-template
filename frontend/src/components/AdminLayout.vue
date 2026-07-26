@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Shared admin shell: sidebar nav (built from the server-provided menu) + a
 // logout form, with page content in the default slot. Menu items are registered
-// by admin resource modules (AddMenuItem) and injected as the `adminMenu` prop
-// by the admin auth middleware.
+// by admin resource modules (Registrar.Menu) and injected as the `adminMenu`
+// prop, already filtered to what the signed-in user may reach.
 //
 // Navigation stays plain <a href>: Button renders an anchor via `as`, and the
 // PJAX layer intercepts those through document-level delegation, so there is no

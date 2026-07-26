@@ -5,8 +5,9 @@ import (
 	"slices"
 )
 
-// MenuItem is a navigation entry; generated admin resources register one via
-// AddMenuItem.
+// MenuItem is a navigation entry. Generated admin resources register one via
+// Registrar.Menu, which gates it by the resource's access key; AddMenuItem is
+// the ungated alternative for entries outside the permission model.
 type MenuItem struct {
 	Title string `json:"title"`
 	Path  string `json:"path"`

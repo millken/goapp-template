@@ -44,7 +44,10 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 	switch {
 	case errors.Is(err, errNoGroup):
 		// Fail closed. A user with no group has no permissions, and that is a
-		// denial rather than an outage.
+		// denial rather than an outage. Logged because the response is a bare
+		// 403: without this line an operator whose user lost its group sees an
+		// empty page and an empty log, with nothing to connect them.
+		slog.Warn("admin auth: user has no permission group", "user", id)
 		c.AbortWithStatus(http.StatusForbidden)
 		return nil, false
 	case err != nil:

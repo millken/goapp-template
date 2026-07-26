@@ -1,6 +1,13 @@
 package admin
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/millken/inertia"
+)
 
 // The convention is "empty resource means always show". Asserted on menuEntry
 // directly: AddMenuItem is only one way to produce an empty resource, so testing
@@ -62,5 +69,49 @@ func TestAddResourceMenuItem_RecordsTheResource(t *testing.T) {
 	a.addResourceMenuItem(MenuItem{Title: "Post", Path: "/admin/post"}, "post")
 	if len(a.menu) != 1 || a.menu[0].resource != "post" {
 		t.Errorf("want resource post, got %+v", a.menu)
+	}
+}
+
+// The spec asks for the menu to be asserted on both an exempt route and a guarded
+// one, because the two middlewares have to agree: they inject the same prop, and
+// they only agree because both go through resolve. menuItems is tested in
+// isolation above; this reads the prop off a real request through each path.
+func TestAdminMenuPropIsFilteredOnBothMiddlewares(t *testing.T) {
+	eng, adm := loginStack(t)
+	// Reachable, gated, and ungated — one of each, so filtering has something to
+	// keep and something to drop.
+	adm.addResourceMenuItem(MenuItem{Title: "Post", Path: "/admin/post"}, "post")
+	adm.addResourceMenuItem(MenuItem{Title: "Billing", Path: "/admin/billing"}, "billing")
+	adm.AddMenuItem(MenuItem{Title: "Docs", Path: "/admin/docs"})
+	putInGroup(t, adm, "Editors", false, `["post.access"]`)
+
+	// Each route reports the menu the middleware injected, so the assertion is on
+	// what a page would actually receive.
+	probe := func(ic *inertia.Context) {
+		v, ok := ic.Get("adminMenu")
+		if !ok {
+			t.Error("adminMenu prop was not injected")
+			return
+		}
+		titles := make([]string, 0, 3)
+		for _, m := range v.([]MenuItem) {
+			titles = append(titles, m.Title)
+		}
+		if got := strings.Join(titles, ","); got != "Docs,Post" {
+			t.Errorf("%s: adminMenu = %q, want \"Docs,Post\"", ic.Request.URL.Path, got)
+		}
+	}
+	eng.GET("/admin/exempt", adm.AuthMiddleware(), probe)
+	eng.GET("/admin/post", adm.guard("post.access"), probe)
+	cookie := loginAndGetCookie(t, eng)
+
+	for _, path := range []string{"/admin/exempt", "/admin/post"} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, path, nil)
+		r.AddCookie(cookie)
+		eng.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", path, w.Code)
+		}
 	}
 }
