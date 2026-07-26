@@ -1041,6 +1041,10 @@ const props = defineProps<{
   flash?: Record<string, string>
 }>()
 
+// Rows per page. Both the table's row model and the pager read this, so they
+// cannot drift apart.
+const PAGE_SIZE = 20
+
 // Sorting, filtering and paging all happen client-side over `items`. Swap in
 // server-side paging by adding query params to the handler and setting
 // manualPagination: true here.
@@ -1077,7 +1081,7 @@ const table = useVueTable({
   getPaginationRowModel: getPaginationRowModel(),
   onSortingChange: (u) => valueUpdater(u, sorting),
   onColumnFiltersChange: (u) => valueUpdater(u, columnFilters),
-  initialState: { pagination: { pageSize: 20 } },
+  initialState: { pagination: { pageSize: PAGE_SIZE } },
   state: {
     get sorting() { return sorting.value },
     get columnFilters() { return columnFilters.value },
@@ -1146,7 +1150,10 @@ const setNameFilter = (v: string | number) =>
                 </DropdownMenu>
               </TableCell>
             </TableRow>
-            <TableEmpty v-if="!table.getRowModel().rows.length" :colspan="3">
+            <TableEmpty
+              v-if="!table.getRowModel().rows.length"
+              :colspan="columns.length + 1"
+            >
               No [[.Table]] yet.
             </TableEmpty>
           </TableBody>
@@ -1154,7 +1161,7 @@ const setNameFilter = (v: string | number) =>
 
         <Pagination
           v-if="table.getPageCount() > 1"
-          :items-per-page="20"
+          :items-per-page="PAGE_SIZE"
           :total="table.getFilteredRowModel().rows.length"
           :default-page="1"
         >
