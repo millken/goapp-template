@@ -72,9 +72,9 @@ func TestResolveItems_PullsRegistryDependencies(t *testing.T) {
 
 func TestResolveItems_DeduplicatesSharedDependencies(t *testing.T) {
 	base := registryStub(t, map[string]registryItem{
-		"alert":  {Name: "alert", RegistryDependencies: []string{"utils"}},
-		"badge":  {Name: "badge", RegistryDependencies: []string{"utils"}},
-		"utils":  {Name: "utils"},
+		"alert": {Name: "alert", RegistryDependencies: []string{"utils"}},
+		"badge": {Name: "badge", RegistryDependencies: []string{"utils"}},
+		"utils": {Name: "utils"},
 	})
 
 	got, err := resolveItems(base, []string{"alert", "badge"})

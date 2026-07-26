@@ -105,7 +105,7 @@ func TestAdmin_IndexUsesTableAndOverlaysStartClosed(t *testing.T) {
 		"useVueTable",
 		`const pending = ref<Post | null>(null)`, // overlay starts closed
 		"No post yet.",
-		`:action="`+"`"+`${basePath}/${pending?.id}/delete`+"`"+`" method="post"`,
+		`:action="` + "`" + `${basePath}/${pending?.id}/delete` + "`" + `" method="post"`,
 		"`${basePath}/${row.original.id}/edit`",
 		"{{ item.value }}",
 		"@update:page",
