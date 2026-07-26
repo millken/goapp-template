@@ -38,8 +38,11 @@ in those files, so each new page re-decides them.
 ## 3. Composites
 
 All in `frontend/src/components/admin/` — a new directory owned by the `admin`
-component (added to its `Owned` list in `components.go`), deleted wholesale by
-`init` when admin is off. Like the shadcn base components, they are owned code:
+component. In `components.go`, the admin `Owned` entry
+`frontend/src/components/AdminLayout.vue` is **replaced** by the directory
+`frontend/src/components/admin` (AdminLayout.vue is deleted in the same change,
+so no stale entry survives), and `init` deletes the directory wholesale when
+admin is off. Like the shadcn base components, they are owned code:
 when a page outgrows a composite, edit the composite.
 
 ### 3.1 `AdminShell.vue` (replaces `AdminLayout.vue`)
@@ -59,9 +62,12 @@ The frame: icon rail + section panel + topbar + content slot + flash alerts.
   `location.pathname` — section (links to its first item) / item / optional
   tail. Pages set the tail (e.g. "Edit carol") via a `crumb` prop on the shell.
   No server-side breadcrumb data.
-- **Built-in Home**: the shell itself contributes the Home section with an
-  Overview item pointing at the admin mount, exactly as today's hardcoded
-  Dashboard button. It is not a registered menu item and needs no permission.
+- **Built-in Home**: hardcoded in the shell component, not read from the menu
+  prop — the shell contributes the Home section with an Overview item pointing
+  at the admin mount, exactly as today's hardcoded Dashboard button. Being
+  client-side it bypasses `menuItems`' permission filtering deliberately: the
+  dashboard is an exempt route, so every signed-in user sees Home, and §4.1's
+  "a section with no visible items is not sent" rule does not apply to it.
 - **Active state**: an item is active when `location.pathname` equals its path
   or extends it with `/` (so `/admin/user/3/edit` lights up Users). The active
   item's section is the active section; on a path no menu item matches, Home.
@@ -143,11 +149,15 @@ section with no visible items is not sent. The generated template calls
 
 ### 4.2 `adminUser` becomes `{id, username}`
 
-The topbar shows a username; the prop currently carries the raw id. `findGroup`
-already joins `users` — the same query also selects `u.username`. `findGroup`
-returns `(*group, string, error)` (group, username), `resolve` injects
-`c.Set("adminUser", map[string]any{"id": id, "username": username})`. Still one
-query per request. The session still stores only the id.
+The topbar shows a username; the prop currently carries the raw id. Today
+`findGroup` returns `(*group, error)` and selects only `g.superuser,
+g.permissions` — but its query already joins `users`, so the change is to the
+same query, not a second one: add `u.username` to the SELECT, change the
+signature to `(*group, string, error)`, and update both callers. `resolve`
+then injects `c.Set("adminUser", map[string]any{"id": id, "username":
+username})`; its own `(*group, bool)` return is unchanged — the username is
+consumed inside `resolve`, no caller needs it. Still one query per request.
+The session still stores only the id.
 
 ### 4.3 Dark-mode boot script
 
@@ -158,10 +168,27 @@ Three lines in the `<head>` of both HTML shells (`frontend/index.html`,
 <script>try{if(localStorage.theme==='dark'||(!('theme' in localStorage)&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
 ```
 
-Wrapped in `goappctl:admin` markers in both files. `markers` currently has no
-`.html` form — a marker in an unsupported file type makes `init` error — so the
-`.html` extension is added to `markers.forms`, using HTML comments (same
-delimiters as `.md`).
+Marker handling differs between the two shells because `markers` picks its
+comment form by file extension:
+
+- `frontend/index.html` needs a new `.html` entry in `markers.forms` (HTML
+  comments, same delimiters as `.md`) — today a marker there makes `init`
+  error.
+- `server/server.go`'s HTML lives inside a Go string literal, so the `.html`
+  form never applies and a marker line *inside* the string would be served to
+  browsers as text. Instead the boot script becomes a separate piece of Go
+  wrapped in ordinary `.go`-form markers **outside** the literal:
+
+  ```go
+  darkBoot := ""
+  //goappctl:admin
+  darkBoot = `<script>...</script>`
+  //goappctl:end
+  ```
+
+  and the head template gains a `%s` for it. Stripping removes the assignment,
+  leaving the zero-value empty string — same pattern as any other Go marker
+  block.
 
 ## 5. Generated templates
 
@@ -201,14 +228,19 @@ inside the admin marker block. Contents — only what components can't enforce:
   these conventions.
 - Server-side pagination in DataTable (client-side as today; the seam is
   `pageSize` and a later `manual` flag).
+- Multi-field search in DataTable. `searchKey` is deliberately one field
+  (YAGNI); a page needing more edits the composite — the owned-code escape
+  hatch, not a signature change.
 - A ThemeToggle on the login page.
 
 ## 8. Testing
 
-- **DataTable behaviour** — vitest + happy-dom (already in devDependencies):
-  filtering narrows rows, sorting toggles, pagination slices, `#cell-*` slot
-  renders, empty state shows. First component-level vitest in the repo, so the
-  task includes the minimal vitest config if none exists.
+- **DataTable behaviour** — vitest + happy-dom. `frontend/vitest.config.ts`
+  already exists with `include: ['src/**/*.test.ts']` (four pjax tests use it),
+  so no configuration work: the test goes at
+  `frontend/src/components/admin/DataTable.test.ts`, which the existing glob
+  collects. Cases: filtering narrows rows, sorting toggles, pagination slices,
+  `#cell-*` slot renders, empty state shows.
 - **SSR** — the regenerated ssrfixture page exercises AdminShell + PageHeader +
   DataTable + ConfirmDialog under QuickJS via the existing
   `TestSSR_GeneratedAdminListRendersUnderQuickJS` (button-nesting and
@@ -221,5 +253,8 @@ inside the admin marker block. Contents — only what components can't enforce:
 - **Trim** — `init --dry-run` shows `frontend/src/components/admin/` deleted
   and both boot scripts stripped; the `.html` markers form gets its own
   markers-package test.
-- **Templates** — goappctl scaffold assertions updated (registrar call with
-  section, composites imported).
+- **Templates** — goappctl scaffold assertions updated: the generated handler
+  calls `r.Menu("Content", ...)` with the three-argument signature (the
+  signature change breaks `handler.go.tmpl` and the ssrfixture page — both are
+  compile-checked by the existing generated-output build test and the fixture
+  staleness test), and the generated pages import the composites.
