@@ -173,10 +173,16 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 
 后台用 [shadcn-vue](https://www.shadcn-vue.com/)：组件**源码复制进仓库**（`frontend/src/components/ui/`），
 不是 npm 依赖 —— 和 `gen resource` 产出一样，是「你拥有的普通文件」。数据表格能力来自
-[@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。
+[@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。有两处改动没有跟上游保持一致，
+`--overwrite` 更新组件时要留意别覆盖回去：`frontend/src/components/ui/alert/index.ts` 多了一个
+`success` 变体（上游只有 `default`、`destructive`）；所有 `@/registry/default/ui` 导入都已重写成
+`@/components/ui`（见下文「注意」）。
 
-- **只服务后台。** 这些文件归 `admin` 组件所有，`goappctl init` 不选 admin 时连同
-  `main.css` 里的主题块和 8 个 npm 依赖一起消失，公开页面体积回到原样。
+- **只服务后台。** 这些文件归 `admin` 组件所有，`goappctl init` 不选 admin 时 `main.css` 里的
+  主题块随之消失，公开页面体积回到原样。**依赖不会一起消失**：8 个 npm 包仍留在
+  `frontend/package.json` 里 —— 移除它们会让 `pnpm-lock.yaml` 失效，而模板自带的 CI
+  跑的是 `pnpm install --frozen-lockfile`，锁文件和 package.json 对不上就直接失败。
+  实测未使用的依赖不占用打包体积，trim 后多背的只是一次下载，不是运行时重量。
 - **`gen resource` 保持纯 Tailwind**，所以它在无 db / 无 session 的构建里照样可用。
 - **不含表单校验组件。** 校验在服务端（[internal/validate](internal/validate/validate.go)），
   失败时重渲染并给出 `errors` prop —— 不需要客户端再来一套。
@@ -194,8 +200,9 @@ cd frontend && pnpm dlx shadcn-vue@latest add combobox
 （`ui/**` → `frontend/src/components/ui/`），并把 `@/registry/default/ui` 改写成
 `@/components/ui` —— 少了这步重写，构建会直接失败。
 
-**不要在 SSR 阶段渲染打开的弹层。** `Dialog` / `DropdownMenu` / `Select` 的浮层走
-Teleport，而 Vue 的 SSR renderer 把这类内容放进 `ctx.teleports`，
+**（仅 SSR 构建适用）不要在 SSR 阶段渲染打开的弹层。** `admin` 开、`ssr` 关的项目没有
+`frontend/ssr/render.ts` 这个文件，下面这条不适用。启用 SSR 时，`Dialog` / `DropdownMenu` /
+`Select` 的浮层走 Teleport，而 Vue 的 SSR renderer 把这类内容放进 `ctx.teleports`，
 [frontend/ssr/render.ts](frontend/ssr/render.ts) 并未收集 —— 服务端不会输出它们，
 客户端 hydration 时会凭空多出 DOM。弹层默认关闭即可。
 <!--goappctl:end-->

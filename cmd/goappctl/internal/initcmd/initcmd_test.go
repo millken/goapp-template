@@ -157,22 +157,14 @@ func TestRun_Combos(t *testing.T) {
 		// user did not ask for.
 		wantAbsent  []string
 		wantPresent []string
-		// wantFrontendAbsent / wantFrontendPresent are checked against
-		// frontend/package.json: the admin-only UI packages must leave with the
-		// admin component, and nothing else may.
-		wantFrontendAbsent  []string
-		wantFrontendPresent []string
 	}{
 		{
 			name: "all-on", with: []string{"db", "session", "admin", "ssr"},
-			wantPresent:         []string{"mattn/go-sqlite3", "buke/quickjs-go"},
-			wantFrontendPresent: []string{"reka-ui", "@tanstack/vue-table", "tw-animate-css"},
+			wantPresent: []string{"mattn/go-sqlite3", "buke/quickjs-go"},
 		},
 		{
 			name: "minimal", with: nil,
-			wantAbsent:          []string{"mattn/go-sqlite3", "buke/quickjs-go"},
-			wantFrontendAbsent:  []string{"reka-ui", "@tanstack/vue-table", "tw-animate-css"},
-			wantFrontendPresent: []string{`"vue"`},
+			wantAbsent: []string{"mattn/go-sqlite3", "buke/quickjs-go"},
 		},
 		{
 			name: "no-ssr", with: []string{"db", "session", "admin"},
@@ -216,20 +208,6 @@ func TestRun_Combos(t *testing.T) {
 				}
 			}
 
-			pkg, err := os.ReadFile(filepath.Join(root, "frontend/package.json"))
-			if err != nil {
-				t.Fatalf("read frontend/package.json: %v", err)
-			}
-			for _, gone := range c.wantFrontendAbsent {
-				if strings.Contains(string(pkg), gone) {
-					t.Errorf("frontend/package.json still lists %q:\n%s", gone, pkg)
-				}
-			}
-			for _, kept := range c.wantFrontendPresent {
-				if !strings.Contains(string(pkg), kept) {
-					t.Errorf("frontend/package.json lost %q:\n%s", kept, pkg)
-				}
-			}
 			// §11's self-healing claim: cmd/goappctl was the only consumer of
 			// x/tools, so tidy must drop it from the generated project.
 			if bytes.Contains(gomod, []byte("golang.org/x/tools")) {

@@ -136,13 +136,6 @@ func Run(o Options) error {
 		}
 	}
 
-	// step 4b: package.json dependencies, only when admin is off.
-	if off["admin"] {
-		if err := stripAdminDeps(o); err != nil {
-			return err
-		}
-	}
-
 	// step 5: materialize config.yaml from the (now stripped) sample.
 	if err := materializeConfig(o); err != nil {
 		return err
@@ -270,7 +263,7 @@ func stripMarkers(o Options, off map[string]bool) error {
 		rel, _ := filepath.Rel(o.Root, p)
 		if !markers.Supported(p) {
 			return fmt.Errorf("%s contains a goappctl marker but its file type has no comment form; "+
-				"move the marker into a supported file (.go/.ts/.yaml/.md)", rel)
+				"move the marker into a supported file (.go/.ts/.yaml/.yml/.md/.css)", rel)
 		}
 		out, n, err := markers.Strip(rel, src, opts)
 		if err != nil {
@@ -310,33 +303,6 @@ func stripSSRScripts(o Options) error {
 		return nil
 	}
 	fmt.Fprintf(o.Out, "  edit %s (drop SSR scripts)\n", rel)
-	if o.DryRun {
-		return nil
-	}
-	return os.WriteFile(full, out, 0o644)
-}
-
-// stripAdminDeps removes the packages that exist only for the copied shadcn
-// components. They cost no bundle bytes when unimported, but a trimmed project
-// should not download them.
-func stripAdminDeps(o Options) error {
-	rel := "frontend/package.json"
-	full := filepath.Join(o.Root, rel)
-	src, err := os.ReadFile(full)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	out, err := markers.StripAdminDeps(src)
-	if err != nil {
-		return fmt.Errorf("%s: %w", rel, err)
-	}
-	if bytes.Equal(out, src) {
-		return nil
-	}
-	fmt.Fprintf(o.Out, "  edit %s (drop admin-only dependencies)\n", rel)
 	if o.DryRun {
 		return nil
 	}

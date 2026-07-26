@@ -76,7 +76,9 @@ func maxButtonDepth(html string) int {
 	for i := range len(html) {
 		switch {
 		case strings.HasPrefix(html[i:], "</button"):
-			depth--
+			if depth > 0 {
+				depth--
+			}
 		case strings.HasPrefix(html[i:], "<button"):
 			depth++
 			if depth > max {
