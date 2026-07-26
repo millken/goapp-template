@@ -1,0 +1,360 @@
+package admin
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"regexp"
+	"strconv"
+	"time"
+
+	"github.com/dnsoa/go/sqldb"
+	"github.com/millken/goapp-template/internal/validate"
+	"github.com/millken/inertia"
+)
+
+// usernameRe is deliberately ASCII-only: admin accounts are created by an
+// operator, not chosen by a visitor, and they show up in log lines, CLI
+// arguments and create-user invocations where a Unicode identifier is a
+// nuisance rather than a feature.
+var usernameRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+
+// bcryptMaxPassword is where bcrypt truncates. A longer password is partly not
+// the credential, so two different strings would authenticate the same account
+// — refuse rather than accept it silently.
+const bcryptMaxPassword = 72
+
+// userRow is one row of the user list, and the edit form's model.
+type userRow struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	GroupID  int64  `json:"group_id"`
+	Group    string `json:"group"`
+	Status   int    `json:"status"`
+	Created  int64  `json:"created_at"`
+}
+
+// groupOption is a choice in the form's group select.
+type groupOption struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// mountUsers registers the user resource. Every route goes through the
+// registrar, so user.access guards the reads and user.modify the writes without
+// either being named here.
+func (a *Admin) mountUsers(eng *inertia.Engine) {
+	base := a.Prefix() + "/user"
+	r := a.Resource(eng, "user")
+
+	r.GET(base, a.usersIndex)
+	r.GET(base+"/new", a.userNew)
+	r.POST(base, a.userCreate)
+	r.GET(base+"/:id/edit", a.userEdit)
+	r.POST(base+"/:id", a.userUpdate)
+	r.POST(base+"/:id/delete", a.userDelete)
+	r.POST(base+"/:id/status", a.userSetStatus)
+	r.Menu("Access", "Users", base)
+}
+
+func (a *Admin) userBase() string { return a.Prefix() + "/user" }
+
+// usersIndex lists users with their group name — one query, joined, rather than
+// a lookup per row.
+func (a *Admin) usersIndex(c *inertia.Context) {
+	q := fmt.Sprintf(`SELECT u.id, u.username, COALESCE(u.group_id, 0), COALESCE(g.name, ''),
+		u.status, u.created_at
+		FROM %s u LEFT JOIN user_groups g ON g.id = u.group_id
+		ORDER BY u.username`, a.usersTable())
+
+	rows, err := a.DB.QueryContext(c.Request.Context(), q)
+	if err != nil {
+		slog.Error("admin: list users", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	items := []userRow{}
+	for rows.Next() {
+		var u userRow
+		if err := rows.Scan(&u.ID, &u.Username, &u.GroupID, &u.Group, &u.Status, &u.Created); err != nil {
+			slog.Error("admin: scan user", "err", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		items = append(items, u)
+	}
+	if err := rows.Err(); err != nil {
+		slog.Error("admin: list users", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.Set("items", items)
+	c.Set("basePath", a.userBase())
+	if err := c.Render("admin/user/index"); err != nil {
+		slog.Error("render admin user index", "err", err)
+	}
+}
+
+func (a *Admin) userNew(c *inertia.Context) {
+	a.renderUserForm(c, userRow{Status: statusActive}, nil)
+}
+
+func (a *Admin) userCreate(c *inertia.Context) {
+	ctx := c.Request.Context()
+	item := userRow{
+		Username: c.PostForm("username"),
+		Status:   statusActive,
+	}
+	item.GroupID, _ = parseInt64(c.PostForm("group_id"))
+	password := c.PostForm("password")
+
+	v := a.validateUser(ctx, item, password, true, 0)
+	if !v.OK() {
+		a.renderUserForm(c, item, v.Errors())
+		return
+	}
+
+	hash, err := HashPassword(password)
+	if err != nil {
+		slog.Error("admin: hash password", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	q := fmt.Sprintf(`INSERT INTO %s (username, password_hash, created_at, status, group_id)
+		VALUES (?, ?, ?, ?, ?)`, a.usersTable())
+	if _, err := a.DB.ExecContext(ctx, q, item.Username, hash, time.Now().UnixNano(),
+		statusActive, item.GroupID); err != nil {
+		slog.Error("admin: create user", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	a.flash(c, "success", "用户已创建")
+	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+}
+
+func (a *Admin) userEdit(c *inertia.Context) {
+	id, _ := c.Params.GetInt64("id")
+	item, err := a.findUserRow(c.Request.Context(), id)
+	if err != nil {
+		slog.Error("admin: load user", "err", err, "user", id)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	if item == nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	a.renderUserForm(c, *item, nil)
+}
+
+func (a *Admin) userUpdate(c *inertia.Context) {
+	ctx := c.Request.Context()
+	id, _ := c.Params.GetInt64("id")
+
+	current, err := a.findUserRow(ctx, id)
+	if err != nil {
+		slog.Error("admin: load user", "err", err, "user", id)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	if current == nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	item := userRow{ID: id, Username: c.PostForm("username"), Status: current.Status}
+	item.GroupID, _ = parseInt64(c.PostForm("group_id"))
+	password := c.PostForm("password")
+
+	v := a.validateUser(ctx, item, password, password != "", id)
+	// Rule 2: you may edit your own username and password, but not move yourself
+	// to another group — that is how you take away your own access.
+	if item.GroupID != current.GroupID {
+		if err := a.notSelf(c, id); err != nil {
+			v.Check(false, "group_id", "不能修改自己所在的分组")
+		}
+	}
+	if !v.OK() {
+		a.renderUserForm(c, item, v.Errors())
+		return
+	}
+
+	// The group change can strand the last superuser, so it runs under the
+	// guard; the guard is harmless when nothing about superuser status changed.
+	err = a.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
+		q := fmt.Sprintf(`UPDATE %s SET username = ?, group_id = ? WHERE id = ?`, a.usersTable())
+		if _, err := tx.ExecContext(ctx, q, item.Username, item.GroupID, id); err != nil {
+			return err
+		}
+		if password == "" {
+			return nil
+		}
+		hash, err := HashPassword(password)
+		if err != nil {
+			return err
+		}
+		pq := fmt.Sprintf(`UPDATE %s SET password_hash = ? WHERE id = ?`, a.usersTable())
+		_, err = tx.ExecContext(ctx, pq, hash, id)
+		return err
+	})
+	switch {
+	case errors.Is(err, errLastSuperuser):
+		v.Check(false, "group_id", "系统必须至少保留一个启用的超级管理员")
+		a.renderUserForm(c, item, v.Errors())
+		return
+	case err != nil:
+		slog.Error("admin: update user", "err", err, "user", id)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	a.flash(c, "success", "用户已更新")
+	http.Redirect(c.Writer, c.Request, a.userBase(), http.StatusSeeOther)
+}
+
+// userDelete and userSetStatus are implemented in the next task; the routes are
+// registered here so the resource's permission set is complete from the start.
+func (a *Admin) userDelete(c *inertia.Context)    { c.AbortWithStatus(http.StatusNotImplemented) }
+func (a *Admin) userSetStatus(c *inertia.Context) { c.AbortWithStatus(http.StatusNotImplemented) }
+
+// validateUser checks a submitted user. requirePassword is false on an update
+// with a blank password field, which means "leave it alone" — otherwise every
+// username edit would silently reset someone's password. exceptID is the row
+// being updated, so the uniqueness rule ignores its own current value.
+//
+// Cheap rules come first: a failure short-circuits the field, so the database is
+// never queried for input that was blank or malformed anyway.
+func (a *Admin) validateUser(ctx context.Context, item userRow, password string, requirePassword bool, exceptID int64) *validate.Validator {
+	v := validate.New()
+	v.Field("username", item.Username,
+		validate.Required,
+		validate.MinLen(3),
+		validate.MaxLen(64),
+		validate.Msg(validate.Match(usernameRe), "只能包含字母、数字、点、下划线和连字符"),
+		a.usernameAvailable(ctx, exceptID),
+	)
+	if requirePassword {
+		v.Field("password", password,
+			validate.Required,
+			validate.MinLen(8),
+			validate.Msg(validate.MaxLen(bcryptMaxPassword), "不能超过 72 个字符（bcrypt 的上限）"),
+		)
+	}
+	v.Check(item.GroupID != 0, "group_id", "请选择一个分组")
+	if item.GroupID != 0 {
+		exists, err := a.groupExists(ctx, item.GroupID)
+		if err != nil {
+			slog.Error("admin: check group", "err", err)
+			v.Check(false, "group_id", "无法校验，请重试")
+		} else {
+			v.Check(exists, "group_id", "该分组不存在")
+		}
+	}
+	return v
+}
+
+// usernameAvailable rejects a username another row already uses. A failed query
+// degrades to a message on the form rather than a 500 — the user gets something
+// actionable, and the cause is in the log.
+func (a *Admin) usernameAvailable(ctx context.Context, exceptID int64) validate.Rule {
+	return func(name string) error {
+		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE username = ? AND id != ?`, a.usersTable())
+		var n int
+		if err := a.DB.QueryRowContext(ctx, q, name, exceptID).Scan(&n); err != nil {
+			slog.Error("admin: check username", "err", err)
+			return errors.New("无法校验，请重试")
+		}
+		if n > 0 {
+			return errors.New("已被占用")
+		}
+		return nil
+	}
+}
+
+func (a *Admin) groupExists(ctx context.Context, id int64) (bool, error) {
+	var n int
+	if err := a.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM user_groups WHERE id = ?`, id).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// findUserRow loads one row for the edit form, returning (nil, nil) if absent.
+func (a *Admin) findUserRow(ctx context.Context, id int64) (*userRow, error) {
+	q := fmt.Sprintf(`SELECT u.id, u.username, COALESCE(u.group_id, 0), COALESCE(g.name, ''),
+		u.status, u.created_at
+		FROM %s u LEFT JOIN user_groups g ON g.id = u.group_id
+		WHERE u.id = ?`, a.usersTable())
+	var u userRow
+	if err := a.DB.QueryRowContext(ctx, q, id).
+		Scan(&u.ID, &u.Username, &u.GroupID, &u.Group, &u.Status, &u.Created); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &u, nil
+}
+
+// groupOptions are the choices in the form's group select.
+func (a *Admin) groupOptions(ctx context.Context) ([]groupOption, error) {
+	rows, err := a.DB.QueryContext(ctx, `SELECT id, name FROM user_groups ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []groupOption{}
+	for rows.Next() {
+		var g groupOption
+		if err := rows.Scan(&g.ID, &g.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// renderUserForm renders the create/edit form. errs is nil on a first visit and
+// carries one message per bad field after a failed submit; item repopulates the
+// inputs, so what was typed survives the re-render.
+func (a *Admin) renderUserForm(c *inertia.Context, item userRow, errs map[string]string) {
+	groups, err := a.groupOptions(c.Request.Context())
+	if err != nil {
+		slog.Error("admin: load group options", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Set("item", item)
+	c.Set("groups", groups)
+	c.Set("basePath", a.userBase())
+	if errs != nil {
+		c.Set("errors", errs)
+	}
+	if err := c.Render("admin/user/form"); err != nil {
+		slog.Error("render admin user form", "err", err)
+	}
+}
+
+// flash stages a one-shot message for the page we are about to redirect to. The
+// session middleware injects it as the `flash` prop on the next request and
+// clears it, so it shows exactly once.
+func (a *Admin) flash(c *inertia.Context, kind, message string) {
+	sess := a.Session.Session(c)
+	sess.Flash(kind, message)
+	if _, err := sess.Save(c.Request.Context()); err != nil {
+		slog.Error("admin: stage flash", "err", err)
+	}
+}
+
+// parseInt64 is strconv.ParseInt with the base and bit size fixed, for form
+// fields that carry ids.
+func parseInt64(s string) (int64, error) { return strconv.ParseInt(s, 10, 64) }
