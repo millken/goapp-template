@@ -346,63 +346,22 @@ Then add the call in `Run`, immediately after the existing step 4a block (around
 	}
 ```
 
-- [ ] **Step 6: Extend the trimming matrix instead of adding a slow test**
+- [ ] **Step 6: Do not add an initcmd-level test yet**
 
-`Run` ends with `go build`/`vet`/`test`, which is why `TestRun_Combos` is gated behind `GOAPPCTL_E2E`. A second full `Run` would double that cost for one assertion, so the frontend check goes into the existing matrix, whose `minimal` case already has `admin` off.
+Deliberately no test in `initcmd` for this task. The end-to-end assertion belongs in `TestRun_Combos`, but it can only be meaningful once the eight packages actually exist in `frontend/package.json` — before that, an "absent" assertion passes because nothing was ever there, and a "present" assertion simply fails. Task 3 adds both sides together, in the same task that adds the packages.
 
-In `cmd/goappctl/internal/initcmd/initcmd_test.go`, add two fields to the `TestRun_Combos` case struct:
+What is covered here: `StripAdminDeps` against fixture JSON (Step 1), which is the whole of the logic. What is not: the `if off["admin"]` wiring, until Task 3.
 
-```go
-		// wantFrontendAbsent / wantFrontendPresent are checked against
-		// frontend/package.json: the admin-only UI packages must leave with the
-		// admin component, and nothing else may.
-		wantFrontendAbsent  []string
-		wantFrontendPresent []string
-```
+Do **not** add an ungated test that calls `Run` — `Run` ends with `go build`/`vet`/`test`, which is why `TestRun_Combos` is gated behind `GOAPPCTL_E2E` in the first place.
 
-Set them on two cases:
-
-```go
-		{
-			name: "all-on", with: []string{"db", "session", "admin", "ssr"},
-			wantPresent:         []string{"mattn/go-sqlite3", "buke/quickjs-go"},
-			wantFrontendPresent: []string{"reka-ui", "@tanstack/vue-table", "tw-animate-css"},
-		},
-		{
-			name: "minimal", with: nil,
-			wantAbsent:          []string{"mattn/go-sqlite3", "buke/quickjs-go"},
-			wantFrontendAbsent:  []string{"reka-ui", "@tanstack/vue-table", "tw-animate-css"},
-			wantFrontendPresent: []string{`"vue"`},
-		},
-```
-
-And assert inside the subtest, after the existing `go.mod` assertions:
-
-```go
-			pkg, err := os.ReadFile(filepath.Join(root, "frontend/package.json"))
-			if err != nil {
-				t.Fatalf("read frontend/package.json: %v", err)
-			}
-			for _, gone := range c.wantFrontendAbsent {
-				if strings.Contains(string(pkg), gone) {
-					t.Errorf("frontend/package.json still lists %q:\n%s", gone, pkg)
-				}
-			}
-			for _, kept := range c.wantFrontendPresent {
-				if !strings.Contains(string(pkg), kept) {
-					t.Errorf("frontend/package.json lost %q:\n%s", kept, pkg)
-				}
-			}
-```
-
-- [ ] **Step 7: Run the suite, including the gated matrix**
+- [ ] **Step 7: Run the suite**
 
 ```bash
 go test ./cmd/goappctl/... -count=1
 GOAPPCTL_E2E=1 go test ./cmd/goappctl/internal/initcmd/ -run TestRun_Combos -count=1
 ```
 
-Expected: both PASS. The second is slow (four full init + build + vet + test cycles) — that is why it is gated, and why this task adds no new `Run` call of its own.
+Expected: both PASS. The gated run must stay green — this task changes what `init` does only when `admin` is off and the admin packages are present, which is not yet any case in the matrix.
 
 - [ ] **Step 8: Commit**
 
@@ -555,11 +514,67 @@ Run: `pnpm -C frontend type-check && pnpm -C frontend build`
 
 Expected: both exit 0. `type-check` runs `vue-tsc` under `strict: true` across all ~78 copied files.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 9: Close Task 2's coverage gap in the trimming matrix**
+
+Task 2 added `markers.StripAdminDeps` and its `if off["admin"]` wiring but could not test the wiring end to end, because the packages did not exist. They do now, so both sides of the assertion become meaningful — add them here.
+
+In `cmd/goappctl/internal/initcmd/initcmd_test.go`, add two fields to the `TestRun_Combos` case struct:
+
+```go
+		// wantFrontendAbsent / wantFrontendPresent are checked against
+		// frontend/package.json: the admin-only UI packages must leave with the
+		// admin component, and nothing else may.
+		wantFrontendAbsent  []string
+		wantFrontendPresent []string
+```
+
+Set them on two existing cases:
+
+```go
+		{
+			name: "all-on", with: []string{"db", "session", "admin", "ssr"},
+			wantPresent:         []string{"mattn/go-sqlite3", "buke/quickjs-go"},
+			wantFrontendPresent: []string{"reka-ui", "@tanstack/vue-table", "tw-animate-css"},
+		},
+		{
+			name: "minimal", with: nil,
+			wantAbsent:          []string{"mattn/go-sqlite3", "buke/quickjs-go"},
+			wantFrontendAbsent:  []string{"reka-ui", "@tanstack/vue-table", "tw-animate-css"},
+			wantFrontendPresent: []string{`"vue"`},
+		},
+```
+
+And assert inside the subtest, after the existing `go.mod` assertions:
+
+```go
+			pkg, err := os.ReadFile(filepath.Join(root, "frontend/package.json"))
+			if err != nil {
+				t.Fatalf("read frontend/package.json: %v", err)
+			}
+			for _, gone := range c.wantFrontendAbsent {
+				if strings.Contains(string(pkg), gone) {
+					t.Errorf("frontend/package.json still lists %q:\n%s", gone, pkg)
+				}
+			}
+			for _, kept := range c.wantFrontendPresent {
+				if !strings.Contains(string(pkg), kept) {
+					t.Errorf("frontend/package.json lost %q:\n%s", kept, pkg)
+				}
+			}
+```
+
+- [ ] **Step 10: Run the gated matrix**
+
+Run: `GOAPPCTL_E2E=1 go test ./cmd/goappctl/internal/initcmd/ -run TestRun_Combos -count=1`
+
+Expected: PASS, all four cases. This is the first run where `all-on` proves the packages survive and `minimal` proves they are pruned. Slow — four full init plus build/vet/test cycles.
+
+- [ ] **Step 11: Commit**
 
 ```bash
 git add frontend/src/components/ui frontend/src/lib frontend/src/styles/main.css \
-  frontend/package.json frontend/pnpm-lock.yaml
+  frontend/package.json frontend/pnpm-lock.yaml \
+  cmd/goappctl/internal/initcmd/initcmd_test.go
 git commit -m "feat(frontend): copy the shadcn-vue component set for the admin area
 
 Twelve components plus lib/utils, source-copied rather than depended on, so the
