@@ -66,9 +66,14 @@ Without this, a marker in `main.css` makes `goappctl init` fail outright — `in
 
 Append to `cmd/goappctl/internal/markers/markers_test.go`:
 
+Keep content after the block, mirroring `TestStrip_RemovesUnselectedBlock`. A
+block at end-of-file instead tests the EOF edge rather than the seam, and the
+blank line *before* a block is preserved — as that existing `.go` case shows with
+its `package main\n\n`.
+
 ```go
 func TestStrip_CSSForm(t *testing.T) {
-	src := "@import \"tailwindcss\";\n\n/*goappctl:admin*/\n:root { --x: 1; }\n/*goappctl:end*/\n"
+	src := "@import \"tailwindcss\";\n\n/*goappctl:admin*/\n:root { --x: 1; }\n/*goappctl:end*/\nbody { color: red; }\n"
 
 	got, n, err := Strip("main.css", []byte(src), opts("admin"))
 	if err != nil {
@@ -77,7 +82,7 @@ func TestStrip_CSSForm(t *testing.T) {
 	if n != 1 {
 		t.Errorf("stripped = %d, want 1", n)
 	}
-	if want := "@import \"tailwindcss\";\n"; string(got) != want {
+	if want := "@import \"tailwindcss\";\n\nbody { color: red; }\n"; string(got) != want {
 		t.Errorf("admin off: got %q, want %q", got, want)
 	}
 
@@ -88,7 +93,7 @@ func TestStrip_CSSForm(t *testing.T) {
 	if n != 0 {
 		t.Errorf("stripped = %d, want 0", n)
 	}
-	want := "@import \"tailwindcss\";\n\n:root { --x: 1; }\n"
+	want := "@import \"tailwindcss\";\n\n:root { --x: 1; }\nbody { color: red; }\n"
 	if string(got) != want {
 		t.Errorf("admin on: got %q, want %q", got, want)
 	}
