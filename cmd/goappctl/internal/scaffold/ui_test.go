@@ -149,6 +149,7 @@ func TestUIDestPath_RejectsPathsThatEscape(t *testing.T) {
 		"/etc/passwd",
 		"ui/./button/Button.vue",
 		"",
+		`ui/foo\..\..\bar`, // backslash traversal: inert on unix, escapes on Windows
 	} {
 		if got, err := uiDestPath(bad); err == nil {
 			t.Errorf("uiDestPath(%q) = %q, want an error", bad, got)

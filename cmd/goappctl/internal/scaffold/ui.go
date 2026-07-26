@@ -115,7 +115,14 @@ const registryImportPrefix = "@/registry/default/ui"
 // silently accommodated.
 func uiDestPath(registryPath string) (string, error) {
 	cleanPath := path.Clean(registryPath)
-	if registryPath == "" || strings.HasPrefix(registryPath, "/") ||
+	// path.Clean only ever treats "/" as a separator, but the writer joins with
+	// filepath.Join, which on Windows also honours "\" — so a backslash would
+	// slip past a slash-only check and escape there. Registry paths are
+	// forward-slash by convention, so refusing backslashes outright costs
+	// nothing.
+	if registryPath == "" ||
+		strings.HasPrefix(registryPath, "/") ||
+		strings.Contains(registryPath, `\`) ||
 		strings.HasPrefix(cleanPath, "..") || cleanPath != registryPath {
 		return "", fmt.Errorf("registry file path %q is not a plain relative path", registryPath)
 	}
