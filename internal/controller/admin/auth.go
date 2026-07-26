@@ -41,7 +41,7 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 		return nil, false
 	}
 
-	g, username, err := findGroup(c.Request.Context(), a.DB, a.usersTable(), id)
+	cl, err := findCaller(c.Request.Context(), a.DB, a.usersTable(), id)
 	switch {
 	case errors.Is(err, errNoGroup):
 		// Fail closed. A user with no group has no permissions, and that is a
@@ -53,17 +53,41 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 		return nil, false
 	case err != nil:
 		// A storage problem must not read as an authorisation decision.
-		slog.Error("admin auth: load group", "err", err, "user", id)
+		slog.Error("admin auth: load caller", "err", err, "user", id)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return nil, false
 	}
 
-	c.Set("adminMenu", a.menuItems(g))
-	c.Set("adminUser", map[string]any{"id": id, "username": username})
+	// A disabled account is neither of the above: not a permissions decision
+	// about a resource, and not an outage. Bounce to login with an explanation —
+	// a bare 403 would leave the user staring at an empty page with nothing to
+	// act on.
+	//
+	// The session is deliberately NOT destroyed. A flash is session state
+	// (session/flash.go keys it under _flash:), so destroying the session would
+	// discard the message being staged, and Destroy also clears the response
+	// cookie the message has to travel in — the two cannot both happen. Nor is
+	// it needed: this function refuses the session on every request, so the
+	// credential is already inert, and re-enabling the user restores their
+	// session rather than forcing a fresh login.
+	if cl.status == statusDisabled {
+		sess.Flash("error", "该账号已被禁用。")
+		if _, err := sess.Save(c.Request.Context()); err != nil {
+			slog.Error("admin auth: stage disabled flash", "err", err, "user", id)
+		}
+		if err := c.Redirect(a.LoginPath()); err != nil {
+			slog.Error("admin auth: redirect disabled user", "err", err)
+		}
+		c.Abort()
+		return nil, false
+	}
+
+	c.Set("adminMenu", a.menuItems(cl.group))
+	c.Set("adminUser", map[string]any{"id": id, "username": cl.username})
 	c.Set("adminMount", a.mount())
 	c.Set("loginPath", a.LoginPath())
 	c.Set("currentPath", c.Request.URL.Path)
-	return g, true
+	return cl.group, true
 }
 
 // userID reads the id LoginSubmit stored back out of a session value. It cannot

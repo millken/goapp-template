@@ -42,7 +42,8 @@ func newUsersDB(t *testing.T) *sqldb.DB {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT NOT NULL UNIQUE,
 		password_hash TEXT NOT NULL,
-		created_at BIGINT NOT NULL)`); err != nil {
+		created_at BIGINT NOT NULL,
+		status INTEGER NOT NULL DEFAULT 1)`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 	hash, _ := HashPassword("pw")

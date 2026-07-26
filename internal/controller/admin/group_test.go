@@ -33,7 +33,8 @@ func groupFixture(t *testing.T) *sqldb.DB {
 			username TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
 			created_at BIGINT NOT NULL,
-			group_id INTEGER REFERENCES user_groups(id))`,
+			group_id INTEGER REFERENCES user_groups(id),
+			status INTEGER NOT NULL DEFAULT 1)`,
 		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)
 		 VALUES (1, 'Administrators', 1, '[]', 0)`,
 		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)
@@ -56,31 +57,31 @@ func TestFindGroup(t *testing.T) {
 	d := groupFixture(t)
 	ctx := context.Background()
 
-	su, name, err := findGroup(ctx, d, "users", 1)
+	su, err := findCaller(ctx, d, "users", 1)
 	if err != nil {
 		t.Fatalf("superuser: %v", err)
 	}
-	if !su.Superuser {
+	if !su.group.Superuser {
 		t.Error("user 1 should be a superuser")
 	}
-	if name != "root" {
-		t.Errorf("username = %q, want root", name)
+	if su.username != "root" {
+		t.Errorf("username = %q, want root", su.username)
 	}
 
-	ed, _, err := findGroup(ctx, d, "users", 2)
+	ed, err := findCaller(ctx, d, "users", 2)
 	if err != nil {
 		t.Fatalf("editor: %v", err)
 	}
-	if ed.Superuser {
+	if ed.group.Superuser {
 		t.Error("user 2 should not be a superuser")
 	}
-	if !ed.Permissions.Allows("post.modify") {
+	if !ed.group.Permissions.Allows("post.modify") {
 		t.Error("editor should hold post.modify")
 	}
-	if !ed.Permissions.Allows("post.access") {
+	if !ed.group.Permissions.Allows("post.access") {
 		t.Error("post.modify should imply post.access")
 	}
-	if ed.Permissions.Allows("user.modify") {
+	if ed.group.Permissions.Allows("user.modify") {
 		t.Error("editor holds only user.access, so user.modify must fail")
 	}
 }
@@ -90,10 +91,10 @@ func TestFindGroup(t *testing.T) {
 func TestFindGroup_NoGroupIsErrNoGroup(t *testing.T) {
 	d := groupFixture(t)
 
-	if _, _, err := findGroup(context.Background(), d, "users", 3); !errors.Is(err, errNoGroup) {
+	if _, err := findCaller(context.Background(), d, "users", 3); !errors.Is(err, errNoGroup) {
 		t.Errorf("orphaned user: got %v, want errNoGroup", err)
 	}
-	if _, _, err := findGroup(context.Background(), d, "users", 999); !errors.Is(err, errNoGroup) {
+	if _, err := findCaller(context.Background(), d, "users", 999); !errors.Is(err, errNoGroup) {
 		t.Errorf("unknown user: got %v, want errNoGroup", err)
 	}
 }
@@ -107,7 +108,7 @@ func TestFindGroup_BadJSONIsNotErrNoGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err := findGroup(context.Background(), d, "users", 2)
+	_, err := findCaller(context.Background(), d, "users", 2)
 	if err == nil {
 		t.Fatal("want an error for malformed JSON")
 	}

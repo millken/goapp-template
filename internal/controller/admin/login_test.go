@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -259,5 +260,37 @@ func TestRedirects_UnderPJAX(t *testing.T) {
 				t.Errorf(`body["redirect"] = %v, want %q`, got, tc.wantRedirect)
 			}
 		})
+	}
+}
+
+// The order matters: status is checked only after the password verifies, so a
+// disabled account is not distinguishable from a wrong password by timing.
+// Whoever sees the disabled error already proved they hold the credential, so
+// saying so plainly leaks nothing — and beats sending the real owner hunting
+// for a password problem that does not exist.
+func TestAuthenticate_DisabledAccount(t *testing.T) {
+	_, adm := loginStack(t)
+	ctx := context.Background()
+	if _, err := adm.DB.ExecContext(ctx,
+		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Correct password, disabled account: a distinct error, not "invalid".
+	_, err := authenticate(ctx, adm.DB, "users", "alice", "pw")
+	if err == nil {
+		t.Fatal("a disabled account must not authenticate")
+	}
+	if errors.Is(err, errInvalidCredentials) {
+		t.Error("a disabled account should report being disabled, not invalid credentials")
+	}
+	if !errors.Is(err, errAccountDisabled) {
+		t.Errorf("want errAccountDisabled, got %v", err)
+	}
+
+	// Wrong password on a disabled account stays "invalid credentials": the
+	// caller has not proved anything, so nothing may be revealed.
+	if _, err := authenticate(ctx, adm.DB, "users", "alice", "wrong"); !errors.Is(err, errInvalidCredentials) {
+		t.Errorf("wrong password on a disabled account: want errInvalidCredentials, got %v", err)
 	}
 }

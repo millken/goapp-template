@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,5 +93,82 @@ func TestUserID(t *testing.T) {
 		if got != c.want || ok != c.ok {
 			t.Errorf("%s: userID(%#v) = (%d, %v), want (%d, %v)", c.name, c.v, got, ok, c.want, c.ok)
 		}
+	}
+}
+
+// A disabled user holding a live session gets bounced to login with an
+// explanation, not a bare 403 — and the session is deliberately NOT destroyed,
+// because a flash is session state and Destroy also clears the cookie it would
+// travel in.
+func TestResolve_DisabledUserIsBouncedToLoginWithAFlash(t *testing.T) {
+	eng, adm := loginStack(t)
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {
+		t.Error("handler must not run for a disabled user")
+	})
+	cookie := loginAndGetCookie(t, eng)
+
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusFound {
+		t.Errorf("status = %d, want a redirect to login", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/admin/login" {
+		t.Errorf("Location = %q, want /admin/login", loc)
+	}
+}
+
+// Every attempt should say why it failed. Re-staging the flash on each request
+// is intended: the alternative is an "already told them" marker in the session,
+// which is state to no purpose. Pinned so the repetition is not mistaken for a
+// defect later.
+func TestResolve_DisabledUserIsBouncedOnEveryRequest(t *testing.T) {
+	eng, adm := loginStack(t)
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {})
+	cookie := loginAndGetCookie(t, eng)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range 2 {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+		r.AddCookie(cookie)
+		eng.ServeHTTP(w, r)
+		if loc := w.Header().Get("Location"); loc != "/admin/login" {
+			t.Errorf("request %d: Location = %q, want /admin/login", i+1, loc)
+		}
+	}
+}
+
+// The three outcomes must stay apart: conflating them would make an outage or a
+// disabled account look like a permissions decision.
+func TestResolve_DisabledIsNeitherForbiddenNorInternalError(t *testing.T) {
+	eng, adm := loginStack(t)
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {})
+	cookie := loginAndGetCookie(t, eng)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code == http.StatusForbidden {
+		t.Error("a disabled account answered 403 — that is the no-group answer")
+	}
+	if w.Code == http.StatusInternalServerError {
+		t.Error("a disabled account answered 500 — that is the storage-failure answer")
 	}
 }

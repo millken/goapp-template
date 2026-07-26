@@ -35,6 +35,14 @@ func (a *Admin) LoginSubmit(c *inertia.Context) {
 
 	user, err := authenticate(c.Request.Context(), a.DB, a.usersTable(), username, password)
 	if err != nil {
+		if errors.Is(err, errAccountDisabled) {
+			c.Set("loginPath", a.LoginPath())
+			c.Set("error", "该账号已被禁用。")
+			if rerr := c.Render("admin/login"); rerr != nil {
+				slog.Error("render admin login", "err", rerr)
+			}
+			return
+		}
 		if !errors.Is(err, errInvalidCredentials) {
 			slog.Error("admin login", "err", err) // db error, not a bad password
 		}

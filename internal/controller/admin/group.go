@@ -21,37 +21,53 @@ type group struct {
 	Permissions permSet
 }
 
-// findGroup loads the group and username of the user with userID. usersTable is
-// interpolated (it is configurable) and has already been validated by
-// Admin.Validate against ^[A-Za-z_]\w*$; the id itself is parameterised. The
-// username rides along because the topbar shows it, and adding a second query
-// for one column would break the one-lookup-per-request rule.
-func findGroup(ctx context.Context, d *sqldb.DB, usersTable string, userID int64) (*group, string, error) {
-	q := fmt.Sprintf(`SELECT u.username, g.superuser, g.permissions
+// statusActive and statusDisabled are the values of users.status (migration 004).
+const (
+	statusActive   = 1
+	statusDisabled = 0
+)
+
+// caller is who is making the request: their group, plus the two user-row facts
+// the request needs — the username the topbar shows and the status the disabled
+// check reads. Bundled into one struct rather than returned as three values
+// beside an error, and loaded by one query, because "one group lookup per
+// request" is the constraint this whole path is built around.
+type caller struct {
+	group    *group
+	username string
+	status   int
+}
+
+// findCaller loads the group, username and status of the user with userID.
+// usersTable is interpolated (it is configurable) and has already been validated
+// by Admin.Validate against ^[A-Za-z_]\w*$; the id itself is parameterised.
+func findCaller(ctx context.Context, d *sqldb.DB, usersTable string, userID int64) (*caller, error) {
+	q := fmt.Sprintf(`SELECT u.username, u.status, g.superuser, g.permissions
 		FROM %s u JOIN user_groups g ON g.id = u.group_id
 		WHERE u.id = ?`, usersTable)
 
-	var username string
+	var cl caller
 	var superuser int
 	var raw string
-	if err := d.QueryRowContext(ctx, q, userID).Scan(&username, &superuser, &raw); err != nil {
+	if err := d.QueryRowContext(ctx, q, userID).Scan(&cl.username, &cl.status, &superuser, &raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// The join drops users whose group_id is null or dangling, so this
 			// covers "no group" and "unknown user" alike. Both deny.
-			return nil, "", errNoGroup
+			return nil, errNoGroup
 		}
-		return nil, "", fmt.Errorf("admin: find group: %w", err)
+		return nil, fmt.Errorf("admin: find caller: %w", err)
 	}
 
 	var keys []string
 	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
-		return nil, "", fmt.Errorf("admin: group %d has unreadable permissions: %w", userID, err)
+		return nil, fmt.Errorf("admin: group of user %d has unreadable permissions: %w", userID, err)
 	}
 	set := make(permSet, len(keys))
 	for _, k := range keys {
 		set[k] = true
 	}
-	return &group{Superuser: superuser != 0, Permissions: set}, username, nil
+	cl.group = &group{Superuser: superuser != 0, Permissions: set}
+	return &cl, nil
 }
 
 // FindGroupID resolves a group name to its id. Exported for
