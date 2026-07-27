@@ -132,6 +132,12 @@ func TestResolve_AdminUserAvatarIsEmptyWhenUnset(t *testing.T) {
 }
 
 //goappctl:storage
+
+// The blank line above is load-bearing: without it gofmt folds the marker into
+// this doc comment as a directive, and stripping the block would then delete
+// the marker plus the function while leaving the first half of the comment
+// behind, attached to nothing.
+//
 // urlPrefix is set once in resolve, next to adminMount, rather than by every
 // handler that used to set its own copy. A custom prefix (not the default
 // "/uploads") proves the value on the wire actually came from the configured
