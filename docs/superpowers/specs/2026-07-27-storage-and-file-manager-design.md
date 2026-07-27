@@ -244,7 +244,9 @@ can create the destination between the `Stat` and the `Rename`, which is the
 same race semantic 6 already accepts, not a new one.
 
 **Upload policy**, in order: extension lowercased and checked against
-`allowed_ext`; the client filename reduced to its base and sanitised (path
+`allowed_ext` (itself compared case-insensitively — an operator's
+`allowed_ext: [".PNG"]` matches `.png`, not just `.PNG`); the client filename
+reduced to its base and sanitised (path
 separators and control characters out, runs of whitespace to `-`, Unicode
 letters kept — Chinese filenames are legitimate); a collision resolved by
 appending `-2`, `-3` … before the extension.

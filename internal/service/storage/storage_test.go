@@ -100,6 +100,19 @@ func TestUpload_EnforcesExtensionSizeAndCollisions(t *testing.T) {
 	}
 }
 
+// TestUpload_AllowedExtIsCaseInsensitive covers an operator config of
+// allowed_ext: [".PNG"]: Upload compares against a lowercased extension, so
+// without lowercasing the accessor too, this would reject every .png upload
+// with a message naming the very extension the operator just allowed.
+func TestUpload_AllowedExtIsCaseInsensitive(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	s.cfg.AllowedExt = []string{".PNG"}
+	if _, err := s.Upload(ctx, "", "a.png", strings.NewReader("x")); err != nil {
+		t.Errorf("allowed_ext: [\".PNG\"] must still accept a.png, got %v", err)
+	}
+}
+
 func TestBrowse_SortsFiltersAndPaginates(t *testing.T) {
 	ctx := context.Background()
 	s := startedService(t)

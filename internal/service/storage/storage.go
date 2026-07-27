@@ -164,11 +164,19 @@ func (s *Service) maxUploadSize() int64 {
 
 func (s *Service) pageSize() int { return cmp.Or(s.cfg.PageSize, defaultPageSize) }
 
+// allowedExt lowercases the configured whitelist: Upload compares against a
+// lowercased extension, so an operator's allowed_ext: [".PNG"] must still
+// match ".png" rather than reject every upload with a message naming the
+// extension the operator just allowed.
 func (s *Service) allowedExt() []string {
 	if len(s.cfg.AllowedExt) == 0 {
 		return defaultAllowedExt
 	}
-	return s.cfg.AllowedExt
+	out := make([]string, len(s.cfg.AllowedExt))
+	for i, e := range s.cfg.AllowedExt {
+		out[i] = strings.ToLower(e)
+	}
+	return out
 }
 
 // ValidatePath is clean with the cleaned value discarded: the exported way for

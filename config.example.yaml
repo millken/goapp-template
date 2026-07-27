@@ -80,7 +80,8 @@ storage:
   # max_upload_size: 8388608     # bytes per file (default 8MB)
   # max_request_size: 67108864   # bytes per upload request (default 64MB)
   # page_size: 40                # entries per page in the file manager
-  # Upload whitelist. .svg is deliberately absent: an SVG served from this
-  # origin executes script on this origin. Add it only if you understand that.
+  # Upload whitelist, matched case-insensitively — ".PNG" and ".png" are the
+  # same entry. .svg is deliberately absent: an SVG served from this origin
+  # executes script on this origin. Add it only if you understand that.
   # allowed_ext: [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".zip"]
 #goappctl:end
