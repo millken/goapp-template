@@ -400,13 +400,24 @@ func (s *Service) Rename(ctx context.Context, name, newName string) error {
 	}
 	// path.Dir("a.png") is ".": this package spells the root "", and join
 	// would otherwise reject "." as an illegal segment before target is built.
-	dir := path.Dir(strings.TrimSuffix(n, "/"))
+	dir := path.Dir(n)
 	if dir == "." {
 		dir = ""
 	}
 	target, err := join(dir, newName)
 	if err != nil {
 		return err
+	}
+	if target != n {
+		// Check-then-act: a second admin can create target between this Stat
+		// and be.Rename below, so this is racy — accepted per §4.2 semantic 6
+		// (no cross-operation locking). The alternative, skipping the check,
+		// is renameat(2)'s silent clobber, which is worse than a rare race.
+		if _, err := s.be.Stat(ctx, target); err == nil {
+			return fmt.Errorf("rename %q: %w", target, fs.ErrExist)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 	}
 	return s.be.Rename(ctx, n, target)
 }
@@ -437,6 +448,18 @@ func (s *Service) Move(ctx context.Context, names []string, toDir string) ([]Ite
 		if err != nil {
 			fails = append(fails, ItemError{Name: raw, Reason: "路径不合法"})
 			continue
+		}
+		if target != n {
+			// Same check-then-act race as Rename (§4.2 semantic 6), but per
+			// item: one colliding name in a batch becomes one entry here, not
+			// a whole-request failure, and the rest of the batch still moves.
+			if _, err := s.be.Stat(ctx, target); err == nil {
+				fails = append(fails, ItemError{Name: raw, Reason: reason(fs.ErrExist)})
+				continue
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				fails = append(fails, ItemError{Name: raw, Reason: reason(err)})
+				continue
+			}
 		}
 		if err := s.be.Rename(ctx, n, target); err != nil {
 			fails = append(fails, ItemError{Name: raw, Reason: reason(err)})

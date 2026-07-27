@@ -196,6 +196,27 @@ func Run(t *testing.T, newBackend func(t *testing.T) storage.Backend) {
 		}
 	})
 
+	// Semantic 7: Rename refuses an existing destination. This is the case an
+	// S3-style copy+delete backend gets backwards by default — a plain
+	// "copy over, then delete the source" reproduces renameat(2)'s clobber
+	// rather than refusing it — so without this case a second implementation
+	// could pass the suite while overwriting exactly like the bug this
+	// contract exists to prevent.
+	t.Run("RenameRefusesAnExistingDestination", func(t *testing.T) {
+		b := newBackend(t)
+		mustSave(t, b, "keep.png", "original")
+		mustSave(t, b, "other.png", "incoming")
+		if err := b.Rename(ctx, "other.png", "keep.png"); !errors.Is(err, fs.ErrExist) {
+			t.Errorf("Rename onto an existing name: err = %v, want fs.ErrExist", err)
+		}
+		if got := mustRead(t, b, "keep.png"); got != "original" {
+			t.Errorf("destination content = %q, want unchanged %q", got, "original")
+		}
+		if got := mustRead(t, b, "other.png"); got != "incoming" {
+			t.Errorf("source must still be present after a refused rename, content = %q", got)
+		}
+	})
+
 	t.Run("StatReportsSizeAndKind", func(t *testing.T) {
 		b := newBackend(t)
 		mustSave(t, b, "a.txt", "12345")

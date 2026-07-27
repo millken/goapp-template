@@ -33,6 +33,11 @@ type Entry struct {
 //  5. Open returns a ReadSeekCloser: http.ServeContent needs Seek.
 //  6. No atomicity and no locking. Errors wrap fs.ErrNotExist / fs.ErrExist so
 //     callers can map status codes with errors.Is and nothing else.
+//  7. Rename refuses an existing destination. Unlike Save (semantic 3), an
+//     overwrite here is not a policy Service applies on top — os.Root.Rename
+//     is renameat(2), which clobbers silently, and a copy+delete backend
+//     (an S3-style object store) does too, so every implementation must
+//     check first and return fs.ErrExist rather than destroy what was there.
 type Backend interface {
 	List(ctx context.Context, dir string) ([]Entry, error)
 	Stat(ctx context.Context, name string) (Entry, error)

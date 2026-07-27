@@ -356,6 +356,44 @@ func TestFileManagerMkdirRenameMoveDelete(t *testing.T) {
 	}
 }
 
+// TestFileManagerRename_RefusesAnExistingDestination is the HTTP half of
+// storage finding 1: fmFail already mapped fs.ErrExist to 409 before Rename
+// could ever produce one, which was the tell that overwriting was never
+// intended. Covers rename (409, single item) and move (200, per-item error)
+// so both endpoints over Backend.Rename are exercised.
+func TestFileManagerRename_RefusesAnExistingDestination(t *testing.T) {
+	eng, adm, cookie := fmStack(t)
+	ctx := context.Background()
+	if _, err := adm.Storage.Upload(ctx, "", "keep.png", strings.NewReader("original")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adm.Storage.Upload(ctx, "", "other.png", strings.NewReader("incoming")); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := postJSON(t, eng, cookie, "/admin/filemanager/api/rename",
+		`{"path":"other.png","name":"keep.png"}`)
+	if code != http.StatusConflict {
+		t.Fatalf("rename onto an existing name: status = %d, body %+v, want 409", code, out)
+	}
+
+	if err := adm.Storage.Mkdir(ctx, "", "dst"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adm.Storage.Upload(ctx, "dst", "other.png", strings.NewReader("also there")); err != nil {
+		t.Fatal(err)
+	}
+	code, out = postJSON(t, eng, cookie, "/admin/filemanager/api/move",
+		`{"paths":["other.png"],"to":"dst"}`)
+	if code != http.StatusOK {
+		t.Fatalf("move: status = %d, body %+v", code, out)
+	}
+	fails, _ := out["errors"].([]any)
+	if len(fails) != 1 {
+		t.Fatalf("move errors = %v, want exactly one colliding item", out["errors"])
+	}
+}
+
 func TestFileManagerMutations_RequireTheCSRFHeader(t *testing.T) {
 	eng, _, cookie := fmStack(t)
 	r := httptest.NewRequest(http.MethodPost, "/admin/filemanager/api/mkdir",

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"strings"
 	"testing"
 )
@@ -285,6 +287,93 @@ func TestRename_RefusesANewNameWithASeparator(t *testing.T) {
 	}
 	if err := s.Rename(ctx, "a.png", "sub/b.png"); !errors.Is(err, ErrBadPath) {
 		t.Errorf("a newName with a separator would make rename a silent move; got %v", err)
+	}
+}
+
+// TestRename_RefusesAnExistingDestination is the Service-level half of
+// finding 1: Rename and Move used to hand straight to Backend.Rename, and
+// os.Root.Rename is renameat(2), which overwrites silently. reason() already
+// mapped fs.ErrExist to a Chinese message and fmFail already mapped it to
+// 409 — both dead code until this refusal exists.
+func TestRename_RefusesAnExistingDestination(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if _, err := s.Upload(ctx, "", "keep.png", strings.NewReader("original")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Upload(ctx, "", "other.png", strings.NewReader("incoming")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Rename(ctx, "other.png", "keep.png"); !errors.Is(err, fs.ErrExist) {
+		t.Errorf("Rename onto an existing name: err = %v, want fs.ErrExist", err)
+	}
+	f, err := s.be.Open(ctx, "keep.png")
+	if err != nil {
+		t.Fatalf("Open(keep.png): %v", err)
+	}
+	got, _ := io.ReadAll(f)
+	f.Close()
+	if string(got) != "original" {
+		t.Errorf("keep.png content = %q, want unchanged %q", got, "original")
+	}
+	if _, err := s.Stat(ctx, "other.png"); err != nil {
+		t.Error("a refused rename must leave the source in place")
+	}
+}
+
+// TestRename_ToItsOwnCurrentNameIsANoOp guards the edge the collision check
+// introduces: submitting a rename with no actual change must not make the
+// destination collide with itself.
+func TestRename_ToItsOwnCurrentNameIsANoOp(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if _, err := s.Upload(ctx, "", "a.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Rename(ctx, "a.png", "a.png"); err != nil {
+		t.Errorf("renaming a file to its own current name must succeed as a no-op, got %v", err)
+	}
+}
+
+// TestMove_RefusesACollidingItemButMovesTheRest is Move's per-item half of
+// finding 1: one colliding name must not sink the rest of the batch.
+func TestMove_RefusesACollidingItemButMovesTheRest(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if err := s.Mkdir(ctx, "", "dst"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Upload(ctx, "dst", "a.png", strings.NewReader("original")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Upload(ctx, "", "a.png", strings.NewReader("incoming")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Upload(ctx, "", "b.png", strings.NewReader("y")); err != nil {
+		t.Fatal(err)
+	}
+
+	fails, err := s.Move(ctx, []string{"a.png", "b.png"}, "dst")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if len(fails) != 1 || fails[0].Name != "a.png" {
+		t.Fatalf("fails = %+v, want exactly a.png", fails)
+	}
+	f, err := s.be.Open(ctx, "dst/a.png")
+	if err != nil {
+		t.Fatalf("Open(dst/a.png): %v", err)
+	}
+	got, _ := io.ReadAll(f)
+	f.Close()
+	if string(got) != "original" {
+		t.Errorf("dst/a.png content = %q, want unchanged %q", got, "original")
+	}
+	if _, err := s.Stat(ctx, "a.png"); err != nil {
+		t.Error("the colliding source must stay put, not be consumed by the refused move")
+	}
+	if _, err := s.Stat(ctx, "dst/b.png"); err != nil {
+		t.Errorf("the non-colliding item must still have moved: %v", err)
 	}
 }
 

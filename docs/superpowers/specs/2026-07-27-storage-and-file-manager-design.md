@@ -147,9 +147,9 @@ type Backend interface {
 }
 ```
 
-Six semantics that are part of the interface, not of the local implementation.
-They are what a second implementation has to reproduce, and §7.1 makes each one
-a test:
+Seven semantics that are part of the interface, not of the local
+implementation. They are what a second implementation has to reproduce, and
+§7.1 makes each one a test:
 
 1. **Paths are cleaned, slash-separated, and relative.** `""` is the root.
    Backends never see `..`, a leading `/`, a backslash, or a control character —
@@ -174,6 +174,14 @@ a test:
 6. **No atomicity, no cross-operation locking.** Two concurrent writers to one
    name are last-writer-wins. Errors wrap `fs.ErrNotExist` / `fs.ErrExist` so
    callers can map status codes with `errors.Is` and nothing else.
+7. **`Rename` refuses an existing destination.** Unlike `Save` (semantic 3),
+   overwriting here is not a policy layered on top by `Service` — `Rename`
+   itself must `Stat` the destination and return `fs.ErrExist` rather than
+   replace it. `os.Root.Rename` is `renameat(2)`, which clobbers silently, and
+   an S3-style copy-then-delete backend reproduces the same clobber by
+   default, so this has to be spelled out rather than assumed: a backend that
+   skips the check passes every other semantic while destroying data on the
+   one operation this contract exists to protect.
 
 Plus one sentinel of our own, `ErrBadPath`, returned by cleaning (§4.4) — never
 by a backend.
@@ -212,7 +220,7 @@ type Listing struct {
 func (s *Service) Browse(ctx, dir, query string, page int) (Listing, error)
 func (s *Service) Upload(ctx, dir, filename string, r io.Reader) (Entry, error)
 func (s *Service) Mkdir(ctx, dir, name string) error
-func (s *Service) Rename(ctx, name, newName string) error   // same dir
+func (s *Service) Rename(ctx, name, newName string) error   // same dir; refuses an existing newName
 
 // Batch: the error is a whole-request failure (an unusable target directory);
 // per-item failures come back in ItemErrors, matching §5.2's response shape.
@@ -226,6 +234,14 @@ paths, any `..` segment, backslashes, control characters, empty segments, and
 segments over 255 bytes; it normalises to `path.Clean` with no leading or
 trailing slash. Everything public calls it first. `Delete` additionally refuses
 the root.
+
+**Rename and Move** each `Stat` the destination before calling
+`Backend.Rename`, and refuse with `fs.ErrExist` if something is already there
+— on top of the backend-level refusal in semantic 7 above, not instead of it,
+because `Service` is where a batch turns one collision into one `ItemError`
+rather than a whole-request failure. This is check-then-act: a second admin
+can create the destination between the `Stat` and the `Rename`, which is the
+same race semantic 6 already accepts, not a new one.
 
 **Upload policy**, in order: extension lowercased and checked against
 `allowed_ext`; the client filename reduced to its base and sanitised (path
@@ -425,6 +441,7 @@ per case:
 | 4 `Remove` | **three separate tests** — a file; an **empty** directory (succeeds, is not `fs.ErrNotExist`, is not a silent no-op leaving the directory listed); a non-empty directory (it and its children are gone). The empty-directory case is the one a naive implementation gets wrong in both directions: `os.Root.Remove` would pass it while failing the third, and a prefix-delete backend may treat "no objects under this prefix" as nothing to do |
 | 5 `Open` seeks | `Seek` to a middle offset returns the expected tail; `Seek(0, io.SeekEnd)` reports the size |
 | 6 errors | missing path wraps `fs.ErrNotExist`; `Mkdir` over an existing name wraps `fs.ErrExist`; both checked with `errors.Is`, never by string |
+| 7 `Rename` refuses a collision | `Rename` onto an existing name returns `fs.ErrExist`; the pre-existing destination's content and the source are both unchanged |
 
 An implementer's note that is **not** part of the contract: an object store
 typically satisfies semantic 2 with a zero-byte marker object, and semantic 4's
@@ -478,8 +495,16 @@ one implementation's shape with an `interface` keyword in front.
   hundreds of thousands.
 - **Local disk means one machine.** Two app instances need a shared volume or a
   second `Backend`. This is exactly the axis the interface exists for.
-- **Last-writer-wins.** Two admins uploading the same name at the same moment
-  produce one file, not an error.
+- **Last-writer-wins, for uploads only.** Two admins uploading the same name
+  at the same moment produce one file, not an error — `Save` overwrites
+  (semantic 3). `Rename` and `Move` are the opposite: they refuse an existing
+  destination (semantic 7) rather than clobber it. That refusal is itself
+  check-then-act — `Stat` then `Rename`, both at the backend and again in
+  `Service` — so two admins racing to rename different files onto the same
+  new name can still both pass the `Stat` and then contend at the actual
+  rename; one wins, the other gets `fs.ErrExist` for a name that, a moment
+  later, is genuinely taken. Rare, and no worse than any other gap semantic 6
+  already accepts.
 - **A failed upload request still leaves files.** A body-level failure (§5.2)
   keeps the parts that were already written. There is no transaction over a
   multipart stream, and pretending otherwise would mean buffering the whole

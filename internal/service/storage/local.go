@@ -83,6 +83,17 @@ func (b *localBackend) Mkdir(_ context.Context, dir string) error {
 }
 
 func (b *localBackend) Rename(_ context.Context, oldName, newName string) error {
+	// os.Root.Rename is renameat(2): left alone it clobbers an existing
+	// newName without error. Semantic 7 (backend.go) requires refusing
+	// instead, so Stat first. Renaming a name onto itself is a no-op, not a
+	// collision with itself, so that case skips the check entirely.
+	if oldName != newName {
+		if _, err := b.root.Stat(osName(newName)); err == nil {
+			return &fs.PathError{Op: "rename", Path: newName, Err: fs.ErrExist}
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
 	return b.root.Rename(oldName, newName)
 }
 
