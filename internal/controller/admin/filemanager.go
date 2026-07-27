@@ -1,11 +1,14 @@
 package admin
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/millken/goapp-template/internal/service/storage"
 	"github.com/millken/inertia"
@@ -121,9 +124,180 @@ func (a *Admin) fmFail(c *inertia.Context, err error) {
 	}
 }
 
-// Replaced in full by Task 5.
-func (a *Admin) fmUpload(c *inertia.Context) { c.AbortWithStatus(http.StatusNotImplemented) }
-func (a *Admin) fmMkdir(c *inertia.Context)  { c.AbortWithStatus(http.StatusNotImplemented) }
-func (a *Admin) fmRename(c *inertia.Context) { c.AbortWithStatus(http.StatusNotImplemented) }
-func (a *Admin) fmMove(c *inertia.Context)   { c.AbortWithStatus(http.StatusNotImplemented) }
-func (a *Admin) fmDelete(c *inertia.Context) { c.AbortWithStatus(http.StatusNotImplemented) }
+// fmUpload streams a multipart body straight to storage.
+//
+// Two failure classes, deliberately kept apart (§5.2). A per-file rejection —
+// extension, size, an illegal name — is an item error: the part is drained, the
+// remaining parts are still processed, and the response is 200 with the failure
+// listed. A body-level failure — the request ceiling, a malformed body, a
+// dropped connection — kills the request, because there are no further parts to
+// report on. Collapsing the two into one http.MaxBytesReader would turn "one of
+// your five files is too big" into "your upload failed", which is a worse
+// answer and a harder one to act on.
+//
+// The target directory rides in the query string rather than a form field: parts
+// arrive in order, and a field placed after the files would be read too late.
+func (a *Admin) fmUpload(c *inertia.Context) {
+	ctx := c.Request.Context()
+	dir := c.Query("path")
+
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, a.Storage.MaxRequestSize())
+	mr, err := c.Request.MultipartReader()
+	if err != nil {
+		a.fmBodyFail(c, err)
+		return
+	}
+
+	entries := []fmEntry{}
+	fails := []map[string]string{}
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			a.fmBodyFail(c, err)
+			return
+		}
+		if part.FormName() != "files" || part.FileName() == "" {
+			_ = part.Close()
+			continue
+		}
+
+		name := part.FileName()
+		e, err := a.Storage.Upload(ctx, dir, name, part)
+		if err != nil {
+			fails = append(fails, map[string]string{"name": name, "error": itemReason(err)})
+			// Drain: the next part is only reachable past this one's bytes.
+			_, _ = io.Copy(io.Discard, part)
+			_ = part.Close()
+			if errors.Is(err, storage.ErrBadPath) || errors.Is(err, storage.ErrRejected) {
+				continue
+			}
+			// A storage failure that is not policy (a full disk, say) will
+			// repeat for every remaining part; stop and say so.
+			a.fmFail(c, err)
+			return
+		}
+		_ = part.Close()
+
+		full := e.Name
+		if d := cleanQueryDir(dir); d != "" {
+			full = d + "/" + e.Name
+		}
+		entries = append(entries, fmEntry{
+			Name: e.Name, Path: full, Dir: false, Size: e.Size,
+			MTime: e.ModTime.Unix(), URL: a.Storage.URLFor(full),
+		})
+	}
+
+	a.fmOK(c, map[string]any{"entries": entries, "errors": fails})
+}
+
+// cleanQueryDir normalises the upload target for building response paths. The
+// service already validated it — anything illegal failed before we got here.
+func cleanQueryDir(dir string) string { return strings.Trim(dir, "/") }
+
+// fmBodyFail answers a body-level upload failure. Deliberately no "errors" key:
+// a per-item report would claim knowledge of parts that were never read.
+func (a *Admin) fmBodyFail(c *inertia.Context, err error) {
+	var tooLarge *http.MaxBytesError
+	status, msg := http.StatusBadRequest, "上传内容无法解析"
+	if errors.As(err, &tooLarge) {
+		status, msg = http.StatusRequestEntityTooLarge, "上传内容超过单次请求上限"
+	}
+	c.Status(status)
+	if err := c.JSON(map[string]string{"error": msg}); err != nil {
+		slog.Error("filemanager: write error json", "err", err)
+	}
+}
+
+// itemReason is the per-item message for a policy rejection.
+func itemReason(err error) string {
+	if errors.Is(err, storage.ErrRejected) || errors.Is(err, storage.ErrBadPath) {
+		return err.Error()
+	}
+	return "保存失败"
+}
+
+// fmMkdir creates one directory.
+func (a *Admin) fmMkdir(c *inertia.Context) {
+	var req struct{ Path, Name string }
+	if !a.fmDecode(c, &req) {
+		return
+	}
+	if err := a.Storage.Mkdir(c.Request.Context(), req.Path, req.Name); err != nil {
+		a.fmFail(c, err)
+		return
+	}
+	a.fmOK(c, map[string]any{})
+}
+
+// fmRename renames one entry inside its own directory.
+func (a *Admin) fmRename(c *inertia.Context) {
+	var req struct{ Path, Name string }
+	if !a.fmDecode(c, &req) {
+		return
+	}
+	if err := a.Storage.Rename(c.Request.Context(), req.Path, req.Name); err != nil {
+		a.fmFail(c, err)
+		return
+	}
+	a.fmOK(c, map[string]any{})
+}
+
+// fmMove relocates entries into another directory.
+func (a *Admin) fmMove(c *inertia.Context) {
+	var req struct {
+		Paths []string `json:"paths"`
+		To    string   `json:"to"`
+	}
+	if !a.fmDecode(c, &req) {
+		return
+	}
+	fails, err := a.Storage.Move(c.Request.Context(), req.Paths, req.To)
+	if err != nil {
+		a.fmFail(c, err)
+		return
+	}
+	a.fmOK(c, map[string]any{"errors": itemErrors(fails)})
+}
+
+// fmDelete removes entries, recursively for directories.
+func (a *Admin) fmDelete(c *inertia.Context) {
+	var req struct {
+		Paths []string `json:"paths"`
+	}
+	if !a.fmDecode(c, &req) {
+		return
+	}
+	fails, err := a.Storage.Delete(c.Request.Context(), req.Paths)
+	if err != nil {
+		a.fmFail(c, err)
+		return
+	}
+	a.fmOK(c, map[string]any{"errors": itemErrors(fails)})
+}
+
+// fmDecode reads a JSON request body, answering 422 and reporting false when it
+// cannot. The 1MB ceiling is for a body of paths; anything larger is not one.
+func (a *Admin) fmDecode(c *inertia.Context, dst any) bool {
+	dec := json.NewDecoder(io.LimitReader(c.Request.Body, 1<<20))
+	if err := dec.Decode(dst); err != nil {
+		c.Status(http.StatusUnprocessableEntity)
+		if err := c.JSON(map[string]string{"error": "请求格式不正确"}); err != nil {
+			slog.Error("filemanager: write error json", "err", err)
+		}
+		return false
+	}
+	return true
+}
+
+// itemErrors renders per-item failures in the response shape §5.2 fixes.
+func itemErrors(in []storage.ItemError) []map[string]string {
+	out := make([]map[string]string, 0, len(in))
+	for _, e := range in {
+		out = append(out, map[string]string{"name": e.Name, "error": e.Reason})
+	}
+	return out
+}

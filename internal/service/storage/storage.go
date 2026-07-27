@@ -465,6 +465,12 @@ func (s *Service) Delete(ctx context.Context, names []string) ([]ItemError, erro
 	return fails, nil
 }
 
+// SetMaxUploadSizeForTest and SetMaxRequestSizeForTest lower the caps from a
+// test. They exist because the two limits have different failure shapes (§5.2)
+// and proving that needs both to be reachable; production sets them in config.
+func (s *Service) SetMaxUploadSizeForTest(n int64)  { s.cfg.MaxUploadSize = n }
+func (s *Service) SetMaxRequestSizeForTest(n int64) { s.cfg.MaxRequestSize = n }
+
 // reason turns a backend error into a message safe to hand a browser.
 func reason(err error) string {
 	switch {

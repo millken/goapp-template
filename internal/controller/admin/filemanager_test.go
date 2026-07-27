@@ -1,13 +1,18 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/millken/goapp-template/internal/service/session"
 	"github.com/millken/goapp-template/internal/service/storage"
 	"github.com/millken/inertia"
 )
@@ -140,5 +145,163 @@ func TestFileManager_AGroupWithoutAccessIsRefused(t *testing.T) {
 	code, _ := getJSON(t, eng, cookie, "/admin/filemanager/api/list")
 	if code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403", code)
+	}
+}
+
+// postJSON drives an authenticated JSON POST carrying the CSRF header, which is
+// how the real client sends it — and, per csrf.go, is also what leaves the body
+// unread so a multipart upload can stream.
+func postJSON(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, path, body string) (int, map[string]any) {
+	t.Helper()
+	token, ck := csrfFor(t, eng, cookie, "/admin")
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set(session.CSRFHeader, token)
+	r.AddCookie(ck)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+	var out map[string]any
+	if w.Body.Len() > 0 && strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v; body: %s", err, w.Body.String())
+		}
+	}
+	return w.Code, out
+}
+
+// uploadBody builds a multipart body with one part per file.
+func uploadBody(t *testing.T, files map[string]string) (string, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	// Sorted so the body is deterministic and a failing test is reproducible.
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		part, err := mw.CreateFormFile("files", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte(files[name])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String(), mw.FormDataContentType()
+}
+
+func postUpload(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, path, body, ctype string) (int, map[string]any) {
+	t.Helper()
+	token, ck := csrfFor(t, eng, cookie, "/admin")
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	r.Header.Set("Content-Type", ctype)
+	r.Header.Set(session.CSRFHeader, token)
+	r.AddCookie(ck)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+	var out map[string]any
+	if w.Body.Len() > 0 && strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode: %v; body: %s", err, w.Body.String())
+		}
+	}
+	return w.Code, out
+}
+
+func TestFileManagerUpload_SavesTheGoodOnesAndReportsTheBadOne(t *testing.T) {
+	// This is the assertion a single http.MaxBytesReader implementation fails:
+	// one oversized file among several must be an item error, not a dead body.
+	eng, adm, cookie := fmStack(t)
+	adm.Storage.SetMaxUploadSizeForTest(4)
+
+	body, ctype := uploadBody(t, map[string]string{
+		"ok.png":  "abc",
+		"big.png": "way too many bytes",
+		"bad.exe": "x",
+	})
+	code, out := postUpload(t, eng, cookie, "/admin/filemanager/api/upload", body, ctype)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %+v", code, out)
+	}
+	entries, _ := out["entries"].([]any)
+	if len(entries) != 1 {
+		t.Errorf("entries = %v, want only ok.png", out["entries"])
+	}
+	fails, _ := out["errors"].([]any)
+	if len(fails) != 2 {
+		t.Errorf("errors = %v, want big.png and bad.exe", out["errors"])
+	}
+	if _, err := adm.Storage.Stat(context.Background(), "ok.png"); err != nil {
+		t.Errorf("the good file must be on disk: %v", err)
+	}
+}
+
+func TestFileManagerUpload_OverTheRequestCeilingIsAWholeRequestFailure(t *testing.T) {
+	eng, adm, cookie := fmStack(t)
+	adm.Storage.SetMaxRequestSizeForTest(32)
+
+	body, ctype := uploadBody(t, map[string]string{"a.png": strings.Repeat("x", 512)})
+	code, out := postUpload(t, eng, cookie, "/admin/filemanager/api/upload", body, ctype)
+	if code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", code)
+	}
+	if _, ok := out["errors"]; ok {
+		t.Error("a body-level failure must not pretend to be a per-item report")
+	}
+}
+
+func TestFileManagerMkdirRenameMoveDelete(t *testing.T) {
+	eng, adm, cookie := fmStack(t)
+	ctx := context.Background()
+
+	if code, out := postJSON(t, eng, cookie, "/admin/filemanager/api/mkdir",
+		`{"path":"","name":"photos"}`); code != http.StatusOK {
+		t.Fatalf("mkdir: status = %d, body %+v", code, out)
+	}
+	if code, _ := postJSON(t, eng, cookie, "/admin/filemanager/api/mkdir",
+		`{"path":"","name":"photos"}`); code != http.StatusConflict {
+		t.Errorf("a second mkdir: status = %d, want 409", code)
+	}
+
+	if _, err := adm.Storage.Upload(ctx, "", "a.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := postJSON(t, eng, cookie, "/admin/filemanager/api/rename",
+		`{"path":"a.png","name":"b.png"}`); code != http.StatusOK {
+		t.Fatalf("rename: status = %d, body %+v", code, out)
+	}
+	if _, err := adm.Storage.Stat(ctx, "b.png"); err != nil {
+		t.Errorf("renamed file missing: %v", err)
+	}
+
+	if code, out := postJSON(t, eng, cookie, "/admin/filemanager/api/move",
+		`{"paths":["b.png","ghost.png"],"to":"photos"}`); code != http.StatusOK {
+		t.Fatalf("move: status = %d, body %+v", code, out)
+	} else if fails, _ := out["errors"].([]any); len(fails) != 1 {
+		t.Errorf("move errors = %v, want just ghost.png", out["errors"])
+	}
+	if _, err := adm.Storage.Stat(ctx, "photos/b.png"); err != nil {
+		t.Errorf("moved file missing: %v", err)
+	}
+
+	if code, out := postJSON(t, eng, cookie, "/admin/filemanager/api/delete",
+		`{"paths":["photos"]}`); code != http.StatusOK {
+		t.Fatalf("delete: status = %d, body %+v", code, out)
+	}
+	if _, err := adm.Storage.Stat(ctx, "photos"); err == nil {
+		t.Error("delete must be recursive")
+	}
+}
+
+func TestFileManagerMutations_RequireTheCSRFHeader(t *testing.T) {
+	eng, _, cookie := fmStack(t)
+	r := httptest.NewRequest(http.MethodPost, "/admin/filemanager/api/mkdir",
+		strings.NewReader(`{"path":"","name":"x"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 without a token", w.Code)
 	}
 }
