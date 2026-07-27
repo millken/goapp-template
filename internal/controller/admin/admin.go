@@ -78,14 +78,20 @@ func (a *Admin) Validate() error {
 	return nil
 }
 
-// Mount wires the admin shell onto eng: public login routes plus the mount and
-// logout guarded by the auth middleware.
+// Mount registers the admin area's own routes: the public login pair, the two
+// authentication-only exemptions (logout and the dashboard), the user and group
+// resources through the registrar, and the account page — the third exemption,
+// which must not be permission-gated. See mountAccount for why.
 func (a *Admin) Mount(eng *inertia.Engine) {
 	auth := a.AuthMiddleware()
 	eng.GET(a.LoginPath(), a.LoginForm)    // public
 	eng.POST(a.LoginPath(), a.LoginSubmit) // public
 	eng.POST(a.mount()+"/logout", auth, a.Logout)
 	eng.GET(a.mount(), auth, a.Dashboard)
+
+	a.mountUsers(eng)
+	a.mountGroups(eng)
+	a.mountAccount(eng)
 }
 
 // Prefix returns the resolved admin mount prefix (used by generated resources).

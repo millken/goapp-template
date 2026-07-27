@@ -13,12 +13,12 @@ import (
 	"github.com/millken/inertia"
 )
 
-// adminStack is loginStack plus the user and group routes mounted, which is what
-// every test below needs.
+// adminStack is loginStack, which mounts the user and group routes as part of
+// Mount — this helper just adds the registration check and a cookie, which is
+// what every test below needs.
 func adminStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	t.Helper()
 	eng, adm := loginStack(t)
-	adm.mountUsers(eng)
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("routes did not register: %v", err)
 	}

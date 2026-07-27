@@ -304,3 +304,37 @@ func TestRegistrar_WiredRouteIsEnforced(t *testing.T) {
 		t.Error("handler ran despite the group lacking post.access")
 	}
 }
+
+// Mount must register everything, and the catalogue is how we check: the user
+// and group resources contribute four keys between them, and a resource whose
+// Mount call was forgotten shows up as a missing key rather than as a 404 nobody
+// notices until a page is opened.
+func TestMount_RegistersUsersGroupsAndAccount(t *testing.T) {
+	eng := newTestEngine(t)
+	a := New(nil, &Config{Mount: "/admin"})
+	if err := a.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	a.Mount(eng)
+	if err := eng.RegistrationError(); err != nil {
+		t.Fatalf("routes did not register: %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, p := range a.Permissions() {
+		got[p.Key] = true
+	}
+	for _, want := range []string{"user.access", "user.modify", "group.access", "group.modify"} {
+		if !got[want] {
+			t.Errorf("catalogue missing %q — a resource was not mounted", want)
+		}
+	}
+
+	// The account page is deliberately absent from the catalogue: it is exempt.
+	for _, unwanted := range []string{"account.access", "account.modify"} {
+		if got[unwanted] {
+			t.Errorf("%q exists — the account route must stay exempt, or a user "+
+				"with no permissions could never change their password", unwanted)
+		}
+	}
+}

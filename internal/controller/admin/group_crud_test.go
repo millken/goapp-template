@@ -14,12 +14,12 @@ import (
 	"github.com/millken/inertia"
 )
 
-// groupStack mounts both resources, since the group tests need users too.
+// groupStack is loginStack, which mounts both the user and group resources as
+// part of Mount — the group tests need users too, so this is just the
+// registration check and a cookie.
 func groupStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	t.Helper()
 	eng, adm := loginStack(t)
-	adm.mountUsers(eng)
-	adm.mountGroups(eng)
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("routes did not register: %v", err)
 	}

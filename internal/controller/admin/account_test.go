@@ -10,10 +10,11 @@ import (
 	"github.com/millken/inertia"
 )
 
+// accountStack is loginStack, which mounts the account page as part of Mount —
+// this helper just adds the registration check and a cookie.
 func accountStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	t.Helper()
 	eng, adm := loginStack(t)
-	adm.mountAccount(eng)
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("routes did not register: %v", err)
 	}
