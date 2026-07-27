@@ -266,12 +266,20 @@ func TestLogout_ClearsCookie(t *testing.T) {
 // loginAndGetCookie signs in as the seeded user and returns the session cookie.
 func loginAndGetCookie(t *testing.T, eng *inertia.Engine) *http.Cookie {
 	t.Helper()
-	r, _ := postForm(t, eng, nil, "/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}})
+	return loginAs(t, eng, "alice", "pw")
+}
+
+// loginAs signs in as an arbitrary seeded user and returns the session cookie.
+func loginAs(t *testing.T, eng *inertia.Engine, username, password string) *http.Cookie {
+	t.Helper()
+	r, _ := postForm(t, eng, nil, "/admin/login", url.Values{
+		"username": {username}, "password": {password},
+	})
 	w := httptest.NewRecorder()
 	eng.ServeHTTP(w, r)
 	cookies := w.Result().Cookies()
 	if len(cookies) == 0 {
-		t.Fatalf("login did not set a session cookie (status %d)", w.Code)
+		t.Fatalf("login as %s set no cookie (status %d)", username, w.Code)
 	}
 	return &http.Cookie{Name: cookies[0].Name, Value: cookies[0].Value}
 }

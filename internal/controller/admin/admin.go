@@ -104,9 +104,9 @@ func (a *Admin) Validate() error {
 }
 
 // Mount registers the admin area's own routes: the public login pair, the two
-// authentication-only exemptions (logout and the dashboard), the user and group
-// resources through the registrar, and the account page — the third exemption,
-// which must not be permission-gated. See mountAccount for why.
+// authentication-only exemptions (logout and the dashboard), the user, group
+// and file manager resources through the registrar, and the account page — the
+// third exemption, which must not be permission-gated. See mountAccount for why.
 func (a *Admin) Mount(eng *inertia.Engine) {
 	auth := a.AuthMiddleware()
 	eng.GET(a.LoginPath(), a.LoginForm)    // public
@@ -117,6 +117,17 @@ func (a *Admin) Mount(eng *inertia.Engine) {
 	a.mountUsers(eng)
 	a.mountGroups(eng)
 	a.mountAccount(eng)
+
+	//goappctl:storage
+	// a.Services itself is nil in TestMount_RegistersUsersGroupsAndAccount
+	// (New(nil, ...)), and a.Storage is nil in every test built on loginStack,
+	// which predates this component and does not fill it — either check must
+	// come first, or the promoted field access panics before it ever reads
+	// Storage. Never nil in serve.go, which starts storage before Mount.
+	if a.Services != nil && a.Storage != nil {
+		a.mountFileManager(eng)
+	}
+	//goappctl:end
 }
 
 // Prefix returns the resolved admin mount prefix (used by generated resources).
