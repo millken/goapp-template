@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -15,9 +15,14 @@ import { describe, expect, it } from 'vitest'
 //
 // Generator templates are in scope too: a scaffolded page copies whichever
 // habit templates/admin/*.vue.tmpl has, for every resource its author ever
-// generates.
+// generates. But `cmd/goappctl` is tooling that `goappctl init` deletes from
+// every generated project, so that half only exists in the template's own
+// checkout. It is a separate `it` — skipped, not silently empty, when the
+// directory is gone — so a generated project's `pnpm test` passes while the
+// template's own run still exercises it.
 const root = new URL('..', import.meta.url).pathname
 const templatesDir = '../cmd/goappctl/internal/scaffold/templates/admin'
+const templatesPresent = existsSync(join(root, templatesDir))
 
 function filesWithSuffix(dir: string, suffix: string, out: string[] = []): string[] {
   for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
@@ -28,25 +33,38 @@ function filesWithSuffix(dir: string, suffix: string, out: string[] = []): strin
   return out
 }
 
-describe('every page that renders AdminShell forwards urlPrefix', () => {
-  it('has no <AdminShell> usage missing :url-prefix="urlPrefix"', () => {
-    const files = [
-      ...filesWithSuffix('pages/admin', '.vue'),
-      ...filesWithSuffix(templatesDir, '.vue.tmpl'),
-    ]
-    // The scan found the tree, not nothing.
-    expect(files.length).toBeGreaterThan(5)
-
-    const offenders: string[] = []
-    for (const file of files) {
-      const src = readFileSync(join(root, file), 'utf8')
-      for (const m of src.matchAll(/<AdminShell\b[^>]*>/g)) {
-        const tag = m[0]
-        if (!/:url-prefix="urlPrefix"/.test(tag)) {
-          offenders.push(`${file}: ${tag.replace(/\s+/g, ' ')}`)
-        }
+function offendingAdminShellUsages(files: string[]): string[] {
+  const offenders: string[] = []
+  for (const file of files) {
+    const src = readFileSync(join(root, file), 'utf8')
+    for (const m of src.matchAll(/<AdminShell\b[^>]*>/g)) {
+      const tag = m[0]
+      if (!/:url-prefix="urlPrefix"/.test(tag)) {
+        offenders.push(`${file}: ${tag.replace(/\s+/g, ' ')}`)
       }
     }
-    expect(offenders).toEqual([])
+  }
+  return offenders
+}
+
+describe('every page that renders AdminShell forwards urlPrefix', () => {
+  it('has no <AdminShell> usage missing :url-prefix="urlPrefix" (pages)', () => {
+    const files = filesWithSuffix('pages/admin', '.vue')
+    // The scan found the tree, not nothing.
+    expect(files.length).toBeGreaterThan(5)
+    expect(offendingAdminShellUsages(files)).toEqual([])
   })
+
+  // Only runs where cmd/goappctl exists — the template itself, not a
+  // generated project. it.skipIf reports as a skip in the run's output, so a
+  // directory that went missing for the wrong reason is visible, not a test
+  // that quietly covers nothing.
+  it.skipIf(!templatesPresent)(
+    'has no <AdminShell> usage missing :url-prefix="urlPrefix" (generator templates)',
+    () => {
+      const files = filesWithSuffix(templatesDir, '.vue.tmpl')
+      expect(files.length).toBeGreaterThan(0)
+      expect(offendingAdminShellUsages(files)).toEqual([])
+    },
+  )
 })
