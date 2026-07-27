@@ -1225,12 +1225,16 @@ func (s *Service) Rename(ctx context.Context, name, newName string) error {
 	if sanitiseFilename(newName) != newName || newName == "" {
 		return fmt.Errorf("%w: 新名称不合法", ErrBadPath)
 	}
-	target, err := join(path.Dir(strings.TrimSuffix(n, "/")), newName)
+	// path.Dir("a.png") is ".": this package spells the root "", and join
+	// would otherwise reject "." as an illegal segment. Decide the directory
+	// before building the target, not after.
+	dir := path.Dir(strings.TrimSuffix(n, "/"))
+	if dir == "." {
+		dir = ""
+	}
+	target, err := join(dir, newName)
 	if err != nil {
 		return err
-	}
-	if dir := path.Dir(n); dir == "." {
-		target = newName
 	}
 	return s.be.Rename(ctx, n, target)
 }
