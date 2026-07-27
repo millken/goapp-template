@@ -86,13 +86,20 @@ const setFilter = (v: string | number) => {
   if (props.searchKey) table.getColumn(props.searchKey)?.setFilterValue(String(v))
 }
 const colspan = computed(() => props.columns.length + (slots['row-actions'] ? 1 : 0))
+
+// The placeholder names the column the way the header does. searchKey is a field
+// key — "name", "username" — and putting that in front of a user reads like a
+// leak of the schema.
+const searchLabel = computed(
+  () => props.columns.find((c) => c.key === props.searchKey)?.label ?? props.searchKey,
+)
 </script>
 
 <template>
   <div class="space-y-4">
     <Input
       v-if="searchKey"
-      :placeholder="`按${searchKey}筛选…`"
+      :placeholder="`按${searchLabel}筛选…`"
       class="max-w-xs"
       @update:model-value="setFilter"
     />

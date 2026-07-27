@@ -112,4 +112,14 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* The page's own ground. Without it the document keeps the browser default —
+   white — and every translucent surface composites over that instead of over the
+   theme: the admin shell's bg-muted/40 came out light grey in dark mode, because
+   40% of a dark grey over white is a light grey. Set here rather than on the
+   shell so the colour is the document's, not one component's. */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
 /*goappctl:end*/

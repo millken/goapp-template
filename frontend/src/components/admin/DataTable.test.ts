@@ -102,4 +102,14 @@ describe('DataTable', () => {
     expect(el.querySelector('nav')).not.toBeNull() // the pager is actually present
     expect(el.querySelector('button button')).toBeNull()
   })
+
+  // searchKey is a field key — "name", "username". Showing it to the operator
+  // reads like a leak of the schema; the header already has a human name for
+  // that column, so the placeholder uses it.
+  it('names the search column the way its header does', () => {
+    const el = mount({ columns, data: rows(3), searchKey: 'name' })
+    const input = el.querySelector('input')!
+    expect(input.getAttribute('placeholder')).toContain('Name')
+    expect(input.getAttribute('placeholder')).not.toContain('按name')
+  })
 })
