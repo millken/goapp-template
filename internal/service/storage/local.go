@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 )
 
@@ -37,9 +39,16 @@ func (b *localBackend) List(_ context.Context, dir string) ([]Entry, error) {
 	for _, de := range des {
 		info, err := de.Info()
 		if err != nil {
-			// Raced with a delete between ReadDir and Info. It is gone; a
-			// listing that reports it would be lying about the present.
-			continue
+			// Raced with a delete between ReadDir and Info. The entry is gone,
+			// and a listing that reports it would be lying about what is present.
+			// We skip only this race condition, since any listing that includes
+			// a deleted entry is incomplete and misleading. Other errors—permission
+			// or I/O problems—must be returned to the caller so they know the
+			// listing may be incomplete.
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, err
 		}
 		out = append(out, entryOf(de.Name(), info))
 	}
