@@ -180,13 +180,15 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 另外还会在**编译产物**里查有没有"引用了却没人定义"的自定义属性 —— 这类问题渲染出来
 总是"看着像那么回事"，靠肉眼一张截图抓一个。
 
-有三处改动没有跟上游保持一致，
+有四处改动没有跟上游保持一致，
 `gen ui --force` 更新组件时会把它们冲掉 —— `frontend/src/components/ui/deviations.test.ts`
 会因此变红，那时要做的是把改动补回去而不是删测试：`alert/index.ts` 多了一个 `success` 变体
 （上游只有 `default`、`destructive`）；`sonner/Sonner.vue` 补了一行
 `import "vue-sonner/style.css"`（vue-sonner 2.x 把样式单独 export，registry 的拷贝没引，
 不引的话 toast 既没有定位也没有卡片样式）；所有 `@/registry/default/ui` 导入都已重写成
-`@/components/ui`。在这些 shadcn 拷贝之上，`frontend/src/components/admin/` 放的是拼出后台页面的
+`@/components/ui`；**控件高度整体降一档**（`button` 默认、`input`、`select` 触发器
+从 `h-10` 改成 `h-9`），因为 registry 出的是 40px 而本后台的设计是 36px —— 这样
+一个普通 `<Button>` 不用每处都传 `size="sm"` 就是对的高度。在这些 shadcn 拷贝之上，`frontend/src/components/admin/` 放的是拼出后台页面的
 组合组件（`AdminShell`、`PageHeader`、`DataTable`、`FormField`、`ConfirmDialog`、`ThemeToggle`）——
 生成的页面靠它们拼装，不直接摸 shadcn 层。
 

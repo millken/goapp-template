@@ -18,13 +18,19 @@ export const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // LOCAL DEVIATION from the registry copy — keep it through
+      // `gen ui --force`, and see frontend/scripts/tokens.test.ts.
+      // The registry ships a 40px control height (h-10 default, h-10 input,
+      // h-10 select trigger). This admin's approved design is 36px, and the
+      // three sizes below are shifted down one step to match, so a plain
+      // <Button> is 36px without every call site passing size="sm".
       size: {
-        "default": "h-10 px-4 py-2",
-        "sm": "h-9 rounded-md px-3",
-        "lg": "h-11 rounded-md px-8",
-        "icon": "h-10 w-10",
-        "icon-sm": "size-9",
-        "icon-lg": "size-11",
+        "default": "h-9 px-4 py-2",
+        "sm": "h-8 rounded-md px-3",
+        "lg": "h-10 rounded-md px-8",
+        "icon": "size-9",
+        "icon-sm": "size-8",
+        "icon-lg": "size-10",
       },
     },
     defaultVariants: {

@@ -119,6 +119,20 @@ describe('DataTable', () => {
     expect(el.textContent).toContain('共 25 条中筛出')
   })
 
+  // The registry's pager buttons put English in their default slots, and the
+  // approved design has arrows only — no First/Last. Passing content beats
+  // editing the copies, which gen ui --force would revert, so this pins that the
+  // words never come back.
+  it('renders arrows, not English words, and no First/Last', async () => {
+    const el = mount({ columns, data: rows(45) })
+    await nextTick()
+    const pager = el.querySelector('nav')!
+    for (const word of ['First', 'Previous', 'Next', 'Last']) {
+      expect(pager.textContent).not.toContain(word)
+    }
+    expect(pager.querySelectorAll('svg').length).toBe(2) // prev and next
+  })
+
   // PaginationItem renders its own <button>, so using it to wrap
   // First/Previous/Next/Last nests a button inside a button — browsers reparse
   // that and hydration then disagrees with the server's markup. The real guard

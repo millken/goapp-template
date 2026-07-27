@@ -11,15 +11,15 @@ import {
   getSortedRowModel, useVueTable,
   type ColumnDef, type ColumnFiltersState, type SortingState,
 } from '@tanstack/vue-table'
-import { ArrowUpDown, MoreHorizontal } from 'lucide-vue-next'
+import { ArrowUpDown, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import {
-  Pagination, PaginationContent, PaginationEllipsis, PaginationFirst,
-  PaginationItem, PaginationLast, PaginationNext, PaginationPrevious,
+  Pagination, PaginationContent, PaginationEllipsis,
+  PaginationItem, PaginationNext, PaginationPrevious,
 } from '@/components/ui/pagination'
 import {
   Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow,
@@ -159,7 +159,7 @@ const searchLabel = computed(
          A table whose footer disappears entirely leaves no answer to "how many
          are there", which is the question a filtered list raises first. -->
     <div class="flex items-center justify-between gap-4">
-      <span class="text-sm text-muted-foreground">
+      <span class="shrink-0 text-sm whitespace-nowrap text-muted-foreground">
         共 {{ table.getFilteredRowModel().rows.length }} 条<template
           v-if="table.getFilteredRowModel().rows.length !== data.length"
         >（共 {{ data.length }} 条中筛出）</template>
@@ -171,12 +171,17 @@ const searchLabel = computed(
         :total="table.getFilteredRowModel().rows.length"
         :page="table.getState().pagination.pageIndex + 1"
         :sibling-count="1"
-        show-edges
+        class="ml-auto"
         @update:page="(p) => table.setPageIndex(p - 1)"
       >
-      <PaginationContent v-slot="{ items }" class="justify-end">
-          <PaginationFirst />
-          <PaginationPrevious />
+        <PaginationContent v-slot="{ items }" class="justify-end">
+          <!-- Arrows only, and no First/Last: that is the approved design, and it
+               sidesteps the English words the registry copies put in these
+               buttons' default slots. Passing content beats editing the copies,
+               which gen ui --force would revert. -->
+          <PaginationPrevious>
+            <ChevronLeft class="size-4" />
+          </PaginationPrevious>
           <template v-for="(item, i) in items">
             <PaginationItem
               v-if="item.type === 'page'"
@@ -186,8 +191,9 @@ const searchLabel = computed(
             >{{ item.value }}</PaginationItem>
             <PaginationEllipsis v-else :key="`gap-${i}`" :index="i" />
           </template>
-          <PaginationNext />
-          <PaginationLast />
+          <PaginationNext>
+            <ChevronRight class="size-4" />
+          </PaginationNext>
         </PaginationContent>
       </Pagination>
     </div>
