@@ -29,6 +29,26 @@ const read = (rel: string) => readFileSync(join(root, rel), 'utf8')
 const SEMANTIC =
   /\b(?:text|bg|border|ring|fill|from|to|via)-(background|foreground|card|popover|primary|secondary|muted|accent|destructive|sidebar)(-foreground)?\b/g
 
+// A <button> is shrink-to-fit even when it is a flex container, so a menu item
+// rendered as one stops short of the menu's width and its hover highlight boxes
+// the text rather than the row. Nothing about that fails loudly — it just looks
+// slightly wrong, and only on hover, which is how it shipped once already.
+describe('dropdown menu items rendered as buttons', () => {
+  it('carry w-full so the highlight fills the row', () => {
+    const files = [...sources('src/components'), ...sources('pages')]
+    const offenders: string[] = []
+    for (const file of files) {
+      for (const m of read(file).matchAll(/<DropdownMenuItem\b[^>]*>/g)) {
+        const tag = m[0]
+        if (tag.includes('as="button"') && !/\bclass="[^"]*\bw-full\b/.test(tag)) {
+          offenders.push(`${file}: ${tag.replace(/\s+/g, ' ')}`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+})
+
 describe('theme tokens', () => {
   const theme = read('src/styles/main.css')
   const declared = new Set([...theme.matchAll(/--color-([a-z-]+):/g)].map((m) => m[1]))

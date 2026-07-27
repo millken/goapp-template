@@ -77,7 +77,10 @@ const askDelete = (row: Record<string, unknown>) => {
           </template>
           <template #row-actions="{ row }">
             <DropdownMenuItem as="a" :href="`${basePath}/${row.id}/edit`">编辑</DropdownMenuItem>
-            <DropdownMenuItem as="button" type="submit" :form="`status-${row.id}`">
+            <!-- w-full because a <button> is shrink-to-fit even as a flex
+                 container, so without it the hover highlight stops at the text
+                 instead of filling the row. -->
+            <DropdownMenuItem as="button" type="submit" class="w-full" :form="`status-${row.id}`">
               {{ row.status === 1 ? '禁用' : '启用' }}
             </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" @select="askDelete(row)">删除</DropdownMenuItem>
