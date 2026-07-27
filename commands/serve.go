@@ -4,6 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	//goappctl:storage
+	// io/fs, net/http and strings are needed only by storageFileServer below;
+	// if this component is stripped, both go together.
+	"io/fs"
+	"net/http"
+	"strings"
+	//goappctl:end
 
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/config"
@@ -119,8 +126,25 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	// doc comment), so the prefix must end in "/" the way inertia's own
 	// e.StaticFS("/assets/", ...) convention does — the bare URLPrefix leaves
 	// a leading "/" that no fs.FS accepts as a valid relative path.
-	eng.GET(storSvc.URLPrefix()+"/*",
-		inertia.StaticFileServer(storSvc.URLPrefix()+"/", storSvc.FS()))
+	//
+	// Wrapped rather than registered directly: fs.FS.Open answers
+	// fs.ErrInvalid for a path fs.ValidPath rejects (a ".." segment survives
+	// request parsing intact, encoded or not, since neither net/http nor the
+	// router clean it), and fs.ErrInvalid is neither fs.ErrNotExist nor
+	// fs.ErrPermission — so inertia's default handling falls through to a 500
+	// and an ERROR log line for every malformed request a scanner sends.
+	// storageFileServer answers 404 instead, same as a path that is merely
+	// missing.
+	//
+	// Registered at both the bare prefix and the wildcard: the router's radix
+	// tree keeps its own (unset) handler slot at the bare-prefix node, so a
+	// request for exactly "/uploads/" never reaches the wildcard's handler at
+	// all without the first registration — it hits a nil handler in the
+	// router and 500s before storageFileServer ever runs.
+	uploadsPrefix := storSvc.URLPrefix() + "/"
+	uploadsServe := storageFileServer(uploadsPrefix, storSvc.FS())
+	eng.GET(uploadsPrefix, uploadsServe)
+	eng.GET(uploadsPrefix+"*", uploadsServe)
 	//goappctl:end
 	controller.MountAll(eng, svc) // generated non-admin areas
 
@@ -144,3 +168,27 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	_ = eng.Close()
 	return serveErr
 }
+
+//goappctl:storage
+
+// storageFileServer wraps inertia.StaticFileServer with a validity check on
+// the path fs.FS.Open would receive, so a malformed request answers 404
+// instead of an inertia 500-plus-ERROR-log-line. See the route registration
+// above for why it is also worth registering at the bare prefix, not just the
+// wildcard.
+func storageFileServer(prefix string, fsys fs.FS) inertia.HandlerFunc {
+	next := inertia.StaticFileServer(prefix, fsys)
+	return func(c *inertia.Context) {
+		p := strings.TrimPrefix(c.Request.URL.Path, prefix)
+		if p == "" || strings.HasSuffix(p, "/") {
+			p += "index.html"
+		}
+		if !fs.ValidPath(p) {
+			http.NotFound(c.Writer, c.Request)
+			return
+		}
+		next(c)
+	}
+}
+
+//goappctl:end

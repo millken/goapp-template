@@ -269,7 +269,10 @@ named in §8.
 
 ```go
 //goappctl:storage
-eng.GET(stor.URLPrefix()+"/*", inertia.StaticFileServer(stor.URLPrefix(), stor.FS()))
+uploadsPrefix := stor.URLPrefix() + "/"
+uploadsServe := storageFileServer(uploadsPrefix, stor.FS())
+eng.GET(uploadsPrefix, uploadsServe)
+eng.GET(uploadsPrefix+"*", uploadsServe)
 //goappctl:end
 ```
 
@@ -287,6 +290,24 @@ and the two modes are two different contests:
 - **dev** — `StaticFS` registered nothing, so there is no `/*` to beat. The
   competition is `ServeHTTP`'s fallback (`engine.go:347`), which proxies to Vite
   only when the router finds no route at all.
+
+Not a bare `inertia.StaticFileServer(...)` either: `StaticFileServer` trims its
+prefix off the already-decoded `r.URL.Path` and hands the rest straight to
+`fs.FS.Open`, which answers `fs.ErrInvalid` for a path `fs.ValidPath` rejects —
+a `..` segment survives request parsing intact, encoded or not (`..`,
+`..%2f`, `%2e%2e%2f` all decode to the same thing), since neither `net/http`
+nor the router clean it. `fs.ErrInvalid` is neither `fs.ErrNotExist` nor
+`fs.ErrPermission`, so unwrapped this falls through to inertia's 500 handler
+and an ERROR log line for every malformed request an unauthenticated scanner
+sends — nothing leaks (`os.Root.FS()` still refuses), but it is the wrong
+status and free log noise. `storageFileServer` wraps the handler with an
+`fs.ValidPath` check and answers 404 instead, and is registered at **both**
+the bare prefix and the wildcard: the router's radix tree keeps its own
+(unset) handler slot at the bare-prefix node, so a request for exactly
+`/uploads/` — no further path segment — never reaches the wildcard's handler
+at all without the first registration; it hits a nil handler in the router
+and 500s before `storageFileServer` ever runs. Covered by
+`commands/serve_test.go`.
 
 ### 5.2 The admin API
 

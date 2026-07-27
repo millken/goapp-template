@@ -241,10 +241,10 @@ func (f *fakeSharedListBackend) Stat(context.Context, string) (Entry, error) {
 func (f *fakeSharedListBackend) Open(context.Context, string) (io.ReadSeekCloser, error) {
 	return nil, fs.ErrNotExist
 }
-func (f *fakeSharedListBackend) Save(context.Context, string, io.Reader) error   { return nil }
-func (f *fakeSharedListBackend) Mkdir(context.Context, string) error             { return nil }
-func (f *fakeSharedListBackend) Rename(context.Context, string, string) error    { return nil }
-func (f *fakeSharedListBackend) Remove(context.Context, string) error            { return nil }
+func (f *fakeSharedListBackend) Save(context.Context, string, io.Reader) error { return nil }
+func (f *fakeSharedListBackend) Mkdir(context.Context, string) error           { return nil }
+func (f *fakeSharedListBackend) Rename(context.Context, string, string) error  { return nil }
+func (f *fakeSharedListBackend) Remove(context.Context, string) error          { return nil }
 
 // TestBrowse_DoesNotMutateTheBackendsSlice guards an unstated obligation: a
 // filtered Browse used to run slices.DeleteFunc directly on whatever List
