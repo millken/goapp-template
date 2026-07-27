@@ -9,7 +9,7 @@
 // (injected by resolve, present under SSR too); location is only a client-side
 // fallback, never touched at setup time — QuickJS has no location.
 import { computed } from 'vue'
-import { ChevronDown, FileText, Gauge, LogOut, Settings, Users } from 'lucide-vue-next'
+import { ChevronDown, FileText, Gauge, KeyRound, LogOut, Settings, Users } from 'lucide-vue-next'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -162,6 +162,11 @@ const flashVariant = (kind: string) =>
               <DropdownMenuLabel class="font-normal text-muted-foreground">
                 Signed in as <span class="font-medium text-foreground">{{ user?.username }}</span>
               </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem as="a" :href="`${base}/account/password`">
+                <KeyRound />
+                修改密码
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <form :action="`${base}/logout`" method="post">
                 <DropdownMenuItem as="button" type="submit" class="w-full">

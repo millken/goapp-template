@@ -119,4 +119,10 @@ describe('AdminShell', () => {
     const el = mount(props)
     expect(el.querySelector('button button')).toBeNull()
   })
+
+  it('links to the account password page from the user menu', async () => {
+    const el = mount(props)
+    await openUserMenu(el)
+    expect(document.querySelector('a[href="/admin/account/password"]')).not.toBeNull()
+  })
 })
