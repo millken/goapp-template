@@ -1,0 +1,228 @@
+package storage
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func startedService(t *testing.T) *Service {
+	t.Helper()
+	s := New(&Config{Root: t.TempDir()})
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Stop(context.Background()) })
+	return s
+}
+
+func TestClean_RejectsEverythingThatEscapesOrConfuses(t *testing.T) {
+	bad := []string{
+		"..", "../etc", "a/../../b", "/etc/passwd", `a\b`, "a/\x00b",
+		"a//b", "a/./b", " ", strings.Repeat("x", 256),
+	}
+	for _, in := range bad {
+		t.Run(fmt.Sprintf("%q", in), func(t *testing.T) {
+			if _, err := clean(in); !errors.Is(err, ErrBadPath) {
+				t.Errorf("clean(%q) err = %v, want ErrBadPath", in, err)
+			}
+		})
+	}
+
+	good := map[string]string{
+		"":             "",
+		"a.png":        "a.png",
+		"photos":       "photos",
+		"photos/a.png": "photos/a.png",
+		"图片/一.png":     "图片/一.png",
+	}
+	for in, want := range good {
+		if got, err := clean(in); err != nil || got != want {
+			t.Errorf("clean(%q) = %q, %v; want %q, nil", in, got, err, want)
+		}
+	}
+}
+
+func TestStart_CreatesTheRootAndRejectsAnEmptyOne(t *testing.T) {
+	if err := New(&Config{}).Start(context.Background()); err == nil {
+		t.Error("an empty root must be refused, not defaulted")
+	}
+	if err := New(nil).Start(context.Background()); err == nil {
+		t.Error("a missing [storage] section must be refused")
+	}
+	s := startedService(t)
+	if s.URLPrefix() != "/uploads" {
+		t.Errorf("URLPrefix default = %q", s.URLPrefix())
+	}
+}
+
+func TestUpload_EnforcesExtensionSizeAndCollisions(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+
+	if _, err := s.Upload(ctx, "", "evil.exe", strings.NewReader("x")); !errors.Is(err, ErrRejected) {
+		t.Errorf("an unlisted extension must be rejected, got %v", err)
+	}
+
+	s.cfg.MaxUploadSize = 4
+	if _, err := s.Upload(ctx, "", "big.png", strings.NewReader("12345")); !errors.Is(err, ErrRejected) {
+		t.Errorf("over the cap must be rejected, got %v", err)
+	}
+	if _, err := s.Stat(ctx, "big.png"); err == nil {
+		t.Error("a rejected upload must not leave the partial file behind")
+	}
+
+	s.cfg.MaxUploadSize = 1 << 20
+	first, err := s.Upload(ctx, "", "a.png", strings.NewReader("one"))
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	second, err := s.Upload(ctx, "", "a.png", strings.NewReader("two"))
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if first.Name != "a.png" || second.Name != "a-2.png" {
+		t.Errorf("collision: got %q then %q, want a.png then a-2.png", first.Name, second.Name)
+	}
+
+	// A client filename is a hostile string, not a path.
+	e, err := s.Upload(ctx, "", "../../x.png", strings.NewReader("x"))
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if e.Name != "x.png" {
+		t.Errorf("sanitised name = %q, want x.png", e.Name)
+	}
+}
+
+func TestBrowse_SortsFiltersAndPaginates(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	s.cfg.PageSize = 2
+
+	if err := s.Mkdir(ctx, "", "zebra"); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"Beta.png", "alpha.png", "gamma.png"} {
+		if _, err := s.Upload(ctx, "", n, strings.NewReader("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	page1, err := s.Browse(ctx, "", "", 1)
+	if err != nil {
+		t.Fatalf("Browse: %v", err)
+	}
+	if page1.Total != 4 || len(page1.Entries) != 2 {
+		t.Fatalf("page 1: total = %d, entries = %d; want 4 and 2", page1.Total, len(page1.Entries))
+	}
+	if page1.Entries[0].Name != "zebra" || !page1.Entries[0].IsDir {
+		t.Errorf("directories must sort first, got %q", page1.Entries[0].Name)
+	}
+	if page1.Entries[1].Name != "alpha.png" {
+		t.Errorf("case-insensitive name sort: got %q, want alpha.png", page1.Entries[1].Name)
+	}
+
+	page2, err := s.Browse(ctx, "", "", 2)
+	if err != nil {
+		t.Fatalf("Browse: %v", err)
+	}
+	if len(page2.Entries) != 2 || page2.Entries[0].Name != "Beta.png" {
+		t.Errorf("page 2 = %+v", page2.Entries)
+	}
+
+	filtered, err := s.Browse(ctx, "", "AM", 1)
+	if err != nil {
+		t.Fatalf("Browse: %v", err)
+	}
+	if filtered.Total != 1 || filtered.Entries[0].Name != "gamma.png" {
+		t.Errorf("filter: total = %d, entries = %+v", filtered.Total, filtered.Entries)
+	}
+}
+
+func TestBrowse_BuildsABreadcrumb(t *testing.T) {
+	s := startedService(t)
+	ctx := context.Background()
+	if err := s.Mkdir(ctx, "", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mkdir(ctx, "a", "b"); err != nil {
+		t.Fatal(err)
+	}
+	l, err := s.Browse(ctx, "a/b", "", 1)
+	if err != nil {
+		t.Fatalf("Browse: %v", err)
+	}
+	want := []Crumb{{Name: "全部文件", Path: ""}, {Name: "a", Path: "a"}, {Name: "b", Path: "a/b"}}
+	if len(l.Breadcrumb) != len(want) {
+		t.Fatalf("breadcrumb = %+v, want %+v", l.Breadcrumb, want)
+	}
+	for i := range want {
+		if l.Breadcrumb[i] != want[i] {
+			t.Errorf("crumb %d = %+v, want %+v", i, l.Breadcrumb[i], want[i])
+		}
+	}
+}
+
+func TestDeleteAndMove_ReportPerItemFailures(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if _, err := s.Upload(ctx, "", "a.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mkdir(ctx, "", "dst"); err != nil {
+		t.Fatal(err)
+	}
+
+	fails, err := s.Delete(ctx, []string{"a.png", "missing.png"})
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(fails) != 1 || fails[0].Name != "missing.png" {
+		t.Errorf("per-item failures = %+v, want only missing.png", fails)
+	}
+
+	if _, err := s.Upload(ctx, "", "b.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	fails, err = s.Move(ctx, []string{"b.png", "missing.png"}, "dst")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if len(fails) != 1 {
+		t.Errorf("per-item failures = %+v", fails)
+	}
+	if _, err := s.Stat(ctx, "dst/b.png"); err != nil {
+		t.Errorf("the movable item must still have moved: %v", err)
+	}
+}
+
+func TestDelete_RefusesTheRoot(t *testing.T) {
+	s := startedService(t)
+	fails, err := s.Delete(context.Background(), []string{""})
+	if err == nil && len(fails) == 0 {
+		t.Fatal("deleting the root must not be allowed")
+	}
+}
+
+func TestValidatePath_IsTheExportedGate(t *testing.T) {
+	s := startedService(t)
+	if err := s.ValidatePath(""); err != nil {
+		t.Errorf("an empty avatar means no avatar and must pass: %v", err)
+	}
+	if err := s.ValidatePath("a/b.png"); err != nil {
+		t.Errorf("a legal path must pass: %v", err)
+	}
+	if err := s.ValidatePath("../secret"); !errors.Is(err, ErrBadPath) {
+		t.Errorf("err = %v, want ErrBadPath", err)
+	}
+}
+
+func TestURLFor(t *testing.T) {
+	s := startedService(t)
+	if got := s.URLFor("a/b.png"); got != "/uploads/a/b.png" {
+		t.Errorf("URLFor = %q", got)
+	}
+}
