@@ -368,3 +368,27 @@ func TestFileManagerMutations_RequireTheCSRFHeader(t *testing.T) {
 		t.Errorf("status = %d, want 403 without a token", w.Code)
 	}
 }
+
+func TestResolve_DeliversCanBrowseFiles(t *testing.T) {
+	// The superuser seeded by loginStack may browse; the prop has to say so, or
+	// every image field in the admin degrades to a text box.
+	eng, _, cookie := fmStack(t)
+	r := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+	if !strings.Contains(w.Body.String(), "canBrowseFiles") {
+		t.Fatalf("the dashboard page carries no canBrowseFiles prop; body: %s", w.Body.String())
+	}
+	// The page body is the root HTML document, which embeds the Inertia props
+	// as JSON spliced into a quoted JS string literal (see inertia's
+	// escapeJSON): every `"` in the JSON is written out as the two bytes `\"`.
+	// So the *only* form that ever appears on the wire is the escaped one,
+	// `canBrowseFiles\":true` — a bare `canBrowseFiles":true` cannot occur here,
+	// and asserting it would be dead code. Matching just the escaped form is
+	// therefore a check that fails when the value is false or the key renamed,
+	// not one that could pass by accident.
+	if !strings.Contains(w.Body.String(), `canBrowseFiles\":true`) {
+		t.Errorf("canBrowseFiles is not true for a superuser; body: %s", w.Body.String())
+	}
+}

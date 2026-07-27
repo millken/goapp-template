@@ -88,6 +88,17 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 	c.Set("loginPath", a.LoginPath())
 	c.Set("currentPath", c.Request.URL.Path)
 
+	//goappctl:storage
+	// One prop, read by one component (ImagePicker), set here rather than in
+	// the handlers that render it. resolve is the only place already holding
+	// the caller's group: a page handler would have to look it up again, and
+	// the admin area's rule is one query per request. Deriving it client-side
+	// from adminMenu was the alternative and was rejected — it would make the
+	// picker's behaviour depend on a sidebar entry existing.
+	c.Set("canBrowseFiles", cl.group.Superuser ||
+		cl.group.Permissions.Allows("filemanager"+verbAccess))
+	//goappctl:end
+
 	// Every admin page renders at least the shell's logout form, so every admin
 	// page needs a token. resolve is the one place they all pass through.
 	token, err := a.Session.Session(c).CSRFToken(c.Request.Context())
