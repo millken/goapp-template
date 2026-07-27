@@ -119,14 +119,12 @@ func (a *Admin) Mount(eng *inertia.Engine) {
 	a.mountAccount(eng)
 
 	//goappctl:storage
-	// a.Services itself is nil in TestMount_RegistersUsersGroupsAndAccount
-	// (New(nil, ...)), and a.Storage is nil in every test built on loginStack,
-	// which predates this component and does not fill it — either check must
-	// come first, or the promoted field access panics before it ever reads
-	// Storage. Never nil in serve.go, which starts storage before Mount.
-	if a.Services != nil && a.Storage != nil {
-		a.mountFileManager(eng)
-	}
+	// Unconditional, like every other resource. Mounting reads no Storage —
+	// the handlers resolve it per request — so a test may fill svc.Storage
+	// after Mount, and a build carrying this block always has the routes. A
+	// nil check here would mean a misconfigured process silently serving an
+	// admin area with no file manager instead of failing at Start.
+	a.mountFileManager(eng)
 	//goappctl:end
 }
 

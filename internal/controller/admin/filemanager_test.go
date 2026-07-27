@@ -12,8 +12,12 @@ import (
 	"github.com/millken/inertia"
 )
 
-// fmStack is adminStack plus a started storage service on a temp directory.
-// The admin area reads svc.Storage, so it has to be filled before Mount.
+// fmStack is loginStack plus a started storage service on a temp directory.
+//
+// loginStack's Mount already registered the file manager's routes, so this
+// only fills the field they read. Mounting again here would be a duplicate
+// registration, which is what the engine's RegistrationError below would
+// report.
 func fmStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	t.Helper()
 	eng, adm := loginStack(t)
@@ -23,7 +27,6 @@ func fmStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	}
 	t.Cleanup(func() { _ = stor.Stop(context.Background()) })
 	adm.Storage = stor
-	adm.mountFileManager(eng)
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("routes did not register: %v", err)
 	}
