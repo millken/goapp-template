@@ -486,15 +486,15 @@ func (s *Service) Move(ctx context.Context, names []string, toDir string) ([]Ite
 			// item: one colliding name in a batch becomes one entry here, not
 			// a whole-request failure, and the rest of the batch still moves.
 			if _, err := s.be.Stat(ctx, target); err == nil {
-				fails = append(fails, ItemError{Name: raw, Reason: reason(fs.ErrExist)})
+				fails = append(fails, ItemError{Name: raw, Reason: Reason(fs.ErrExist)})
 				continue
 			} else if !errors.Is(err, fs.ErrNotExist) {
-				fails = append(fails, ItemError{Name: raw, Reason: reason(err)})
+				fails = append(fails, ItemError{Name: raw, Reason: Reason(err)})
 				continue
 			}
 		}
 		if err := s.be.Rename(ctx, n, target); err != nil {
-			fails = append(fails, ItemError{Name: raw, Reason: reason(err)})
+			fails = append(fails, ItemError{Name: raw, Reason: Reason(err)})
 		}
 	}
 	return fails, nil
@@ -514,7 +514,7 @@ func (s *Service) Delete(ctx context.Context, names []string) ([]ItemError, erro
 			continue
 		}
 		if err := s.be.Remove(ctx, n); err != nil {
-			fails = append(fails, ItemError{Name: raw, Reason: reason(err)})
+			fails = append(fails, ItemError{Name: raw, Reason: Reason(err)})
 		}
 	}
 	return fails, nil
@@ -526,9 +526,19 @@ func (s *Service) Delete(ctx context.Context, names []string) ([]ItemError, erro
 func (s *Service) SetMaxUploadSizeForTest(n int64)  { s.cfg.MaxUploadSize = n }
 func (s *Service) SetMaxRequestSizeForTest(n int64) { s.cfg.MaxRequestSize = n }
 
-// reason turns a backend error into a message safe to hand a browser.
-func reason(err error) string {
+// Reason turns a failure into a message safe to hand a browser. It is the
+// single vocabulary for a per-item or single-operation failure: Move and
+// Delete use it to build ItemError.Reason above, and the admin HTTP layer
+// (filemanager.go's fmFail and, formerly, its own separate itemReason) uses
+// it too — before consolidating here, two functions maintained overlapping
+// copies of these same strings, which is exactly what §5.2 says a new
+// endpoint must not be free to repeat. ErrBadPath and ErrRejected already
+// carry a message safe to show verbatim; anything else stays generic, because
+// the underlying error may name a filesystem path.
+func Reason(err error) string {
 	switch {
+	case errors.Is(err, ErrBadPath), errors.Is(err, ErrRejected):
+		return err.Error()
 	case errors.Is(err, fs.ErrNotExist):
 		return "不存在"
 	case errors.Is(err, fs.ErrExist):

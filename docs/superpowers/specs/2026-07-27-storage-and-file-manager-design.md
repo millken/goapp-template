@@ -227,6 +227,14 @@ func (s *Service) Rename(ctx, name, newName string) error   // same dir; refuses
 type ItemError struct{ Name, Reason string }
 func (s *Service) Move(ctx, names []string, toDir string) ([]ItemError, error)
 func (s *Service) Delete(ctx, names []string) ([]ItemError, error)
+
+// Reason turns a failure into a message safe to hand a browser: ErrBadPath
+// and ErrRejected pass their own text through, fs.ErrNotExist/fs.ErrExist get
+// fixed strings, anything else is generic. Move and Delete use it to build
+// ItemError.Reason above; the admin HTTP layer's fmFail (§5.2) uses the same
+// function for its message text, so the vocabulary has one owner rather than
+// two independently-maintained copies of the same strings.
+func Reason(err error) string
 ```
 
 **Cleaning** (`clean(p) (string, error)`) is the single gate. It rejects absolute
@@ -342,7 +350,14 @@ admin page.
 **Responses.** Success is `{"ok":true, …}`. Failure is a 4xx with
 `{"error":"…"}`: `fs.ErrNotExist` → 404, `fs.ErrExist` → 409, `ErrBadPath` and
 policy rejections (extension, size, empty name) → 422, and anything else 500
-with the detail logged rather than returned.
+with the detail logged rather than returned. The status mapping lives in
+`fmFail`, in one place, so a new endpoint cannot invent its own status
+vocabulary — but the message text underneath it is `storage.Reason`, one
+function shared by `fmFail` and by `Move`/`Delete`'s `ItemError.Reason`
+(§4.4), so there is exactly one place that turns a storage error into words.
+`fmFail`'s own 500 fallback (`服务器错误`) is the one exception, deliberately:
+its detail is never shown, only logged, which is an HTTP-level policy
+decision rather than a case of the shared vocabulary.
 
 **The batch endpoints are the exception**: an upload where two files succeed and
 one is rejected is a normal outcome, not an error. `upload`, `move` and `delete`

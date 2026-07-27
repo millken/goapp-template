@@ -292,6 +292,27 @@ func TestBrowse_BuildsABreadcrumb(t *testing.T) {
 	}
 }
 
+// TestReason_IsTheSingleVocabulary covers Reason's full domain now that it is
+// exported and shared with the admin HTTP layer (fmFail, and what used to be
+// its own separate itemReason): ErrBadPath and ErrRejected pass their own
+// message through verbatim, fs.ErrNotExist and fs.ErrExist get the two fixed
+// Chinese strings, and anything else falls back to a generic message rather
+// than risk echoing a filesystem path.
+func TestReason_IsTheSingleVocabulary(t *testing.T) {
+	cases := map[error]string{
+		fmt.Errorf("%w: 举例", ErrBadPath):  "storage: illegal path: 举例",
+		fmt.Errorf("%w: 举例", ErrRejected): "storage: rejected: 举例",
+		fs.ErrNotExist:                    "不存在",
+		fs.ErrExist:                       "同名项已存在",
+		errors.New("disk on fire"):        "操作失败",
+	}
+	for err, want := range cases {
+		if got := Reason(err); got != want {
+			t.Errorf("Reason(%v) = %q, want %q", err, got, want)
+		}
+	}
+}
+
 func TestDeleteAndMove_ReportPerItemFailures(t *testing.T) {
 	ctx := context.Background()
 	s := startedService(t)

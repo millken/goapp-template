@@ -104,20 +104,27 @@ func (a *Admin) fmOK(c *inertia.Context, body map[string]any) {
 	}
 }
 
-// fmFail maps a storage error to a status and a message. The mapping lives in
-// one place so every endpoint answers the same way, and so a new endpoint
-// cannot invent its own vocabulary.
+// fmFail maps a storage error to a status and a message. The status mapping
+// lives here, in one place, so every endpoint answers the same way and a new
+// endpoint cannot invent its own status vocabulary. The message text itself
+// delegates to storage.Reason — the same function Move and Delete use to
+// build ItemError.Reason — so there is exactly one place that turns a
+// storage error into words, not two independently-maintained copies of the
+// same strings.
 func (a *Admin) fmFail(c *inertia.Context, err error) {
 	status, msg := http.StatusInternalServerError, "服务器错误"
 	switch {
 	case errors.Is(err, storage.ErrBadPath), errors.Is(err, storage.ErrRejected):
-		status, msg = http.StatusUnprocessableEntity, err.Error()
+		status, msg = http.StatusUnprocessableEntity, storage.Reason(err)
 	case errors.Is(err, fs.ErrNotExist):
-		status, msg = http.StatusNotFound, "不存在"
+		status, msg = http.StatusNotFound, storage.Reason(err)
 	case errors.Is(err, fs.ErrExist):
-		status, msg = http.StatusConflict, "同名项已存在"
+		status, msg = http.StatusConflict, storage.Reason(err)
 	default:
-		// Logged, not returned: the detail may name a filesystem path.
+		// "服务器错误" stays admin's own rather than storage.Reason's default
+		// ("操作失败"): this is the one case whose detail is never shown, only
+		// logged, and that is an HTTP-level policy decision (what a client may
+		// see on a 500), not a case of the shared vocabulary.
 		slog.Error("filemanager", "err", err, "path", c.Request.URL.Path)
 	}
 	c.Status(status)
@@ -177,7 +184,7 @@ func (a *Admin) fmUpload(c *inertia.Context) {
 			// file 3's write will also fail). The caller learns more from a
 			// per-file report than from a batch truncated at the first
 			// error, so the loop always continues to NextPart.
-			fails = append(fails, map[string]string{"name": name, "error": itemReason(err)})
+			fails = append(fails, map[string]string{"name": name, "error": storage.Reason(err)})
 			// part.Close drains whatever of the part was not read, so there
 			// is nothing else to do before moving on to the next part.
 			_ = part.Close()
@@ -214,17 +221,6 @@ func (a *Admin) fmBodyFail(c *inertia.Context, err error) {
 	if err := c.JSON(map[string]string{"error": msg}); err != nil {
 		slog.Error("filemanager: write error json", "err", err)
 	}
-}
-
-// itemReason is the per-item message for one file's upload failure. A policy
-// rejection (bad extension, bad name, over the size cap) speaks for itself;
-// anything else is a backend failure whose detail may name a filesystem path,
-// so it is not echoed to the browser.
-func itemReason(err error) string {
-	if errors.Is(err, storage.ErrRejected) || errors.Is(err, storage.ErrBadPath) {
-		return err.Error()
-	}
-	return "保存失败"
 }
 
 // fmMkdir creates one directory.
