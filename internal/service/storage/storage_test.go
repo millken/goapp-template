@@ -220,6 +220,80 @@ func TestValidatePath_IsTheExportedGate(t *testing.T) {
 	}
 }
 
+func TestRename_RootLevelFile(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if _, err := s.Upload(ctx, "", "a.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Rename(ctx, "a.png", "b.png"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if _, err := s.Stat(ctx, "b.png"); err != nil {
+		t.Errorf("the renamed file must exist at the root: %v", err)
+	}
+	if _, err := s.Stat(ctx, "a.png"); err == nil {
+		t.Error("the old name must be gone")
+	}
+}
+
+func TestRename_StaysInItsSubdirectory(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if err := s.Mkdir(ctx, "", "sub"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Upload(ctx, "sub", "a.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Rename(ctx, "sub/a.png", "b.png"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if _, err := s.Stat(ctx, "sub/b.png"); err != nil {
+		t.Errorf("the renamed file must stay in its own directory: %v", err)
+	}
+	if _, err := s.Stat(ctx, "b.png"); err == nil {
+		t.Error("a rename must not smuggle a move to the root")
+	}
+}
+
+func TestRename_Directory(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if err := s.Mkdir(ctx, "", "old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Rename(ctx, "old", "new"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if e, err := s.Stat(ctx, "new"); err != nil || !e.IsDir {
+		t.Errorf("renamed directory: entry = %+v, err = %v", e, err)
+	}
+	if _, err := s.Stat(ctx, "old"); err == nil {
+		t.Error("the old name must be gone")
+	}
+}
+
+func TestRename_RefusesANewNameWithASeparator(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if _, err := s.Upload(ctx, "", "a.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Rename(ctx, "a.png", "../escape.png"); !errors.Is(err, ErrBadPath) {
+		t.Errorf("a newName that escapes must be refused, got %v", err)
+	}
+	if err := s.Rename(ctx, "a.png", "sub/b.png"); !errors.Is(err, ErrBadPath) {
+		t.Errorf("a newName with a separator would make rename a silent move; got %v", err)
+	}
+}
+
+func TestRename_RefusesTheRoot(t *testing.T) {
+	if err := startedService(t).Rename(context.Background(), "", "whatever"); !errors.Is(err, ErrBadPath) {
+		t.Errorf("renaming the root must be refused, got %v", err)
+	}
+}
+
 func TestURLFor(t *testing.T) {
 	s := startedService(t)
 	if got := s.URLFor("a/b.png"); got != "/uploads/a/b.png" {

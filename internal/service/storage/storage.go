@@ -315,6 +315,11 @@ func (s *Service) Upload(ctx context.Context, dir, filename string, r io.Reader)
 	max := s.maxUploadSize()
 	limited := &io.LimitedReader{R: r, N: max + 1}
 	if err := s.be.Save(ctx, full, limited); err != nil {
+		// Save may have written part of the file before failing (disk full,
+		// permission loss mid-copy). Best-effort cleanup: the remove error is
+		// discarded because the Save error is the one the caller needs, and
+		// there is nothing more to do if the cleanup itself fails.
+		_ = s.be.Remove(ctx, full)
 		return Entry{}, err
 	}
 	if limited.N == 0 { // read max+1 bytes: the file is over the cap
@@ -393,12 +398,15 @@ func (s *Service) Rename(ctx context.Context, name, newName string) error {
 	if sanitiseFilename(newName) != newName || newName == "" {
 		return fmt.Errorf("%w: 新名称不合法", ErrBadPath)
 	}
-	target, err := join(path.Dir(strings.TrimSuffix(n, "/")), newName)
+	// path.Dir("a.png") is ".": this package spells the root "", and join
+	// would otherwise reject "." as an illegal segment before target is built.
+	dir := path.Dir(strings.TrimSuffix(n, "/"))
+	if dir == "." {
+		dir = ""
+	}
+	target, err := join(dir, newName)
 	if err != nil {
 		return err
-	}
-	if dir := path.Dir(n); dir == "." {
-		target = newName
 	}
 	return s.be.Rename(ctx, n, target)
 }
