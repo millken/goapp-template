@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -138,4 +139,39 @@ func TestRegenerate_RotatesTheToken(t *testing.T) {
 	if after == before {
 		t.Error("the token survived regeneration")
 	}
+}
+
+// The order inside Regenerate is load-bearing. If it saved the new session
+// before dropping the old entry, a failed delete would leave the caller holding
+// a working session it has to report an error for — and the planted id it was
+// meant to invalidate still valid. Deleting first means a failure changes
+// nothing.
+func TestRegenerate_FailureLeavesTheOldSessionIntact(t *testing.T) {
+	s, svc := newCSRFSession(t)
+	ctx := context.Background()
+	s.Set("keep", "me")
+	old, err := s.Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.store = failingDelete{svc.store}
+	if err := s.Regenerate(ctx); err == nil {
+		t.Fatal("Regenerate reported success though the old entry could not be dropped")
+	}
+	if s.ID() != old {
+		t.Errorf("id = %q, want the original %q — a failed regeneration must not move the session", s.ID(), old)
+	}
+	svc.store = failingDelete{svc.store}.Store
+	if _, _, ok, err := svc.store.Load(ctx, old); err != nil || !ok {
+		t.Error("the original session is gone, so the caller's refusal logs the user out anyway")
+	}
+}
+
+// failingDelete is a Store whose Delete always fails; everything else passes
+// through.
+type failingDelete struct{ Store }
+
+func (failingDelete) Delete(context.Context, string) error {
+	return errors.New("store is unavailable")
 }

@@ -87,18 +87,22 @@ func (s *session) Regenerate(ctx context.Context) error {
 	// worthless now, so mint a new one on next use rather than carry it over.
 	delete(s.values, csrfKey)
 
-	s.id = ""
-	if _, err := s.Save(ctx); err != nil {
-		s.id = old
-		return fmt.Errorf("session: regenerate: %w", err)
-	}
+	// The old entry goes first, and that order is the whole point. Saving first
+	// and deleting after leaves two live states on failure: the caller has a
+	// working new session but an error to report, and the planted id it was
+	// supposed to invalidate is still valid — the exact window this function
+	// exists to close. Deleting first means a failure changes nothing, so the
+	// caller can simply refuse. If the save then fails, the worst case is a
+	// signed-out user who retries.
 	if old != "" {
 		if err := s.mod.store.Delete(ctx, old); err != nil {
-			// The new session is live and the cookie points at it; the stale
-			// entry will expire on its own. Worth knowing about, not worth
-			// failing a sign-in over.
 			return fmt.Errorf("session: regenerate: drop old entry: %w", err)
 		}
+	}
+
+	s.id = ""
+	if _, err := s.Save(ctx); err != nil {
+		return fmt.Errorf("session: regenerate: %w", err)
 	}
 	return nil
 }
