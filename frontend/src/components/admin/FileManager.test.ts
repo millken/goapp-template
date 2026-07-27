@@ -163,6 +163,46 @@ describe('FileManager', () => {
     expect(el.textContent).toContain('newdir：已存在')
   })
 
+  it('keeps an upload failure message visible after the refresh that follows it', async () => {
+    const el = mount({ csrfToken: 'tok' })
+    await flush()
+
+    fetchMock.mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/api/upload')) {
+        // The real server's shape for a multipart body over the request
+        // ceiling: 413, with the message the handler actually sends
+        // (internal/controller/admin/filemanager.go's fmBodyFail).
+        return new Response(JSON.stringify({ error: '上传内容超过单次请求上限' }), {
+          status: 413,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      // The follow-up refresh() this upload triggers — files earlier in the
+      // batch may already be on disk, so refreshing after a failed upload is
+      // correct; this is exactly the listing that used to wipe the error
+      // message out before it ever reached the DOM.
+      return new Response(JSON.stringify(listing()), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const input = el.querySelector('input[data-testid="upload-input"]') as HTMLInputElement | null
+    expect(input).toBeTruthy()
+
+    const file = new File(['x'.repeat(10)], 'big.png', { type: 'image/png' })
+    const dt = new DataTransfer()
+    dt.items.add(file)
+    input!.files = dt.files
+    input!.dispatchEvent(new Event('change'))
+
+    // Both the upload's fetch and the refresh() it kicks off have to settle
+    // before the message can be asserted — see flush()'s own note above.
+    await flush()
+
+    expect(el.textContent).toContain('上传内容超过单次请求上限')
+  })
+
   it('pages through a total larger than one page', async () => {
     fetchMock.mockImplementation(
       async () =>

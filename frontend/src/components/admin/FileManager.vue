@@ -186,7 +186,7 @@ async function upload(event: Event) {
     const out = await res.json().catch(() => null)
     let message = ''
     if (!res.ok) {
-      error.value = (out as { error?: string })?.error ?? '上传失败'
+      message = (out as { error?: string })?.error ?? '上传失败'
     } else {
       const fails = (out as { errors?: { name: string; error: string }[] })?.errors ?? []
       if (fails.length) message = fails.map((f) => `${f.name}：${f.error}`).join('；')
