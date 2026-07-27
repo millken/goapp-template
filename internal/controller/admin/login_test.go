@@ -81,10 +81,75 @@ func loginStackWithStore(t *testing.T, store session.StoreKind) (*inertia.Engine
 	return eng, adm
 }
 
-func postForm(path string, form url.Values) *http.Request {
-	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+// csrfFor drives a GET through the stack and returns the token the page was
+// given, plus the cookie it belongs to — freshly minted from the response if
+// cookie was nil, since an anonymous GET is exactly how an anonymous visitor
+// gets a session at all. Tests that post go through here, the same way a
+// browser gets a token by loading the form first.
+func csrfFor(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, path string) (string, *http.Cookie) {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	if cookie != nil {
+		r.AddCookie(cookie)
+	}
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+
+	if cookie == nil {
+		cs := w.Result().Cookies()
+		if len(cs) == 0 {
+			t.Fatalf("GET %s did not set a session cookie (status %d)", path, w.Code)
+		}
+		cookie = &http.Cookie{Name: cs[0].Name, Value: cs[0].Value}
+	}
+
+	body := w.Body.String()
+	const marker = `name="_csrf" value="`
+	if i := strings.Index(body, marker); i >= 0 {
+		rest := body[i+len(marker):]
+		return rest[:strings.Index(rest, `"`)], cookie
+	}
+	// Fall back to the page data, which carries the prop even when the
+	// markup is not rendered in this mode.
+	const prop = `\"csrfToken\":\"`
+	if j := strings.Index(body, prop); j >= 0 {
+		rest := body[j+len(prop):]
+		return rest[:strings.Index(rest, `\"`)], cookie
+	}
+	t.Fatalf("no csrf token on %s (status %d)", path, w.Code)
+	return "", nil
+}
+
+// postForm builds a POST carrying a valid token: an anonymous one (cookie
+// nil) fetched from the public login page, an authenticated one fetched from
+// the admin mount — mirroring how post (user_crud_test.go) does it for a
+// caller that already has a cookie. The token and the cookie it validates
+// against always come from the same fetch, because a token minted under one
+// session cannot authenticate a request carrying another.
+//
+// It returns the cookie alongside the request rather than leaving callers to
+// recover it from the POST's own response: a session that already has a
+// token (which fetching one just gave it) does not re-Save on a request that
+// changes nothing else, so the POST response carries no Set-Cookie of its
+// own to fish out.
+func postForm(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, path string, form url.Values) (*http.Request, *http.Cookie) {
+	t.Helper()
+	tokenPath := "/admin/login"
+	if cookie != nil {
+		tokenPath = "/admin"
+	}
+	token, ck := csrfFor(t, eng, cookie, tokenPath)
+
+	values := url.Values{}
+	for k, v := range form {
+		values[k] = append([]string(nil), v...)
+	}
+	values.Set(session.CSRFFormField, token)
+
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return r
+	r.AddCookie(ck)
+	return r, ck
 }
 
 func TestLogin_HappyPath(t *testing.T) {
@@ -95,8 +160,9 @@ func TestLogin_HappyPath(t *testing.T) {
 	authed := false
 	eng.GET("/admin/probe", adm.AuthMiddleware(), func(c *inertia.Context) { authed = true })
 
+	r, _ := postForm(t, eng, nil, "/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}})
 	w := httptest.NewRecorder()
-	eng.ServeHTTP(w, postForm("/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}}))
+	eng.ServeHTTP(w, r)
 
 	if w.Code != http.StatusFound {
 		t.Fatalf("expected 302 after login, got %d", w.Code)
@@ -140,28 +206,26 @@ func TestProtectedRoute_RedirectsWhenUnauthenticated(t *testing.T) {
 func TestLogin_BadPassword(t *testing.T) {
 	eng, adm := loginStack(t)
 
+	req, cookie := postForm(t, eng, nil, "/admin/login", url.Values{"username": {"alice"}, "password": {"wrong"}})
 	w := httptest.NewRecorder()
-	eng.ServeHTTP(w, postForm("/admin/login", url.Values{"username": {"alice"}, "password": {"wrong"}}))
+	eng.ServeHTTP(w, req)
 
 	if w.Code == http.StatusFound {
 		t.Fatal("bad password must not redirect (no login)")
 	}
-	// A session cookie is now expected, and that is not a weakening: the
-	// re-rendered form carries a CSRF token, and minting one is what gives an
-	// anonymous visitor a session at all — a plain GET of the login page does
-	// the same. What this test was really protecting is that a failed attempt
-	// leaves you unauthenticated, so it asserts that directly rather than
-	// through the absence of a cookie, which no longer stands in for it.
-	cookies := w.Result().Cookies()
-	if len(cookies) == 0 {
-		t.Fatal("expected a session cookie carrying the re-rendered form's CSRF token")
-	}
-
+	// A session is now expected before the POST even runs — postForm had to
+	// fetch a token from the login page first, and minting one is what gives
+	// an anonymous visitor a session at all. Because that session already
+	// carried the token going in, the failure re-render does not re-Save and
+	// so this response sets no additional cookie of its own; the one that
+	// matters is the one the request already carried. What this test was
+	// really protecting is that a failed attempt leaves you unauthenticated,
+	// so it asserts that directly, against that cookie.
 	eng.GET("/admin/probe", adm.AuthMiddleware(), func(c *inertia.Context) {
 		t.Error("a failed login produced a session that reaches guarded routes")
 	})
 	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
-	r.AddCookie(&http.Cookie{Name: cookies[0].Name, Value: cookies[0].Value})
+	r.AddCookie(cookie)
 	w2 := httptest.NewRecorder()
 	eng.ServeHTTP(w2, r)
 	if w2.Code != http.StatusFound {
@@ -173,15 +237,17 @@ func TestLogout_ClearsCookie(t *testing.T) {
 	eng, _ := loginStack(t)
 
 	// Log in first to get a valid cookie.
+	loginReq, _ := postForm(t, eng, nil, "/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}})
 	w1 := httptest.NewRecorder()
-	eng.ServeHTTP(w1, postForm("/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}}))
+	eng.ServeHTTP(w1, loginReq)
 	signed := w1.Result().Cookies()[0].Value
+	cookie := &http.Cookie{Name: "session", Value: signed}
 
-	// Log out carrying the cookie.
+	// Log out carrying the cookie — postForm fetches a fresh token bound to
+	// it from the admin mount, the same way a browser on an admin page would.
+	logoutReq, _ := postForm(t, eng, cookie, "/admin/logout", url.Values{})
 	w2 := httptest.NewRecorder()
-	r2 := postForm("/admin/logout", url.Values{})
-	r2.AddCookie(&http.Cookie{Name: "session", Value: signed})
-	eng.ServeHTTP(w2, r2)
+	eng.ServeHTTP(w2, logoutReq)
 
 	if w2.Code != http.StatusFound {
 		t.Fatalf("expected 302 after logout, got %d", w2.Code)
@@ -200,8 +266,9 @@ func TestLogout_ClearsCookie(t *testing.T) {
 // loginAndGetCookie signs in as the seeded user and returns the session cookie.
 func loginAndGetCookie(t *testing.T, eng *inertia.Engine) *http.Cookie {
 	t.Helper()
+	r, _ := postForm(t, eng, nil, "/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}})
 	w := httptest.NewRecorder()
-	eng.ServeHTTP(w, postForm("/admin/login", url.Values{"username": {"alice"}, "password": {"pw"}}))
+	eng.ServeHTTP(w, r)
 	cookies := w.Result().Cookies()
 	if len(cookies) == 0 {
 		t.Fatalf("login did not set a session cookie (status %d)", w.Code)

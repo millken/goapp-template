@@ -109,6 +109,23 @@ func (s *Service) Middleware() inertia.HandlerFunc {
 		sess.w = c.Writer
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), sessionCtxKey{}, sess))
 
+		// Unsafe methods carry a token or they do not run. The check is here
+		// rather than in its own middleware because this one already holds the
+		// session and is already mounted once, globally.
+		//
+		// 403 with a plain body, not a redirect: a redirect re-renders the form
+		// and reads as a validation problem, and this is not one.
+		switch c.Request.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if !sess.validCSRF(c.Request) {
+				slog.Warn("session: csrf check failed",
+					"method", c.Request.Method, "path", c.Request.URL.Path)
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+		}
+
 		// Consume any staged flash before the handler runs: the removal has to be
 		// persisted or the message repeats forever, and saving here lands the
 		// cookie ahead of the body flush.

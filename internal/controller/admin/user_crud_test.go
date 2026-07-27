@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/millken/goapp-template/internal/service/session"
 	"github.com/millken/inertia"
 )
 
@@ -25,11 +26,22 @@ func adminStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	return eng, adm, loginAndGetCookie(t, eng)
 }
 
+// post fetches a token bound to cookie from the admin mount — the same page
+// any authenticated admin view would carry one on — and carries both on the
+// POST, the way csrfFor/postForm (login_test.go) do for the login flow.
 func post(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, path string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
-	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	token, ck := csrfFor(t, eng, cookie, "/admin")
+
+	values := url.Values{}
+	for k, v := range form {
+		values[k] = append([]string(nil), v...)
+	}
+	values.Set(session.CSRFFormField, token)
+
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.AddCookie(cookie)
+	r.AddCookie(ck)
 	w := httptest.NewRecorder()
 	eng.ServeHTTP(w, r)
 	return w
@@ -197,11 +209,15 @@ func TestUserCreate_RedirectIsAPayloadUnderPJAX(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	form := url.Values{"username": {"pjaxuser"}, "password": {"s3cretpw"}, "group_id": {fmt.Sprint(gid)}}
+	token, ck := csrfFor(t, eng, cookie, "/admin")
+	form := url.Values{
+		"username": {"pjaxuser"}, "password": {"s3cretpw"}, "group_id": {fmt.Sprint(gid)},
+		session.CSRFFormField: {token},
+	}
 	r := httptest.NewRequest(http.MethodPost, "/admin/user", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Set("X-Pjax", "true")
-	r.AddCookie(cookie)
+	r.AddCookie(ck)
 	w := httptest.NewRecorder()
 	eng.ServeHTTP(w, r)
 

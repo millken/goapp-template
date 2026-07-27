@@ -6,6 +6,8 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +48,21 @@ func installedWith(t *testing.T, eng *inertia.Engine, cfg *Config, db *sqldb.DB)
 	return svc
 }
 
+// tokenPost mints a token (via mint, in csrf_middleware_test.go) and POSTs to
+// path carrying it on the cookie it belongs to. Every write below needs this
+// now that the middleware checks for a token on every unsafe request; none of
+// these tests are about CSRF, so this is the whole adaptation.
+func tokenPost(t *testing.T, eng *inertia.Engine, svc *Service, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	token, cookie := mint(t, eng, svc)
+	r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(url.Values{CSRFFormField: {token}}.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+	return w
+}
+
 // flashProbe registers a route that records the flash prop the middleware
 // injected, so tests assert on the prop rather than on any render payload.
 func flashProbe(eng *inertia.Engine, path string, got *any, ok *bool) {
@@ -73,8 +90,7 @@ func TestFlash_DeliveredExactlyOnce(t *testing.T) {
 		var ok bool
 		flashProbe(eng, "/page", &got, &ok)
 
-		w1 := httptest.NewRecorder()
-		eng.ServeHTTP(w1, httptest.NewRequest(http.MethodPost, "/save", nil))
+		w1 := tokenPost(t, eng, svc, "/save")
 		cookies := w1.Result().Cookies()
 		if len(cookies) != 1 {
 			t.Fatalf("expected the flash Save to set a cookie, got %d", len(cookies))
@@ -131,8 +147,7 @@ func TestFlash_MultipleKinds(t *testing.T) {
 		var ok bool
 		flashProbe(eng, "/page", &got, &ok)
 
-		w1 := httptest.NewRecorder()
-		eng.ServeHTTP(w1, httptest.NewRequest(http.MethodPost, "/save", nil))
+		w1 := tokenPost(t, eng, svc, "/save")
 		signed := w1.Result().Cookies()[0].Value
 
 		w2 := httptest.NewRecorder()
@@ -169,8 +184,7 @@ func TestFlash_SessionValuesStayHidden(t *testing.T) {
 			raw, rawOK = svc.Session(c).Get(flashPrefix + "success")
 		})
 
-		w1 := httptest.NewRecorder()
-		eng.ServeHTTP(w1, httptest.NewRequest(http.MethodPost, "/save", nil))
+		w1 := tokenPost(t, eng, svc, "/save")
 		signed := w1.Result().Cookies()[0].Value
 
 		w2 := httptest.NewRecorder()
@@ -204,8 +218,7 @@ func TestFlash_NoSaveWhenNoFlash(t *testing.T) {
 			_ = svc.Session(c)
 		})
 
-		w1 := httptest.NewRecorder()
-		eng.ServeHTTP(w1, httptest.NewRequest(http.MethodPost, "/login", nil))
+		w1 := tokenPost(t, eng, svc, "/login")
 		signed := w1.Result().Cookies()[0].Value
 
 		w2 := httptest.NewRecorder()

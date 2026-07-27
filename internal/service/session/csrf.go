@@ -61,12 +61,17 @@ func (s *session) validCSRF(r *http.Request) bool {
 
 	got := r.Header.Get(CSRFHeader)
 	if got == "" {
-		// ParseForm on a POST reads the body, which the handler then re-reads
-		// from the parsed form rather than the stream — the same thing every
-		// c.PostForm call already relies on.
-		if err := r.ParseForm(); err == nil {
-			got = r.PostFormValue(CSRFFormField)
-		}
+		// PostFormValue parses the body — ParseMultipartForm for a multipart
+		// request, ParseForm otherwise — the same thing every c.PostForm call
+		// already relies on, so a handler's later read sees the same cached
+		// result rather than re-reading a drained stream.
+		//
+		// It has to be this call and not a preceding r.ParseForm(): ParseForm
+		// leaves r.PostForm non-nil (empty) for a multipart body, and
+		// PostFormValue only parses the multipart body when r.PostForm is
+		// still nil — so calling ParseForm first would make every PJAX
+		// (multipart) submission look tokenless.
+		got = r.PostFormValue(CSRFFormField)
 	}
 	if got == "" {
 		return false
