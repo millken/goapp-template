@@ -173,7 +173,14 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 
 后台用 [shadcn-vue](https://www.shadcn-vue.com/)：组件**源码复制进仓库**（`frontend/src/components/ui/`），
 不是 npm 依赖 —— 和 `gen resource` 产出一样，是「你拥有的普通文件」。数据表格能力来自
-[@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。有三处改动没有跟上游保持一致，
+[@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。`main.css` 除了令牌，还带着 shadcn 的**基础层**（`*` 的边框色、`body` 的底色、
+`:focus-visible` 的描边色）。这几行看着像样板，漏掉却不会报错 —— Tailwind v4 的
+`border` 只设宽度和线型，没有基础层时 31 处裸 `border` 会画成正文色；`body` 没有底色
+时半透明面板会叠在浏览器白底上。`frontend/scripts/tokens.test.ts` 钉住了它们，
+另外还会在**编译产物**里查有没有"引用了却没人定义"的自定义属性 —— 这类问题渲染出来
+总是"看着像那么回事"，靠肉眼一张截图抓一个。
+
+有三处改动没有跟上游保持一致，
 `gen ui --force` 更新组件时会把它们冲掉 —— `frontend/src/components/ui/deviations.test.ts`
 会因此变红，那时要做的是把改动补回去而不是删测试：`alert/index.ts` 多了一个 `success` 变体
 （上游只有 `default`、`destructive`）；`sonner/Sonner.vue` 补了一行

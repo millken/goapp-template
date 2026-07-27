@@ -121,6 +121,20 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Tailwind v4's `border` utility sets width and style but no colour, so a bare
+   `border` falls back to currentColor — the text colour, near-black in light
+   mode. shadcn's own setup carries this rule for exactly that reason; without
+   it every card, input and table divider is drawn in the foreground colour
+   instead of the border token. Same for a bare `outline`. */
+*,
+::after,
+::before {
+  border-color: var(--border);
+}
+:focus-visible {
+  outline-color: var(--ring);
+}
+
 /* The page's own ground. Without it the document keeps the browser default —
    white — and every translucent surface composites over that instead of over the
    theme: the admin shell's bg-muted/40 came out light grey in dark mode, because
