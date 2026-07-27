@@ -3479,43 +3479,41 @@ func TestStorageOwnsItsAdminSideFiles(t *testing.T) {
 			t.Errorf("storage does not own %q", w)
 		}
 	}
-	// Every owned path must exist in the template, or the entry is a typo that
-	// silently deletes nothing. repoRoot is four levels up: the test runs in
-	// cmd/goappctl/internal/components.
-	const repoRoot = "../../../.."
-	for _, p := range c.Owned {
-		if _, err := os.Stat(filepath.Join(repoRoot, p)); err != nil {
-			t.Errorf("owned path %q does not exist: %v", p, err)
-		}
-	}
 }
 ```
 
-Add `os` and `path/filepath` to that file's imports — the existing
-`TestAdminOwnsCopiedUIComponents` only checks membership, so neither is
-imported yet.
+Do **not** add an existence check for the owned paths: `TestOwnedPathsExist`
+already stats every component's `Owned` entries, and it is why the list could
+not be written in full before the files existed.
 
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `go test ./cmd/goappctl/internal/components/ -count=1`
 Expected: FAIL — `unknown component "storage"`.
 
-- [ ] **Step 3: Register the component**
+- [ ] **Step 3: Complete the component's owned paths**
 
-In `cmd/goappctl/internal/components/components.go`, add after the `admin`
-entry (checklist order: infrastructure, then the areas that use it — `storage`
-goes after `admin` because its UI half lives inside the admin area, and before
-`ssr`):
+The entry itself already exists — it was added during Task 3, because
+`markers.Strip` rejects a marker naming a component the registry does not know,
+and Tasks 3–8 all add `goappctl:storage` blocks. It currently owns only the two
+paths that existed then:
 
 ```go
 	{
 		Name: "storage",
-		// No Deps: the service and its public route stand alone. The file
-		// manager UI is inside the admin area and disappears with either
-		// component — admin's directories go wholesale, and the individually
-		// named files below cover "admin on, storage off".
 		Owned: []string{
 			"internal/service/storage",
+			"server/uploads_route_test.go",
+		},
+	},
+```
+
+Extend `Owned` with the admin-side files, which now exist. They sit under
+directories `admin` already owns; the overlap is harmless because deletion is
+idempotent, and naming them individually is what makes "admin on, storage off"
+strip correctly:
+
+```go
 			"internal/controller/admin/filemanager.go",
 			"internal/controller/admin/filemanager_test.go",
 			"frontend/pages/admin/filemanager",
@@ -3524,10 +3522,10 @@ goes after `admin` because its UI half lives inside the admin area, and before
 			"frontend/src/components/admin/FileManagerDialog.vue",
 			"frontend/src/components/admin/ImagePicker.vue",
 			"frontend/src/components/admin/ImagePicker.test.ts",
-			"server/uploads_route_test.go",
-		},
-	},
 ```
+
+Update the entry's comment to describe the finished list rather than the
+partial one.
 
 - [ ] **Step 4: Add the init combo**
 

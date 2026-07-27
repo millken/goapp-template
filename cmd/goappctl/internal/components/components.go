@@ -57,6 +57,19 @@ var All = []Component{
 		},
 	},
 	{
+		Name: "storage",
+		// No Deps: the service and its public route stand alone. The file
+		// manager UI lives inside the admin area and will be listed here too —
+		// admin's directories go wholesale, so naming its files individually is
+		// what makes "admin on, storage off" strip correctly. Those entries
+		// arrive with the files themselves; TestOwnedPathsExist refuses a path
+		// that is not there yet.
+		Owned: []string{
+			"internal/service/storage",
+			"server/uploads_route_test.go",
+		},
+	},
+	{
 		Name: "ssr",
 		Owned: []string{
 			"frontend/ssr",
