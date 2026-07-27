@@ -112,6 +112,8 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 	}
 }
 
+//goappctl:storage
+
 // TestSSR_FileManagerRendersUnderQuickJS guards the file manager page against
 // the failure mode the dashboard test describes: a component touching
 // document/window at module scope kills the whole bundle. FileManager fetches
@@ -180,6 +182,8 @@ func TestSSR_FileManagerRendersUnderQuickJS(t *testing.T) {
 	}
 }
 
+//goappctl:end
+
 // TestSSR_UserFormRendersUnderQuickJS guards the user form against the same
 // failure mode as the dashboard and file manager tests: a component touching
 // document/window at module scope kills the whole bundle. This is the page
@@ -224,9 +228,11 @@ func TestSSR_UserFormRendersUnderQuickJS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderComponent(admin/user/form): %v", err)
 	}
+	//goappctl:storage
 	if !strings.Contains(html, "选择图片") {
 		t.Errorf("rendered form is missing %q — canBrowseFiles was true, so ImagePicker should render its browse button, not the plain text fallback", "选择图片")
 	}
+	//goappctl:end
 }
 
 // TestSSR_AdminShellShowsAvatarUnderQuickJS guards the fix for the gap the

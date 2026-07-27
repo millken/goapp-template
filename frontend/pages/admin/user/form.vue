@@ -2,7 +2,9 @@
 import AdminShell from '@/components/admin/AdminShell.vue'
 import CsrfField from '@/components/admin/CsrfField.vue'
 import FormField from '@/components/admin/FormField.vue'
+//goappctl:storage
 import ImagePicker from '@/components/admin/ImagePicker.vue'
+//goappctl:end
 import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -81,6 +83,7 @@ const editing = props.item.id > 0
             </select>
           </FormField>
 
+          <!--goappctl:storage-->
           <FormField name="avatar" label="头像" :error="errors?.avatar">
             <ImagePicker
               name="avatar"
@@ -90,6 +93,7 @@ const editing = props.item.id > 0
               :csrf-token="csrfToken"
             />
           </FormField>
+          <!--goappctl:end-->
 
           <FormField
             name="password"
