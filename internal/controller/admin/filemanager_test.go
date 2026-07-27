@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -233,6 +234,68 @@ func TestFileManagerUpload_SavesTheGoodOnesAndReportsTheBadOne(t *testing.T) {
 	}
 	if _, err := adm.Storage.Stat(context.Background(), "ok.png"); err != nil {
 		t.Errorf("the good file must be on disk: %v", err)
+	}
+}
+
+func TestFileManagerUpload_ABackendFailureIsAnItemErrorNotABatchAbort(t *testing.T) {
+	// This is the assertion the fmFail-abort regressed: a per-file backend
+	// error (here, the destination refusing writes) must be reported per
+	// item and must not truncate the batch or turn the response into a 500,
+	// exactly like storage.Move and storage.Delete already behave.
+	eng, adm := loginStack(t)
+
+	// fmStack hides the storage root inside t.TempDir(); this test needs the
+	// path itself so it can chmod it, so the setup is inlined rather than
+	// reused.
+	root := t.TempDir()
+	stor := storage.New(&storage.Config{Root: root})
+	if err := stor.Start(context.Background()); err != nil {
+		t.Fatalf("start storage: %v", err)
+	}
+	t.Cleanup(func() { _ = stor.Stop(context.Background()) })
+	adm.Storage = stor
+	if err := eng.RegistrationError(); err != nil {
+		t.Fatalf("routes did not register: %v", err)
+	}
+	cookie := loginAndGetCookie(t, eng)
+
+	// A root process ignores directory permission bits, so the Create below
+	// would silently succeed and this test would assert nothing.
+	if os.Geteuid() == 0 {
+		t.Fatal("must not run as root: permission bits would not be enforced")
+	}
+
+	// Read+execute but no write: freeName's Stat/List still succeed, so the
+	// service gets as far as the backend's Create, which then fails on every
+	// file with a permission error — a backend failure that is neither
+	// storage.ErrBadPath nor storage.ErrRejected.
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+
+	body, ctype := uploadBody(t, map[string]string{
+		"a.png": "one",
+		"b.png": "two",
+		"c.png": "three",
+	})
+	code, out := postUpload(t, eng, cookie, "/admin/filemanager/api/upload", body, ctype)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 even though every file failed; body: %+v", code, out)
+	}
+	entries, _ := out["entries"].([]any)
+	if len(entries) != 0 {
+		t.Errorf("entries = %v, want none: the destination accepts no writes", out["entries"])
+	}
+	fails, _ := out["errors"].([]any)
+	if len(fails) != 3 {
+		t.Fatalf("errors = %v, want all three files reported — a truncated batch stops short of this", out["errors"])
+	}
+	for _, f := range fails {
+		fe, _ := f.(map[string]any)
+		if fe["error"] == "" || fe["error"] == nil {
+			t.Errorf("item error missing a reason: %+v", fe)
+		}
 	}
 }
 

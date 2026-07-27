@@ -126,14 +126,15 @@ func (a *Admin) fmFail(c *inertia.Context, err error) {
 
 // fmUpload streams a multipart body straight to storage.
 //
-// Two failure classes, deliberately kept apart (§5.2). A per-file rejection —
-// extension, size, an illegal name — is an item error: the part is drained, the
-// remaining parts are still processed, and the response is 200 with the failure
-// listed. A body-level failure — the request ceiling, a malformed body, a
-// dropped connection — kills the request, because there are no further parts to
-// report on. Collapsing the two into one http.MaxBytesReader would turn "one of
-// your five files is too big" into "your upload failed", which is a worse
-// answer and a harder one to act on.
+// Two failure classes, deliberately kept apart (§5.2). A per-file failure —
+// extension, size, an illegal name, or a backend error such as a full disk —
+// is an item error: the part is drained, the remaining parts are still
+// processed, and the response is 200 with the failure listed. A body-level
+// failure — the request ceiling, a malformed body, a dropped connection —
+// kills the request, because there are no further parts to report on.
+// Collapsing the two into one http.MaxBytesReader would turn "one of your
+// five files is too big" into "your upload failed", which is a worse answer
+// and a harder one to act on.
 //
 // The target directory rides in the query string rather than a form field: parts
 // arrive in order, and a field placed after the files would be read too late.
@@ -167,17 +168,18 @@ func (a *Admin) fmUpload(c *inertia.Context) {
 		name := part.FileName()
 		e, err := a.Storage.Upload(ctx, dir, name, part)
 		if err != nil {
+			// Every error from Upload is this item's alone: a backend failure
+			// on one file says nothing about whether the next one will fail
+			// too (a rejected extension on file 2 doesn't imply file 3 is
+			// also rejected; a permission error on file 2 doesn't imply
+			// file 3's write will also fail). The caller learns more from a
+			// per-file report than from a batch truncated at the first
+			// error, so the loop always continues to NextPart.
 			fails = append(fails, map[string]string{"name": name, "error": itemReason(err)})
-			// Drain: the next part is only reachable past this one's bytes.
-			_, _ = io.Copy(io.Discard, part)
+			// part.Close drains whatever of the part was not read, so there
+			// is nothing else to do before moving on to the next part.
 			_ = part.Close()
-			if errors.Is(err, storage.ErrBadPath) || errors.Is(err, storage.ErrRejected) {
-				continue
-			}
-			// A storage failure that is not policy (a full disk, say) will
-			// repeat for every remaining part; stop and say so.
-			a.fmFail(c, err)
-			return
+			continue
 		}
 		_ = part.Close()
 
@@ -212,7 +214,10 @@ func (a *Admin) fmBodyFail(c *inertia.Context, err error) {
 	}
 }
 
-// itemReason is the per-item message for a policy rejection.
+// itemReason is the per-item message for one file's upload failure. A policy
+// rejection (bad extension, bad name, over the size cap) speaks for itself;
+// anything else is a backend failure whose detail may name a filesystem path,
+// so it is not echoed to the browser.
 func itemReason(err error) string {
 	if errors.Is(err, storage.ErrRejected) || errors.Is(err, storage.ErrBadPath) {
 		return err.Error()
