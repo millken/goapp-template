@@ -23,21 +23,55 @@ type Options struct {
 	Known map[string]bool
 }
 
-// form is the comment syntax for one file type.
+// form is one comment syntax a block can be written in.
 type form struct {
 	open  string // prefix introducing a block, e.g. "//goappctl:"
 	end   string // the exact closing line (trimmed), e.g. "//goappctl:end"
 	close string // trailing text to trim from the name, e.g. "-->"
 }
 
-var forms = map[string]form{
-	".go":   {open: "//goappctl:", end: "//goappctl:end"},
-	".ts":   {open: "//goappctl:", end: "//goappctl:end"},
-	".yaml": {open: "#goappctl:", end: "#goappctl:end"},
-	".yml":  {open: "#goappctl:", end: "#goappctl:end"},
-	".md":   {open: "<!--goappctl:", end: "<!--goappctl:end-->", close: "-->"},
-	".html": {open: "<!--goappctl:", end: "<!--goappctl:end-->", close: "-->"},
-	".css":  {open: "/*goappctl:", end: "/*goappctl:end*/", close: "*/"},
+// forms maps an extension to the comment syntaxes its markers may use. Every
+// extension but .vue carries exactly one: .vue carries two, since a block
+// opened in its <script setup> half and one opened in its <template> half
+// each need their own comment syntax. Strip accepts a block opened in either
+// but requires it to close in that same syntax — see the mismatch check
+// there.
+var forms = map[string][]form{
+	".go":   {{open: "//goappctl:", end: "//goappctl:end"}},
+	".ts":   {{open: "//goappctl:", end: "//goappctl:end"}},
+	".yaml": {{open: "#goappctl:", end: "#goappctl:end"}},
+	".yml":  {{open: "#goappctl:", end: "#goappctl:end"}},
+	".md":   {{open: "<!--goappctl:", end: "<!--goappctl:end-->", close: "-->"}},
+	".html": {{open: "<!--goappctl:", end: "<!--goappctl:end-->", close: "-->"}},
+	".css":  {{open: "/*goappctl:", end: "/*goappctl:end*/", close: "*/"}},
+	".vue": {
+		{open: "//goappctl:", end: "//goappctl:end"},
+		{open: "<!--goappctl:", end: "<!--goappctl:end-->", close: "-->"},
+	},
+}
+
+// matchEnd returns the form among set whose end marker trimmed equals exactly,
+// or nil if trimmed closes nothing.
+func matchEnd(set []form, trimmed string) *form {
+	for i := range set {
+		if trimmed == set[i].end {
+			return &set[i]
+		}
+	}
+	return nil
+}
+
+// matchOpen returns the form among set whose open prefix trimmed carries, or
+// nil. Callers check matchEnd first: an end line for one form can carry
+// another form's open prefix only if the two share a prefix, which none of
+// today's forms do, but the ordering keeps the two concerns separate anyway.
+func matchOpen(set []form, trimmed string) *form {
+	for i := range set {
+		if strings.HasPrefix(trimmed, set[i].open) {
+			return &set[i]
+		}
+	}
+	return nil
 }
 
 // marker is the substring common to every form, used by HasMarkers.
@@ -62,7 +96,7 @@ func Supported(path string) bool {
 //
 // Files whose extension has no comment form are returned unchanged.
 func Strip(path string, src []byte, opts Options) ([]byte, int, error) {
-	f, ok := forms[filepath.Ext(path)]
+	set, ok := forms[filepath.Ext(path)]
 	if !ok {
 		return src, 0, nil
 	}
@@ -81,6 +115,7 @@ func Strip(path string, src []byte, opts Options) ([]byte, int, error) {
 		out      []string
 		stripped int
 		open     string
+		openForm *form // the form (comment syntax) that opened the current block
 		openLine int
 		skipping bool
 		seam     bool // a block was just removed; collapse blanks that follow
@@ -89,19 +124,30 @@ func Strip(path string, src []byte, opts Options) ([]byte, int, error) {
 		lineNo := i + 1
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, f.open) {
-			if trimmed == f.end {
-				if open == "" {
-					return nil, 0, fmt.Errorf("%s:%d: %q with no open block", path, lineNo, trimmed)
-				}
-				if skipping {
-					seam = true
-				}
-				open, skipping = "", false
-				continue
+		// Check every form's end marker first, not just the one that opened
+		// the current block: that is what lets a wrong-syntax close be
+		// reported as a mismatch instead of falling through as content (or,
+		// worse, as a fresh open).
+		if ef := matchEnd(set, trimmed); ef != nil {
+			if open == "" {
+				return nil, 0, fmt.Errorf("%s:%d: %q with no open block", path, lineNo, trimmed)
 			}
-			name := strings.TrimPrefix(trimmed, f.open)
-			name = strings.TrimSuffix(name, f.close)
+			if ef != openForm {
+				openMarker := openForm.open + open + openForm.close
+				return nil, 0, fmt.Errorf(
+					"%s:%d: %q closes block %q, but it was opened at line %d with %q; close it with %q instead",
+					path, lineNo, trimmed, open, openLine, openMarker, openForm.end)
+			}
+			if skipping {
+				seam = true
+			}
+			open, openForm, skipping = "", nil, false
+			continue
+		}
+
+		if of := matchOpen(set, trimmed); of != nil {
+			name := strings.TrimPrefix(trimmed, of.open)
+			name = strings.TrimSuffix(name, of.close)
 			if open != "" {
 				return nil, 0, fmt.Errorf("%s:%d: block %q is nested inside %q opened at line %d; nesting is not supported",
 					path, lineNo, name, open, openLine)
@@ -109,7 +155,7 @@ func Strip(path string, src []byte, opts Options) ([]byte, int, error) {
 			if !opts.Known[name] {
 				return nil, 0, fmt.Errorf("%s:%d: unknown component %q in marker", path, lineNo, name)
 			}
-			open, openLine = name, lineNo
+			open, openForm, openLine = name, of, lineNo
 			if opts.Off[name] {
 				skipping = true
 				stripped++
@@ -131,7 +177,7 @@ func Strip(path string, src []byte, opts Options) ([]byte, int, error) {
 	}
 
 	if open != "" {
-		return nil, 0, fmt.Errorf("%s:%d: block %q is unclosed (expected %q)", path, openLine, open, f.end)
+		return nil, 0, fmt.Errorf("%s:%d: block %q is unclosed (expected %q)", path, openLine, open, openForm.end)
 	}
 	return []byte(strings.Join(out, "\n") + trailer), stripped, nil
 }

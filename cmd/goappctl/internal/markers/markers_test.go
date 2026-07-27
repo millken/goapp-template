@@ -9,7 +9,7 @@ import (
 func opts(off ...string) Options {
 	o := Options{
 		Off:   map[string]bool{},
-		Known: map[string]bool{"db": true, "session": true, "admin": true, "ssr": true, "tooling": true},
+		Known: map[string]bool{"db": true, "session": true, "admin": true, "storage": true, "ssr": true, "tooling": true},
 	}
 	for _, n := range off {
 		o.Off[n] = true
@@ -137,13 +137,86 @@ func TestStrip_NoTrailingNewlinePreserved(t *testing.T) {
 }
 
 func TestStrip_UnsupportedExtensionIsNoop(t *testing.T) {
-	src := "<template>x</template>\n"
-	got, n, err := Strip("Page.vue", []byte(src), opts("db"))
+	src := "hello goappctl:db world\n"
+	got, n, err := Strip("notes.txt", []byte(src), opts("db"))
 	if err != nil {
 		t.Fatalf("Strip: %v", err)
 	}
 	if n != 0 || string(got) != src {
 		t.Errorf("expected no-op, got %q (%d)", got, n)
+	}
+	if Supported("notes.txt") {
+		t.Error("Supported(.txt) = true, want false")
+	}
+}
+
+// TestStrip_VueForm covers a .vue file using both comment syntaxes at once:
+// //goappctl: in <script setup>, <!--goappctl:--> in <template>. Each half
+// must strip using its own syntax in the same pass.
+func TestStrip_VueForm(t *testing.T) {
+	src := "<script setup>\n" +
+		"import Kept from './Kept.vue'\n" +
+		"//goappctl:storage\n" +
+		"import ImagePicker from './ImagePicker.vue'\n" +
+		"//goappctl:end\n" +
+		"</script>\n\n" +
+		"<template>\n" +
+		"  <Kept />\n" +
+		"  <!--goappctl:storage-->\n" +
+		"  <ImagePicker />\n" +
+		"  <!--goappctl:end-->\n" +
+		"</template>\n"
+
+	got, n, err := Strip("form.vue", []byte(src), opts("storage"))
+	if err != nil {
+		t.Fatalf("Strip: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("stripped = %d, want 2", n)
+	}
+	if strings.Contains(string(got), "ImagePicker") || strings.Contains(string(got), "goappctl") {
+		t.Errorf("storage blocks not stripped: %q", got)
+	}
+	if !strings.Contains(string(got), "Kept") {
+		t.Errorf("unrelated content lost: %q", got)
+	}
+
+	kept, n, err := Strip("form.vue", []byte(src), opts())
+	if err != nil {
+		t.Fatalf("Strip keep: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("stripped = %d, want 0", n)
+	}
+	if !strings.Contains(string(kept), "import ImagePicker") || !strings.Contains(string(kept), "<ImagePicker />") {
+		t.Errorf("storage kept but content lost: %q", kept)
+	}
+	if strings.Contains(string(kept), "goappctl") {
+		t.Errorf("marker lines not unwrapped: %q", kept)
+	}
+
+	if !Supported("frontend/pages/admin/user/form.vue") {
+		t.Error("Supported(.vue) = false, want true")
+	}
+}
+
+// TestStrip_VueMismatchedCloseErrors covers the seam between .vue's two
+// syntaxes: a block opened in one must not silently close in the other.
+func TestStrip_VueMismatchedCloseErrors(t *testing.T) {
+	src := "<script setup>\n" +
+		"//goappctl:storage\n" +
+		"import ImagePicker from './ImagePicker.vue'\n" +
+		"<!--goappctl:end-->\n" +
+		"</script>\n"
+
+	_, _, err := Strip("form.vue", []byte(src), opts("storage"))
+	if err == nil {
+		t.Fatal("expected an error for a mismatched close, got nil")
+	}
+	for _, want := range []string{"//goappctl:storage", "<!--goappctl:end-->", "//goappctl:end"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err.Error(), want)
+		}
 	}
 }
 
