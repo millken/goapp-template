@@ -19,6 +19,7 @@ type UserRow = {
   group: string
   status: number
   created_at: number
+  avatar: string
 }
 
 defineProps<{
@@ -69,9 +70,17 @@ const askDelete = (row: Record<string, unknown>) => {
       <CardContent class="pt-6">
         <DataTable :columns="columns" :data="items" search-key="username">
           <template #cell-username="{ row }">
-            <a :href="`${basePath}/${row.id}/edit`" class="font-medium hover:underline">
-              {{ row.username }}
-            </a>
+            <div class="flex items-center gap-2">
+              <img
+                v-if="row.avatar"
+                :src="`/uploads/${row.avatar}`"
+                :alt="String(row.username)"
+                class="size-6 rounded-full border object-cover"
+              />
+              <a :href="`${basePath}/${row.id}/edit`" class="font-medium hover:underline">
+                {{ row.username }}
+              </a>
+            </div>
           </template>
           <template #cell-status="{ row }">
             <Badge :variant="row.status === 1 ? 'default' : 'secondary'">

@@ -2,13 +2,21 @@
 import AdminShell from '@/components/admin/AdminShell.vue'
 import CsrfField from '@/components/admin/CsrfField.vue'
 import FormField from '@/components/admin/FormField.vue'
+import ImagePicker from '@/components/admin/ImagePicker.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 
 interface MenuItem { title: string; path: string; order?: number; section?: string }
-type UserRow = { id: number; username: string; group_id: number; group: string; status: number }
+type UserRow = {
+  id: number
+  username: string
+  group_id: number
+  group: string
+  status: number
+  avatar: string
+}
 
 const props = defineProps<{
   item: UserRow
@@ -24,6 +32,8 @@ const props = defineProps<{
   currentPath?: string
   flash?: Record<string, string>
   csrfToken?: string
+  canBrowseFiles?: boolean
+  urlPrefix?: string
 }>()
 
 const editing = props.item.id > 0
@@ -68,6 +78,16 @@ const editing = props.item.id > 0
                 {{ g.name }}
               </option>
             </select>
+          </FormField>
+
+          <FormField name="avatar" label="头像" :error="errors?.avatar">
+            <ImagePicker
+              name="avatar"
+              :model-value="item.avatar"
+              :can-browse="canBrowseFiles"
+              :url-prefix="urlPrefix ?? '/uploads'"
+              :csrf-token="csrfToken"
+            />
           </FormField>
 
           <FormField

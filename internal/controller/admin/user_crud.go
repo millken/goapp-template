@@ -47,6 +47,7 @@ type userRow struct {
 	Group    string `json:"group"`
 	Status   int    `json:"status"`
 	Created  int64  `json:"created_at"`
+	Avatar   string `json:"avatar"`
 }
 
 // groupOption is a choice in the form's group select.
@@ -78,7 +79,7 @@ func (a *Admin) userBase() string { return a.Prefix() + "/user" }
 // a lookup per row.
 func (a *Admin) usersIndex(c *inertia.Context) {
 	q := fmt.Sprintf(`SELECT u.id, u.username, COALESCE(u.group_id, 0), COALESCE(g.name, ''),
-		u.status, u.created_at
+		u.status, u.created_at, u.avatar
 		FROM %s u LEFT JOIN user_groups g ON g.id = u.group_id
 		ORDER BY u.username`, a.usersTable())
 
@@ -93,7 +94,7 @@ func (a *Admin) usersIndex(c *inertia.Context) {
 	items := []userRow{}
 	for rows.Next() {
 		var u userRow
-		if err := rows.Scan(&u.ID, &u.Username, &u.GroupID, &u.Group, &u.Status, &u.Created); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.GroupID, &u.Group, &u.Status, &u.Created, &u.Avatar); err != nil {
 			slog.Error("admin: scan user", "err", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
@@ -126,6 +127,13 @@ func (a *Admin) userCreate(c *inertia.Context) {
 	item.GroupID, _ = parseInt64(c.PostForm("group_id"))
 	password := c.PostForm("password")
 
+	//goappctl:storage
+	// Marked, so a storage-less build never stores a path it has no way to
+	// validate or render: with the component off this line is gone and Avatar
+	// stays "".
+	item.Avatar = c.PostForm("avatar")
+	//goappctl:end
+
 	v := a.validateUser(ctx, item, password, true, 0)
 	if !v.OK() {
 		a.renderUserForm(c, item, v.Errors())
@@ -139,10 +147,10 @@ func (a *Admin) userCreate(c *inertia.Context) {
 		return
 	}
 
-	q := fmt.Sprintf(`INSERT INTO %s (username, password_hash, created_at, status, group_id)
-		VALUES (?, ?, ?, ?, ?)`, a.usersTable())
+	q := fmt.Sprintf(`INSERT INTO %s (username, password_hash, created_at, status, group_id, avatar)
+		VALUES (?, ?, ?, ?, ?, ?)`, a.usersTable())
 	if _, err := a.DB.ExecContext(ctx, q, item.Username, hash, time.Now().UnixNano(),
-		statusActive, item.GroupID); err != nil {
+		statusActive, item.GroupID, item.Avatar); err != nil {
 		slog.Error("admin: create user", "err", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
@@ -191,6 +199,13 @@ func (a *Admin) userUpdate(c *inertia.Context) {
 	item.GroupID, _ = parseInt64(c.PostForm("group_id"))
 	password := c.PostForm("password")
 
+	//goappctl:storage
+	// Marked, so a storage-less build never stores a path it has no way to
+	// validate or render: with the component off this line is gone and Avatar
+	// stays "".
+	item.Avatar = c.PostForm("avatar")
+	//goappctl:end
+
 	v := a.validateUser(ctx, item, password, password != "", id)
 	// Rule 2: you may edit your own username and password, but not move yourself
 	// to another group — that is how you take away your own access.
@@ -207,8 +222,8 @@ func (a *Admin) userUpdate(c *inertia.Context) {
 	// The group change can strand the last superuser, so it runs under the
 	// guard; the guard is harmless when nothing about superuser status changed.
 	err = a.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
-		q := fmt.Sprintf(`UPDATE %s SET username = ?, group_id = ? WHERE id = ?`, a.usersTable())
-		if _, err := tx.ExecContext(ctx, q, item.Username, item.GroupID, id); err != nil {
+		q := fmt.Sprintf(`UPDATE %s SET username = ?, group_id = ?, avatar = ? WHERE id = ?`, a.usersTable())
+		if _, err := tx.ExecContext(ctx, q, item.Username, item.GroupID, item.Avatar, id); err != nil {
 			return err
 		}
 		if password == "" {
@@ -353,6 +368,13 @@ func (a *Admin) validateUser(ctx context.Context, item userRow, password string,
 			v.Check(exists, "group_id", "该分组不存在")
 		}
 	}
+	//goappctl:storage
+	// A path from a form is a string a browser sent, and the picker is not the
+	// only way to fill this field. Empty means "no avatar" and is valid.
+	if item.Avatar != "" {
+		v.Check(a.Storage.ValidatePath(item.Avatar) == nil, "avatar", "图片路径不合法")
+	}
+	//goappctl:end
 	return v
 }
 
@@ -386,12 +408,12 @@ func (a *Admin) groupExists(ctx context.Context, id int64) (bool, error) {
 // findUserRow loads one row for the edit form, returning (nil, nil) if absent.
 func (a *Admin) findUserRow(ctx context.Context, id int64) (*userRow, error) {
 	q := fmt.Sprintf(`SELECT u.id, u.username, COALESCE(u.group_id, 0), COALESCE(g.name, ''),
-		u.status, u.created_at
+		u.status, u.created_at, u.avatar
 		FROM %s u LEFT JOIN user_groups g ON g.id = u.group_id
 		WHERE u.id = ?`, a.usersTable())
 	var u userRow
 	if err := a.DB.QueryRowContext(ctx, q, id).
-		Scan(&u.ID, &u.Username, &u.GroupID, &u.Group, &u.Status, &u.Created); err != nil {
+		Scan(&u.ID, &u.Username, &u.GroupID, &u.Group, &u.Status, &u.Created, &u.Avatar); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -431,6 +453,9 @@ func (a *Admin) renderUserForm(c *inertia.Context, item userRow, errs map[string
 	c.Set("item", item)
 	c.Set("groups", groups)
 	c.Set("basePath", a.userBase())
+	//goappctl:storage
+	c.Set("urlPrefix", a.Storage.URLPrefix())
+	//goappctl:end
 	if errs != nil {
 		c.Set("errors", errs)
 	}

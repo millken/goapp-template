@@ -180,6 +180,55 @@ func TestSSR_FileManagerRendersUnderQuickJS(t *testing.T) {
 	}
 }
 
+// TestSSR_UserFormRendersUnderQuickJS guards the user form against the same
+// failure mode as the dashboard and file manager tests: a component touching
+// document/window at module scope kills the whole bundle. This is the page
+// that gives ImagePicker (Task 7) its first real caller — canBrowseFiles: true
+// takes it down the "browse" branch, which renders a button rather than a bare
+// text input, so a regression there (e.g. the button's own module import
+// blowing up under QuickJS) has something to fail against.
+func TestSSR_UserFormRendersUnderQuickJS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skips the QuickJS VM in -short mode")
+	}
+	const bundlePath = "../frontend/dist/" + ssrBundleName
+	bundle, err := os.ReadFile(bundlePath)
+	if err != nil {
+		t.Skipf("no SSR bundle at %s; run `pnpm -C frontend build:ssr` first", bundlePath)
+	}
+	vm, err := quickjs.NewVM(ssr.WithDefaultCache(1), ssr.WithBundlerJS(string(bundle)))
+	if err != nil {
+		t.Fatalf("NewVM: %v", err)
+	}
+	defer vm.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	html, err := vm.RenderComponent(ctx, "admin/user/form", map[string]any{
+		"item": map[string]any{
+			"id": 1, "username": "alice", "group_id": 1, "group": "Administrators",
+			"status": 1, "avatar": "a.png",
+		},
+		"groups":         []map[string]any{{"id": 1, "name": "Administrators"}},
+		"basePath":       "/admin/user",
+		"canBrowseFiles": true,
+		"urlPrefix":      "/uploads",
+		"adminUser":      map[string]any{"id": 1, "username": "alice"},
+		"adminMount":     "/admin",
+		"loginPath":      "/admin/login",
+		"currentPath":    "/admin/user/1",
+		"adminMenu":      []map[string]any{{"title": "用户", "path": "/admin/user", "section": "访问控制"}},
+		"csrfToken":      "tok",
+	})
+	if err != nil {
+		t.Fatalf("RenderComponent(admin/user/form): %v", err)
+	}
+	if !strings.Contains(html, "选择图片") {
+		t.Errorf("rendered form is missing %q — canBrowseFiles was true, so ImagePicker should render its browse button, not the plain text fallback", "选择图片")
+	}
+}
+
 // maxButtonDepth walks markup counting button opens and closes. Deliberately
 // crude: it needs to spot nesting, not parse HTML.
 func maxButtonDepth(html string) int {

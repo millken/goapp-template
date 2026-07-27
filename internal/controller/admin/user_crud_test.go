@@ -11,15 +11,31 @@ import (
 	"testing"
 
 	"github.com/millken/goapp-template/internal/service/session"
+	"github.com/millken/goapp-template/internal/service/storage"
 	"github.com/millken/inertia"
 )
 
 // adminStack is loginStack, which mounts the user and group routes as part of
-// Mount — this helper just adds the registration check and a cookie, which is
-// what every test below needs.
+// Mount — this helper just adds the registration check, a cookie, and a
+// started storage service, which is what every test below needs.
+//
+// The storage service is here rather than left nil: renderUserForm reads
+// a.Storage.URLPrefix() unconditionally (guarded by a goappctl:storage marker,
+// not a nil check — a misconfigured build should fail at Start, not serve a
+// form with half its props missing). Every test through this stack renders
+// that form at least once, on a validation failure if nowhere else, so the
+// field has to be real. TestUserAvatar_RoundTripsAndIsValidated replaces it
+// with its own instance rooted at its own temp dir, which is fine — this one
+// is never asserted on by name.
 func adminStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	t.Helper()
 	eng, adm := loginStack(t)
+	stor := storage.New(&storage.Config{Root: t.TempDir()})
+	if err := stor.Start(context.Background()); err != nil {
+		t.Fatalf("start storage: %v", err)
+	}
+	t.Cleanup(func() { _ = stor.Stop(context.Background()) })
+	adm.Storage = stor
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("routes did not register: %v", err)
 	}
@@ -420,4 +436,58 @@ func stagedFlash(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, from *h
 	w := httptest.NewRecorder()
 	eng.ServeHTTP(w, r)
 	return w.Body.String()
+}
+
+func TestUserAvatar_RoundTripsAndIsValidated(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+	ctx := context.Background()
+	stor := storage.New(&storage.Config{Root: t.TempDir()})
+	if err := stor.Start(ctx); err != nil {
+		t.Fatalf("start storage: %v", err)
+	}
+	t.Cleanup(func() { _ = stor.Stop(ctx) })
+	adm.Storage = stor
+
+	var gid int64
+	if err := adm.DB.QueryRowContext(ctx,
+		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		t.Fatal(err)
+	}
+
+	w := post(t, eng, cookie, "/admin/user", url.Values{
+		"username": {"dave"},
+		"password": {"s3cretpw"},
+		"group_id": {fmt.Sprint(gid)},
+		"avatar":   {"photos/dave.png"},
+	})
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	var avatar string
+	if err := adm.DB.QueryRowContext(ctx,
+		`SELECT avatar FROM users WHERE username = 'dave'`).Scan(&avatar); err != nil {
+		t.Fatal(err)
+	}
+	if avatar != "photos/dave.png" {
+		t.Errorf("avatar = %q", avatar)
+	}
+
+	// A path that escapes the tree is a form error, not a stored string.
+	w = post(t, eng, cookie, "/admin/user", url.Values{
+		"username": {"erin"},
+		"password": {"s3cretpw"},
+		"group_id": {fmt.Sprint(gid)},
+		"avatar":   {"../../etc/passwd"},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("an invalid avatar must re-render the form, got %d", w.Code)
+	}
+	var n int
+	if err := adm.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users WHERE username = 'erin'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("erin must not have been created")
+	}
 }

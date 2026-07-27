@@ -1,0 +1,14 @@
+-- 006_user_avatar.up.sql
+-- The user's avatar as a path relative to the storage root, or '' for none.
+-- A path, not a URL: the public prefix is config (storage.url_prefix), and
+-- baking it into stored data would make changing it a data migration.
+--
+-- Not wrapped in a goappctl marker, unlike the Go and Vue code that uses it: a
+-- column nobody writes to is harmless, while a conditionally-numbered migration
+-- would make two generated projects disagree about what 006 is.
+--
+-- No backfill: a constant DEFAULT on ADD COLUMN fills existing rows.
+--
+-- SQLite flavor (the template's default driver). PostgreSQL and MySQL accept
+-- this statement as written.
+ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT '';
