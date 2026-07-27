@@ -17,7 +17,10 @@ export default defineConfig({
     // The pjax modules drive history, scroll and DOM events, so they need a
     // document. happy-dom is the lighter of the two usual choices.
     environment: 'happy-dom',
-    include: ['src/**/*.test.ts'],
+    // pages/ as well as src/: a test file placed beside a page would otherwise
+    // be collected by nothing and pass by never running, which is how six
+    // PermissionGrid cases went unexecuted while the suite reported green.
+    include: ['src/**/*.test.ts', 'pages/**/*.test.ts'],
   },
   resolve: {
     alias: {

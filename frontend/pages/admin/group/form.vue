@@ -5,7 +5,7 @@ import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import PermissionGrid from './PermissionGrid.vue'
+import PermissionGrid from '@/components/admin/PermissionGrid.vue'
 
 interface MenuItem { title: string; path: string; order?: number; section?: string }
 type GroupRow = { id: number; name: string; superuser: boolean; members: number; keys: number }
