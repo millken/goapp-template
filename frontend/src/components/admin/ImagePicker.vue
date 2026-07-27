@@ -6,7 +6,7 @@
 // it is false this degrades to a text input: the picker's endpoints would 403,
 // and a button guaranteed to fail is worse than a field the user can still type
 // into.
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import FileManagerDialog from '@/components/admin/FileManagerDialog.vue'
 import type { FmEntry } from '@/components/admin/FileManager.vue'
 import { Button } from '@/components/ui/button'
@@ -27,8 +27,28 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const open = ref(false)
+
+// A local ref kept in sync by a watcher, not a computed get/set: this is
+// mounted one-way as `:model-value="item.avatar"` from an Inertia page prop
+// with nothing listening for `update:modelValue`, so a computed setter would
+// emit into a void and picking an image would never change what's on screen.
+// The component has to hold its own state (so the picker's own emit still
+// works) *and* resync when the parent hands it a new value (so a reused
+// instance or a post-reset repopulation isn't left showing stale data).
 const value = ref(props.modelValue)
-const preview = computed(() => (value.value ? `${props.urlPrefix}/${value.value}` : ''))
+watch(
+  () => props.modelValue,
+  (v) => {
+    value.value = v
+  },
+)
+
+const preview = computed(() => {
+  if (!value.value) return ''
+  const prefix = props.urlPrefix.replace(/\/+$/, '')
+  const path = value.value.replace(/^\/+/, '')
+  return `${prefix}/${path}`
+})
 
 function set(v: string) {
   value.value = v
