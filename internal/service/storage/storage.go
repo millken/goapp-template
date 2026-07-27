@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -139,8 +140,19 @@ func (s *Service) FS() fs.FS { return s.root.FS() }
 
 func (s *Service) URLPrefix() string { return cmp.Or(s.cfg.URLPrefix, defaultURLPrefix) }
 
-// URLFor is the public URL of a stored path.
-func (s *Service) URLFor(name string) string { return s.URLPrefix() + "/" + name }
+// URLFor is the public URL of a stored path. sanitiseFilename keeps "#", "%"
+// and "?" — legal in a filename, all three meaningful in a URL — so each
+// segment is escaped with url.PathEscape (not url.QueryEscape, which would
+// also turn a space into "+" instead of "%20") before being rejoined with "/".
+// Escaping per segment, rather than the joined path, is what keeps "/" itself
+// from being escaped away.
+func (s *Service) URLFor(name string) string {
+	segs := strings.Split(name, "/")
+	for i, seg := range segs {
+		segs[i] = url.PathEscape(seg)
+	}
+	return s.URLPrefix() + "/" + strings.Join(segs, "/")
+}
 
 func (s *Service) MaxRequestSize() int64 {
 	return cmp.Or(s.cfg.MaxRequestSize, int64(defaultMaxRequestSize))

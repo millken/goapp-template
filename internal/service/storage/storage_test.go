@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -388,4 +389,61 @@ func TestURLFor(t *testing.T) {
 	if got := s.URLFor("a/b.png"); got != "/uploads/a/b.png" {
 		t.Errorf("URLFor = %q", got)
 	}
+}
+
+// TestURLFor_EscapesPerSegment covers the characters sanitiseFilename
+// deliberately keeps (#, %, ?) but that are meaningful in a URL: "#" starts a
+// fragment, "?" starts a query, and a bare "%" is not even parseable —
+// httptest.NewRequest panics on "/uploads/100%.png". A space cannot survive
+// sanitiseFilename (it becomes "-"), but ValidatePath accepts one directly —
+// avatar and other stored-path fields do not go through sanitisation — so a
+// path with an embedded space is still a real input to URLFor.
+func TestURLFor_EscapesPerSegment(t *testing.T) {
+	s := startedService(t)
+	cases := map[string]string{
+		"photo#1.png": "/uploads/photo%231.png",
+		"100%.png":    "/uploads/100%25.png",
+		"a?b.png":     "/uploads/a%3Fb.png",
+		"a b.png":     "/uploads/a%20b.png",
+		"dir/a#b.png": "/uploads/dir/a%23b.png",
+	}
+	for in, want := range cases {
+		got := s.URLFor(in)
+		if got != want {
+			t.Errorf("URLFor(%q) = %q, want %q", in, got, want)
+		}
+		if _, err := url.Parse(got); err != nil {
+			t.Errorf("URLFor(%q) = %q, not a parseable URL: %v", in, got, err)
+		}
+	}
+}
+
+// TestURLFor_ChineseFilenameRoundTripsThroughTheStaticRoute proves the escape
+// does not go too far: url.PathEscape percent-encodes every non-ASCII byte,
+// so it is worth confirming a legitimate Chinese filename still resolves
+// rather than becoming technically-valid-but-unreachable. The check mirrors
+// what the static route actually does (inertia.StaticFileServer): trim the
+// prefix off the request's already-decoded URL.Path and hand the rest to
+// fs.FS.Open — so parsing the URL back and reopening through s.FS() is the
+// real round trip, not a proxy for it.
+func TestURLFor_ChineseFilenameRoundTripsThroughTheStaticRoute(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	if _, err := s.Upload(ctx, "", "图片.png", strings.NewReader("x")); err != nil {
+		t.Fatal(err)
+	}
+
+	got := s.URLFor("图片.png")
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("URLFor(%q) = %q, not a parseable URL: %v", "图片.png", got, err)
+	}
+	// url.Parse already unescapes into u.Path, exactly as net/http does for
+	// an incoming request's r.URL.Path.
+	reqPath := strings.TrimPrefix(u.Path, s.URLPrefix()+"/")
+	f, err := s.FS().Open(reqPath)
+	if err != nil {
+		t.Fatalf("the static route could not open what URLFor(%q) pointed at (%q): %v", "图片.png", got, err)
+	}
+	f.Close()
 }
