@@ -457,8 +457,13 @@ one implementation's shape with an `interface` keyword in front.
 
 - **Path safety** — a table over traversal attempts (`..`, `/etc/passwd`,
   `a/../../b`, backslashes, NUL, over-long segments), plus a symlink planted in
-  the tree that points outside it, asserting `os.Root` refuses rather than
-  asserting the cleaner caught it.
+  the tree that points outside it (`TestSymlinkEscapeIsRefusedByStatOpenAndFS`
+  in `storage_test.go`), asserting `os.Root` refuses rather than asserting the
+  cleaner caught it — the symlink's own name is a perfectly legal path per
+  `clean()`, so the string-cleaning layer has nothing to catch here; this is
+  the test for the *other* layer. Its job is to fail if a future edit swaps
+  `os.OpenRoot` for `os.DirFS`, or a `root.Open`/`root.Stat` for the `os`
+  equivalent — verified by making that swap once and watching it fail.
 - **Upload policy** — extension whitelist, the per-file cap trips at the cap,
   collision produces `name-2.png`, a filename of `../../x.png` lands as
   `x.png`.

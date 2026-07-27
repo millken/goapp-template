@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -59,6 +61,54 @@ func TestStart_CreatesTheRootAndRejectsAnEmptyOne(t *testing.T) {
 	s := startedService(t)
 	if s.URLPrefix() != "/uploads" {
 		t.Errorf("URLPrefix default = %q", s.URLPrefix())
+	}
+}
+
+// TestSymlinkEscapeIsRefusedByStatOpenAndFS is §7.2's symlink case: a symlink
+// planted inside the tree that points outside it. "escape.txt" is a perfectly
+// legal path per clean() — the string-cleaning layer has nothing to catch
+// here — so this asserts the *other* layer, os.Root, refuses at the syscall.
+// It exists to fail if someone later swaps os.OpenRoot for os.DirFS, or a
+// root.Open for an os.Open: see the mutation check recorded in
+// .superpowers/sdd/final-go-report.md, which did exactly that, temporarily,
+// and watched this test go red before reverting.
+func TestSymlinkEscapeIsRefusedByStatOpenAndFS(t *testing.T) {
+	base := t.TempDir()
+	rootDir := filepath.Join(base, "root")
+	outsideDir := filepath.Join(base, "outside")
+	if err := os.MkdirAll(rootDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(outsideDir, "secret.txt")
+	if err := os.WriteFile(secret, []byte("do not serve this"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(rootDir, "escape.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(&Config{Root: rootDir})
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Stop(context.Background()) })
+	ctx := context.Background()
+
+	if _, err := s.Stat(ctx, "escape.txt"); err == nil {
+		t.Error("Stat must refuse a symlink pointing outside the root")
+	}
+	if _, err := s.be.Open(ctx, "escape.txt"); err == nil {
+		t.Error("Backend.Open must refuse a symlink pointing outside the root")
+	}
+	// Service.FS() is what the public /uploads/* route actually serves
+	// through, so this is the one that matters most: a symlink escape here is
+	// a symlink escape onto the internet.
+	if f, err := s.FS().Open("escape.txt"); err == nil {
+		f.Close()
+		t.Error("Service.FS() must refuse a symlink pointing outside the root")
 	}
 }
 
