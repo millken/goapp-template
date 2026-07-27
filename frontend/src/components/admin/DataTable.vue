@@ -107,20 +107,24 @@ const searchLabel = computed(
     <Table>
       <TableHeader>
         <TableRow v-for="hg in table.getHeaderGroups()" :key="hg.id">
-          <TableHead v-for="header in hg.headers" :key="header.id">
+          <!-- The registry copies default to p-4 and h-12, which is roomier than
+               this admin's approved density: ten rows should fit a laptop screen.
+               Overridden here rather than in the copies so gen ui --force has
+               nothing of ours to revert. -->
+          <TableHead v-for="header in hg.headers" :key="header.id" class="h-10 px-3">
             <FlexRender :render="header.column.columnDef.header" :props="header.getContext()" />
           </TableHead>
-          <TableHead v-if="slots['row-actions']" class="w-12" />
+          <TableHead v-if="slots['row-actions']" class="h-10 w-12 px-3" />
         </TableRow>
       </TableHeader>
       <TableBody>
         <TableRow v-for="row in table.getRowModel().rows" :key="row.id">
-          <TableCell v-for="cell in row.getVisibleCells()" :key="cell.id">
+          <TableCell v-for="cell in row.getVisibleCells()" :key="cell.id" class="px-3 py-2.5">
             <slot :name="`cell-${cell.column.id}`" :row="row.original">
               <FlexRender :render="cell.column.columnDef.cell" :props="cell.getContext()" />
             </slot>
           </TableCell>
-          <TableCell v-if="slots['row-actions']">
+          <TableCell v-if="slots['row-actions']" class="px-3 py-2.5">
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
                 <Button variant="ghost" size="icon-sm"><MoreHorizontal /></Button>
@@ -148,30 +152,41 @@ const searchLabel = computed(
          reparse and hydration then disagrees with. PaginationItem is itself a
          button (it applies buttonVariants), so the page number goes in its slot
          rather than in a nested Button. -->
-    <Pagination
-      v-if="table.getPageCount() > 1"
-      :items-per-page="pageSize"
-      :total="table.getFilteredRowModel().rows.length"
-      :page="table.getState().pagination.pageIndex + 1"
-      :sibling-count="1"
-      show-edges
-      @update:page="(p) => table.setPageIndex(p - 1)"
-    >
+    <!-- The count is always shown and the pager only when it can do something.
+         A table whose footer disappears entirely leaves no answer to "how many
+         are there", which is the question a filtered list raises first. -->
+    <div class="flex items-center justify-between gap-4">
+      <span class="text-sm text-muted-foreground">
+        共 {{ table.getFilteredRowModel().rows.length }} 条<template
+          v-if="table.getFilteredRowModel().rows.length !== data.length"
+        >（共 {{ data.length }} 条中筛出）</template>
+      </span>
+
+      <Pagination
+        v-if="table.getPageCount() > 1"
+        :items-per-page="pageSize"
+        :total="table.getFilteredRowModel().rows.length"
+        :page="table.getState().pagination.pageIndex + 1"
+        :sibling-count="1"
+        show-edges
+        @update:page="(p) => table.setPageIndex(p - 1)"
+      >
       <PaginationContent v-slot="{ items }" class="justify-end">
-        <PaginationFirst />
-        <PaginationPrevious />
-        <template v-for="(item, i) in items">
-          <PaginationItem
-            v-if="item.type === 'page'"
-            :key="`page-${item.value}`"
-            :value="item.value"
-            :is-active="item.value === table.getState().pagination.pageIndex + 1"
-          >{{ item.value }}</PaginationItem>
-          <PaginationEllipsis v-else :key="`gap-${i}`" :index="i" />
-        </template>
-        <PaginationNext />
-        <PaginationLast />
-      </PaginationContent>
-    </Pagination>
+          <PaginationFirst />
+          <PaginationPrevious />
+          <template v-for="(item, i) in items">
+            <PaginationItem
+              v-if="item.type === 'page'"
+              :key="`page-${item.value}`"
+              :value="item.value"
+              :is-active="item.value === table.getState().pagination.pageIndex + 1"
+            >{{ item.value }}</PaginationItem>
+            <PaginationEllipsis v-else :key="`gap-${i}`" :index="i" />
+          </template>
+          <PaginationNext />
+          <PaginationLast />
+        </PaginationContent>
+      </Pagination>
+    </div>
   </div>
 </template>

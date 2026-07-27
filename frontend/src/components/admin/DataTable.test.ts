@@ -88,6 +88,31 @@ describe('DataTable', () => {
     expect(el.textContent).not.toContain('No posts yet.')
   })
 
+  // The footer answers "how many are there", which a filtered list raises first.
+  // It has to be there even when the pager is not — a table with one page used to
+  // render no footer at all.
+  it('always shows the count, and the pager only when it can do something', async () => {
+    const one = mount({ columns, data: rows(5) })
+    await nextTick()
+    expect(one.textContent).toContain('共 5 条')
+    expect(one.querySelector('nav')).toBeNull()
+
+    const many = mount({ columns, data: rows(45) })
+    await nextTick()
+    expect(many.textContent).toContain('共 45 条')
+    expect(many.querySelector('nav')).not.toBeNull()
+  })
+
+  it('says how many a filter left, and out of how many', async () => {
+    const el = mount({ columns, data: rows(25), searchKey: 'name' })
+    const input = el.querySelector('input')!
+    input.value = 'row 07'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(el.textContent).toContain('共 1 条')
+    expect(el.textContent).toContain('共 25 条中筛出')
+  })
+
   // PaginationItem renders its own <button>, so using it to wrap
   // First/Previous/Next/Last nests a button inside a button — browsers reparse
   // that and hydration then disagrees with the server's markup. The real guard
