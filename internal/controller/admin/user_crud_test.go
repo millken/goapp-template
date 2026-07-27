@@ -11,31 +11,38 @@ import (
 	"testing"
 
 	"github.com/millken/goapp-template/internal/service/session"
+	//goappctl:storage
 	"github.com/millken/goapp-template/internal/service/storage"
+	//goappctl:end
 	"github.com/millken/inertia"
 )
 
 // adminStack is loginStack, which mounts the user and group routes as part of
-// Mount — this helper just adds the registration check, a cookie, and a
-// started storage service, which is what every test below needs.
-//
-// The storage service is here rather than left nil: renderUserForm reads
-// a.Storage.URLPrefix() unconditionally (guarded by a goappctl:storage marker,
-// not a nil check — a misconfigured build should fail at Start, not serve a
-// form with half its props missing). Every test through this stack renders
-// that form at least once, on a validation failure if nowhere else, so the
-// field has to be real. TestUserAvatar_RoundTripsAndIsValidated replaces it
-// with its own instance rooted at its own temp dir, which is fine — this one
-// is never asserted on by name.
+// Mount — this helper just adds the registration check and a cookie, plus
+// (with storage in the build) a started storage service, which is what every
+// test below needs.
 func adminStack(t *testing.T) (*inertia.Engine, *Admin, *http.Cookie) {
 	t.Helper()
 	eng, adm := loginStack(t)
+
+	//goappctl:storage
+	// The storage service is here rather than left nil: a.Storage is read
+	// unconditionally by resolve's urlPrefix prop and by validateUser's avatar
+	// check (each guarded by its own goappctl:storage marker, not a nil check
+	// — a misconfigured build should fail at Start, not serve a form with half
+	// its props missing). Every test through this stack renders that form at
+	// least once, on a validation failure if nowhere else, so the field has to
+	// be real. TestUserAvatar_RoundTripsAndIsValidated replaces it with its own
+	// instance rooted at its own temp dir, which is fine — this one is never
+	// asserted on by name.
 	stor := storage.New(&storage.Config{Root: t.TempDir()})
 	if err := stor.Start(context.Background()); err != nil {
 		t.Fatalf("start storage: %v", err)
 	}
 	t.Cleanup(func() { _ = stor.Stop(context.Background()) })
 	adm.Storage = stor
+	//goappctl:end
+
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("routes did not register: %v", err)
 	}
@@ -438,6 +445,12 @@ func stagedFlash(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, from *h
 	return w.Body.String()
 }
 
+// TestUserAvatar_RoundTripsAndIsValidated is entirely about the avatar field,
+// which userCreate only captures and validateUser only checks inside their own
+// goappctl:storage markers (user_crud.go): with the component off, posting
+// "avatar" is a no-op and nothing here would have anything to assert.
+//
+//goappctl:storage
 func TestUserAvatar_RoundTripsAndIsValidated(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	ctx := context.Background()
@@ -491,3 +504,5 @@ func TestUserAvatar_RoundTripsAndIsValidated(t *testing.T) {
 		t.Error("erin must not have been created")
 	}
 }
+
+//goappctl:end

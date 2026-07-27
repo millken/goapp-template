@@ -15,7 +15,9 @@ import (
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/service/db"
 	"github.com/millken/goapp-template/internal/service/session"
+	//goappctl:storage
 	"github.com/millken/goapp-template/internal/service/storage"
+	//goappctl:end
 	"github.com/millken/inertia"
 
 	// Register the SQLite driver for this test.
@@ -63,6 +65,7 @@ func loginStackWithStore(t *testing.T, store session.StoreKind) (*inertia.Engine
 	svc.Session = sessSvc
 	eng.Use(sessSvc.Middleware())
 
+	//goappctl:storage
 	// resolve reads Storage.URLPrefix() unconditionally (guarded by a
 	// goappctl:storage marker, not a nil check — see mountFileManager's comment
 	// in admin.go): a build carrying that marker always has Storage started
@@ -75,6 +78,7 @@ func loginStackWithStore(t *testing.T, store session.StoreKind) (*inertia.Engine
 	}
 	t.Cleanup(func() { _ = storSvc.Stop(ctx) })
 	svc.Storage = storSvc
+	//goappctl:end
 
 	adm := New(svc, &Config{Mount: "/admin"})
 	if err := adm.Validate(); err != nil {
