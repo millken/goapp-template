@@ -83,7 +83,20 @@ func (a *Admin) groupsIndex(c *inertia.Context) {
 		if err := json.Unmarshal([]byte(raw), &keys); err != nil {
 			slog.Error("admin: group has unreadable permissions", "err", err, "group", g.ID)
 		}
-		g.Keys = len(keys)
+		// Counted against the catalogue, not the raw array: a group holding keys
+		// for a removed resource would otherwise read "5 项权限" in the list while
+		// its edit page shows three ticked boxes and a stale warning. The list has
+		// to agree with the page it links to.
+		live, _ := a.permissionRows(keys)
+		g.Keys = 0
+		for _, r := range live {
+			if r.Access {
+				g.Keys++
+			}
+			if r.Modify {
+				g.Keys++
+			}
+		}
 		items = append(items, g)
 	}
 	if err := rows.Err(); err != nil {
@@ -161,8 +174,16 @@ func (a *Admin) groupUpdate(c *inertia.Context) {
 	}
 	keys := a.submittedKeys(c)
 
+	// The stale set has to come from what is *stored*, not from what was
+	// submitted: submittedKeys has already filtered the unknown keys out, so a
+	// re-render computed from it would show no stale warning at all — and the
+	// re-render is exactly the screen where the operator is about to save and
+	// clear them. Passed explicitly, which is what renderGroupForm's parameter
+	// is for.
+	stale := a.storedStaleKeys(ctx, id)
+
 	if v := a.validateGroup(ctx, item, id); !v.OK() {
-		a.renderGroupForm(c, item, v.Errors(), keys, nil)
+		a.renderGroupForm(c, item, v.Errors(), keys, stale)
 		return
 	}
 
@@ -187,7 +208,7 @@ func (a *Admin) groupUpdate(c *inertia.Context) {
 	case errors.Is(err, errLastSuperuser):
 		v := validate.New()
 		v.Check(false, "superuser", "系统必须至少保留一个启用的超级管理员")
-		a.renderGroupForm(c, item, v.Errors(), keys, nil)
+		a.renderGroupForm(c, item, v.Errors(), keys, stale)
 		return
 	case err != nil:
 		slog.Error("admin: update group", "err", err, "group", id)
@@ -385,7 +406,22 @@ func (a *Admin) submittedKeys(c *inertia.Context) []string {
 	return out
 }
 
-// renderGroupForm renders the create/edit form with the permission grid.
+// storedStaleKeys is the group's currently stored keys that the catalogue no
+// longer knows. Returns nil for a group that cannot be read — a re-render should
+// not fail because the warning could not be computed.
+func (a *Admin) storedStaleKeys(ctx context.Context, id int64) []string {
+	_, keys, err := a.findGroupRow(ctx, id)
+	if err != nil {
+		slog.Error("admin: load stored keys for the stale list", "err", err, "group", id)
+		return nil
+	}
+	_, stale := a.permissionRows(keys)
+	return stale
+}
+
+// renderGroupForm renders the create/edit form with the permission grid. stale
+// is passed explicitly by callers that know the submitted keys are already
+// filtered; nil means "compute it from keys".
 func (a *Admin) renderGroupForm(c *inertia.Context, item groupRow, errs map[string]string, keys, stale []string) {
 	rows, computedStale := a.permissionRows(keys)
 	if stale == nil {

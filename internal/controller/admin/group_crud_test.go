@@ -328,3 +328,74 @@ func TestGroupCreate_SuperuserOnlyAcceptsTheCheckboxValue(t *testing.T) {
 		t.Error(`superuser=0 was read as checked`)
 	}
 }
+
+// The list column and the edit page have to agree. A group holding keys for a
+// resource that no longer registers routes would otherwise read a larger number
+// in the list than the edit page shows ticked, with the difference being exactly
+// the keys the edit page is about to clear.
+func TestGroupsIndex_PermissionCountExcludesStaleKeys(t *testing.T) {
+	eng, adm, cookie := groupStack(t)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`INSERT INTO user_groups (name, superuser, permissions, created_at)
+		 VALUES ('Mixed', 0, '["user.access","gone.access","gone.modify"]', 0)`); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/admin/group", nil)
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+
+	var page struct {
+		Items []struct {
+			Name string `json:"name"`
+			Keys int    `json:"keys"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(pageData(t, w.Body.String()), &page); err != nil {
+		t.Fatalf("decode page data: %v", err)
+	}
+	for _, g := range page.Items {
+		if g.Name == "Mixed" && g.Keys != 1 {
+			t.Errorf("Mixed reports %d keys, want 1 — the two 'gone.*' keys are stale", g.Keys)
+		}
+	}
+}
+
+// The stale warning has to survive a rejected save: that re-render is the screen
+// where the operator is about to save and clear those keys. Computing it from
+// the submitted set would always come back empty, since submittedKeys has
+// already dropped the unknown keys.
+func TestGroupUpdate_StaleWarningSurvivesARejectedSave(t *testing.T) {
+	eng, adm, cookie := groupStack(t)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`INSERT INTO user_groups (name, superuser, permissions, created_at)
+		 VALUES ('Mixed', 0, '["user.access","gone.modify"]', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	var gid int64
+	if err := adm.DB.QueryRowContext(context.Background(),
+		`SELECT id FROM user_groups WHERE name = 'Mixed'`).Scan(&gid); err != nil {
+		t.Fatal(err)
+	}
+
+	// A name collision rejects the save and re-renders.
+	w := post(t, eng, cookie, fmt.Sprintf("/admin/group/%d", gid), url.Values{
+		"name":        {"Administrators"},
+		"permissions": {"user.access"},
+	})
+	if w.Code == http.StatusFound {
+		t.Fatalf("the save should have been rejected; status = %d", w.Code)
+	}
+
+	var page struct {
+		Stale []string `json:"stale"`
+	}
+	if err := json.Unmarshal(pageData(t, w.Body.String()), &page); err != nil {
+		t.Fatalf("decode page data: %v", err)
+	}
+	if len(page.Stale) != 1 || page.Stale[0] != "gone.modify" {
+		t.Errorf("stale = %v, want [gone.modify] — the warning vanished on the "+
+			"very screen that is about to clear it", page.Stale)
+	}
+}
