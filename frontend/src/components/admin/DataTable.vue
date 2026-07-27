@@ -37,8 +37,11 @@ const props = withDefaults(defineProps<{
   columns: DataTableColumn[]
   data: Row[]
   searchKey?: string
+  // Rows per page. Ten fits a laptop screen at this density without scrolling,
+  // which is the point of the density; a page that needs scrolling to reach its
+  // own pager is worse than a shorter one.
   pageSize?: number
-}>(), { pageSize: 20 })
+}>(), { pageSize: 10 })
 
 const slots = defineSlots<
   { [K: `cell-${string}`]: (p: { row: Row }) => unknown }

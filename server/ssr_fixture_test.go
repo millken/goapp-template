@@ -42,7 +42,7 @@ func TestSSR_GeneratedAdminListRendersUnderQuickJS(t *testing.T) {
 	defer cancel()
 
 	// More rows than one page, so the pager renders rather than being v-if'd away.
-	// PAGE_SIZE in the template is 20; 95 rows gives five pages and an ellipsis.
+	// DataTable's default page size is 10; 95 rows gives ten pages and an ellipsis.
 	items := make([]map[string]any, 0, 95)
 	for i := 1; i <= 95; i++ {
 		items = append(items, map[string]any{"id": i, "name": fmt.Sprintf("row %d", i)})
@@ -61,14 +61,14 @@ func TestSSR_GeneratedAdminListRendersUnderQuickJS(t *testing.T) {
 
 	// Rows, the sortable header, and the row-action trigger must all be there —
 	// a component that threw during render would take its subtree with it.
-	for _, want := range []string{"row 1", "row 20", "名称", "pagination-item"} {
+	for _, want := range []string{"row 1", "row 10", "名称", "pagination-item"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("SSR output missing %q", want)
 		}
 	}
-	// Row 21 is on page two; if it rendered, pagination is not being applied.
-	if strings.Contains(html, "row 21") {
-		t.Error("row 21 rendered on page one — the pagination row model is not applied")
+	// Row 11 is on page two; if it rendered, pagination is not being applied.
+	if strings.Contains(html, "row 11") {
+		t.Error("row 11 rendered on page one — the pagination row model is not applied")
 	}
 
 	// The defect this test exists for. PaginationItem renders its own button, so

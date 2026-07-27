@@ -32,10 +32,16 @@ const bodyTexts = (el: HTMLElement) =>
 
 describe('DataTable', () => {
   it('renders a page of rows and slices at pageSize', () => {
+    // Explicit rather than relying on the default, so this keeps testing the
+    // slicing rather than whatever the default happens to be.
     const el = mount({ columns, data: rows(25), pageSize: 20 })
     expect(el.querySelectorAll('tbody tr').length).toBe(20)
     expect(el.textContent).toContain('row 01')
     expect(el.textContent).not.toContain('row 21') // page two
+
+    // And the default, which is what every generated page gets.
+    const dflt = mount({ columns, data: rows(25) })
+    expect(dflt.querySelectorAll('tbody tr').length).toBe(10)
   })
 
   it('filters on searchKey', async () => {
