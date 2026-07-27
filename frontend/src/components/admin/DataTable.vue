@@ -100,7 +100,7 @@ const searchLabel = computed(
     <Input
       v-if="searchKey"
       :placeholder="`按${searchLabel}筛选…`"
-      class="max-w-xs"
+      class="max-w-64"
       @update:model-value="setFilter"
     />
 

@@ -141,13 +141,16 @@ const flashVariant = (kind: string) =>
         v-for="(s, si) in sections"
         :key="s.title"
         :href="s.items[0].path"
-        class="flex flex-col items-center gap-1 rounded-md px-1 py-2 text-[11px] leading-none"
+        class="flex w-full flex-col items-center gap-1 rounded-md px-1 py-2 text-center text-[11px] leading-tight"
         :class="si === active.section
           ? 'bg-accent font-medium text-foreground'
           : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
       >
-        <component :is="iconFor(s.title)" class="size-[18px]" />
-        {{ s.title }}
+        <component :is="iconFor(s.title)" class="size-[18px] shrink-0" />
+        <!-- Two lines then ellipsis. The rail has ~56px of usable width, which
+             fits "Access" comfortably and 访问控制 exactly; one character more
+             and an unhandled label would spill over the rail's border. -->
+        <span class="line-clamp-2 break-all">{{ s.title }}</span>
       </a>
     </aside>
 
