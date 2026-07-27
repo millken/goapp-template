@@ -246,7 +246,12 @@ func (s *Service) Browse(ctx context.Context, dir, query string, page int) (List
 	}
 
 	if q := strings.ToLower(strings.TrimSpace(query)); q != "" {
-		entries = slices.DeleteFunc(entries, func(e Entry) bool {
+		// Clone before filtering: List's result is the backend's own slice,
+		// not necessarily a copy handed to us to mutate. localBackend builds
+		// a fresh one every call, so DeleteFunc in place is safe today, but
+		// that is an unstated obligation on every future implementation —
+		// cloning here makes it nobody's problem instead of an untested one.
+		entries = slices.DeleteFunc(slices.Clone(entries), func(e Entry) bool {
 			return !strings.Contains(strings.ToLower(e.Name), q)
 		})
 	}

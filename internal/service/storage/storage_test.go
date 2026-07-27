@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -155,6 +156,48 @@ func TestBrowse_SortsFiltersAndPaginates(t *testing.T) {
 	}
 	if filtered.Total != 1 || filtered.Entries[0].Name != "gamma.png" {
 		t.Errorf("filter: total = %d, entries = %+v", filtered.Total, filtered.Entries)
+	}
+}
+
+// fakeSharedListBackend returns the same backing slice from every List call,
+// the way a backend that caches its listing would — unlike localBackend,
+// which happens to build a fresh slice per call. Browse must not rely on that
+// happenstance.
+type fakeSharedListBackend struct{ entries []Entry }
+
+func (f *fakeSharedListBackend) List(context.Context, string) ([]Entry, error) {
+	return f.entries, nil
+}
+func (f *fakeSharedListBackend) Stat(context.Context, string) (Entry, error) {
+	return Entry{}, fs.ErrNotExist
+}
+func (f *fakeSharedListBackend) Open(context.Context, string) (io.ReadSeekCloser, error) {
+	return nil, fs.ErrNotExist
+}
+func (f *fakeSharedListBackend) Save(context.Context, string, io.Reader) error   { return nil }
+func (f *fakeSharedListBackend) Mkdir(context.Context, string) error             { return nil }
+func (f *fakeSharedListBackend) Rename(context.Context, string, string) error    { return nil }
+func (f *fakeSharedListBackend) Remove(context.Context, string) error            { return nil }
+
+// TestBrowse_DoesNotMutateTheBackendsSlice guards an unstated obligation: a
+// filtered Browse used to run slices.DeleteFunc directly on whatever List
+// returned. Safe for localBackend, which builds a fresh slice every call, but
+// a backend that hands back a slice it intends to reuse would see Browse
+// corrupt its own listing.
+func TestBrowse_DoesNotMutateTheBackendsSlice(t *testing.T) {
+	be := &fakeSharedListBackend{entries: []Entry{{Name: "a.png"}, {Name: "b.png"}, {Name: "keep.png"}}}
+	want := slices.Clone(be.entries)
+	s := &Service{cfg: &Config{}, be: be}
+	if _, err := s.Browse(context.Background(), "", "keep", 1); err != nil {
+		t.Fatalf("Browse: %v", err)
+	}
+	// slices.DeleteFunc compacts kept elements to the front of the backing
+	// array in place: the returned (shorter) slice header looks fine, but
+	// be.entries — same backing array, unchanged length — would still read
+	// back the compacted, now-wrong contents. A length check alone would not
+	// catch this: DeleteFunc never changes the caller's own slice header.
+	if !slices.Equal(be.entries, want) {
+		t.Errorf("backend's own slice was corrupted by a filtered Browse: got %+v, want %+v", be.entries, want)
 	}
 }
 
