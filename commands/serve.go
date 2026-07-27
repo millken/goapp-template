@@ -11,6 +11,12 @@ import (
 	"github.com/millken/goapp-template/internal/controller/admin"
 	"github.com/millken/goapp-template/internal/service/db"
 	"github.com/millken/goapp-template/internal/service/session"
+	//goappctl:storage
+	// inertia is needed here only for the static route below; if this
+	// component is stripped, both go together, or the import would dangle.
+	"github.com/millken/goapp-template/internal/service/storage"
+	"github.com/millken/inertia"
+	//goappctl:end
 	"github.com/millken/goapp-template/server"
 	"github.com/spf13/cobra"
 
@@ -85,6 +91,16 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	svc.Session = sessSvc
 	//goappctl:end
 
+	//goappctl:storage
+	// Independent of db and session: it owns a directory, nothing else.
+	storSvc := storage.New(cfg.Storage)
+	if err := storSvc.Start(cmd.Context()); err != nil {
+		return fmt.Errorf("start storage: %w", err)
+	}
+	defer func() { _ = storSvc.Stop(context.Background()) }()
+	svc.Storage = storSvc
+	//goappctl:end
+
 	// HTTP engine (inertia).
 	eng, mode, err := server.New(cfg.Server)
 	if err != nil {
@@ -94,6 +110,17 @@ func runServe(cmd *cobra.Command, cfg *config.Config) error {
 	// Global middleware, then generated route wiring.
 	//goappctl:session
 	eng.Use(sessSvc.Middleware()) // session on every request
+	//goappctl:end
+	//goappctl:storage
+	// Not eng.StaticFS: that helper is a no-op in development mode, where dist
+	// is Vite's job — but uploads must be readable in both modes.
+	//
+	// StaticFileServer trims its prefix against the raw request path (see its
+	// doc comment), so the prefix must end in "/" the way inertia's own
+	// e.StaticFS("/assets/", ...) convention does — the bare URLPrefix leaves
+	// a leading "/" that no fs.FS accepts as a valid relative path.
+	eng.GET(storSvc.URLPrefix()+"/*",
+		inertia.StaticFileServer(storSvc.URLPrefix()+"/", storSvc.FS()))
 	//goappctl:end
 	controller.MountAll(eng, svc) // generated non-admin areas
 

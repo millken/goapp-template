@@ -71,3 +71,16 @@ admin:
   trusted_proxies: []
   # Seed the first admin with: myapp admin create-user <username>
 #goappctl:end
+
+#goappctl:storage
+storage:
+  root: uploads # REQUIRED — the browsable upload tree (no default: every
+  # plausible one is a directory the app would start writing into by surprise)
+  url_prefix: /uploads # public read path; files are world-readable by design
+  # max_upload_size: 8388608     # bytes per file (default 8MB)
+  # max_request_size: 67108864   # bytes per upload request (default 64MB)
+  # page_size: 40                # entries per page in the file manager
+  # Upload whitelist. .svg is deliberately absent: an SVG served from this
+  # origin executes script on this origin. Add it only if you understand that.
+  # allowed_ext: [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".zip"]
+#goappctl:end

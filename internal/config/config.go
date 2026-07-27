@@ -8,6 +8,9 @@ import (
 	"github.com/millken/goapp-template/internal/controller/admin"
 	"github.com/millken/goapp-template/internal/service/db"
 	"github.com/millken/goapp-template/internal/service/session"
+	//goappctl:storage
+	"github.com/millken/goapp-template/internal/service/storage"
+	//goappctl:end
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,6 +31,10 @@ type Config struct {
 	//goappctl:admin
 	// Admin holds the admin area config. nil when not used.
 	Admin *admin.Config `yaml:"admin"`
+	//goappctl:end
+	//goappctl:storage
+	// Storage holds the file-storage service config. nil when not used.
+	Storage *storage.Config `yaml:"storage"`
 	//goappctl:end
 }
 

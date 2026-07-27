@@ -5,6 +5,9 @@ import (
 
 	"github.com/dnsoa/go/sqldb"
 	"github.com/millken/goapp-template/internal/service/session"
+	//goappctl:storage
+	"github.com/millken/goapp-template/internal/service/storage"
+	//goappctl:end
 )
 
 // Services is the typed container for process-lifetime services, assembled once
@@ -35,6 +38,13 @@ type Services struct {
 	// session and admin areas may reference svc.Session — core code must not,
 	// or it will fail to compile without the session component.
 	Session *session.Service
+	//goappctl:end
+
+	//goappctl:storage
+	// Storage is the uploaded-file tree. Same rule as Session: its type comes
+	// from an optional component, so only the storage and admin areas may
+	// reference it.
+	Storage *storage.Service
 	//goappctl:end
 }
 

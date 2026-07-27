@@ -95,6 +95,20 @@ func TestExampleConfig_Parses(t *testing.T) {
 		}
 	})
 	//goappctl:end
+
+	//goappctl:storage
+	t.Run("storage", func(t *testing.T) {
+		if cfg.Storage == nil {
+			t.Fatal("Storage is nil; the example must carry a storage section")
+		}
+		if cfg.Storage.Root == "" {
+			t.Error("Storage.Root is empty; it is required")
+		}
+		if cfg.Storage.URLPrefix == "" {
+			t.Error("Storage.URLPrefix is empty; the example should set it explicitly")
+		}
+	})
+	//goappctl:end
 }
 
 //goappctl:tooling
@@ -118,7 +132,7 @@ func TestExampleConfig_MarkersAreWellFormed(t *testing.T) {
 	)
 	// components must each have exactly one block; "tooling" is the reserved
 	// always-stripped name and may appear anywhere, including not at all.
-	components := map[string]bool{"db": true, "session": true, "admin": true, "ssr": true}
+	components := map[string]bool{"db": true, "session": true, "admin": true, "ssr": true, "storage": true}
 	known := map[string]bool{"tooling": true}
 	for name := range components {
 		known[name] = true
