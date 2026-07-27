@@ -10,7 +10,7 @@ defineProps<{
   basePath: string
   urlPrefix: string
   adminMenu?: MenuItem[]
-  adminUser?: { id?: number; username?: string }
+  adminUser?: { id?: number; username?: string; avatar?: string }
   adminMount?: string
   loginPath?: string
   currentPath?: string
@@ -27,6 +27,7 @@ defineProps<{
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
   >
     <PageHeader title="文件" />
     <Card>

@@ -52,7 +52,9 @@ type fmEntry struct {
 // start talking to it — which is also why it renders under SSR with no data.
 func (a *Admin) fileManagerPage(c *inertia.Context) {
 	c.Set("basePath", a.fileManagerBase())
-	c.Set("urlPrefix", a.Storage.URLPrefix())
+	// urlPrefix itself comes from resolve (auth.go), which every route through
+	// the registrar passes through — a per-handler copy here would be a second
+	// source of truth for the same config value.
 	if err := c.Render("admin/filemanager/index"); err != nil {
 		slog.Error("render admin filemanager", "err", err)
 	}

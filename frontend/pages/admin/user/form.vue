@@ -26,7 +26,7 @@ const props = defineProps<{
   // field. `item` carries what was typed, so the inputs repopulate on their own.
   errors?: Record<string, string>
   adminMenu?: MenuItem[]
-  adminUser?: { id?: number; username?: string }
+  adminUser?: { id?: number; username?: string; avatar?: string }
   adminMount?: string
   loginPath?: string
   currentPath?: string
@@ -47,6 +47,7 @@ const editing = props.item.id > 0
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
     :crumb="editing ? '编辑' : '新建'"
   >
     <PageHeader :title="editing ? '编辑用户' : '新建用户'" />

@@ -29,15 +29,27 @@ interface MenuItem {
 
 const props = defineProps<{
   menu?: MenuItem[]
-  user?: { id?: number; username?: string }
+  user?: { id?: number; username?: string; avatar?: string }
   mount?: string
   currentPath?: string
   flash?: Record<string, string>
   crumb?: string
   csrfToken?: string
+  // The storage prefix avatar paths are relative to. Optional, with the same
+  // fallback ImagePicker and form.vue use: a page rendered with the storage
+  // component stripped carries no prop at all, and the shell must still render.
+  urlPrefix?: string
 }>()
 
 const base = computed(() => props.mount || '/admin')
+
+// user.avatar is a path relative to the storage root, never a URL — the prefix
+// is config, so baking it into stored data would make changing the prefix a
+// data migration. Same shape as ImagePicker's `preview` computed.
+const avatarSrc = computed(() => {
+  if (!props.user?.avatar) return ''
+  return `${props.urlPrefix ?? '/uploads'}/${props.user.avatar}`
+})
 const path = computed(() =>
   props.currentPath ?? (typeof location === 'undefined' ? base.value : location.pathname),
 )
@@ -189,6 +201,12 @@ const flashVariant = (kind: string) =>
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" size="sm">
+                <img
+                  v-if="avatarSrc"
+                  :src="avatarSrc"
+                  :alt="user?.username ?? ''"
+                  class="size-5 rounded-full border object-cover"
+                />
                 {{ user?.username ?? '账号' }}
                 <ChevronDown class="size-3.5" />
               </Button>

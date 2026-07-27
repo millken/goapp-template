@@ -140,6 +140,32 @@ describe('AdminShell', () => {
     await openUserMenu(el)
     expect(document.querySelector('a[href="/admin/account/password"]')).not.toBeNull()
   })
+
+  // user.avatar is a path relative to the storage root, never a URL — the
+  // prefix is config, so it has to be combined with urlPrefix here rather than
+  // baked into what the server stored.
+  it("shows the signed-in user's avatar beside their username", () => {
+    const el = mount({
+      ...props,
+      user: { ...props.user, avatar: 'photos/alice.png' },
+      urlPrefix: '/media',
+    })
+    const img = el.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img!.getAttribute('src')).toBe('/media/photos/alice.png')
+    // The username must stay reachable — the avatar is additional, not a
+    // replacement for the one thing that lets you confirm who is signed in.
+    const trigger = [...el.querySelectorAll('button')].find((b) => b.textContent?.includes('alice'))
+    expect(trigger).not.toBeUndefined()
+  })
+
+  // The mutation this guards against is a shell that always shows a picture
+  // regardless of props (or a hardcoded one): a user with no avatar set — the
+  // `props` fixture's own `alice` — must render no <img> at all.
+  it('shows no avatar image for a user with none set', () => {
+    const el = mount(props)
+    expect(el.querySelector('img')).toBeNull()
+  })
 })
 
 // A success is a receipt you do not need once read; an error is context you need

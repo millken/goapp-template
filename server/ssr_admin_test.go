@@ -229,6 +229,66 @@ func TestSSR_UserFormRendersUnderQuickJS(t *testing.T) {
 	}
 }
 
+// TestSSR_AdminShellShowsAvatarUnderQuickJS guards the fix for the gap the
+// design spec called out directly: the list and form shipped with an avatar,
+// but AdminShell — which every admin page renders — did not show the
+// signed-in user's own. adminUser.avatar is a path relative to the storage
+// root (never a URL), so a render with one must produce an <img> pointing
+// into it; the mutation this guards against is a shell that always shows the
+// same hardcoded picture (or none at all) regardless of props. The
+// no-avatar case, rendered from the same helper, is the other half: a shell
+// that manufactures a picture for a user who has none would only be caught by
+// asserting its absence, not by looking for what a correct render adds.
+func TestSSR_AdminShellShowsAvatarUnderQuickJS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skips the QuickJS VM in -short mode")
+	}
+	const bundlePath = "../frontend/dist/" + ssrBundleName
+	bundle, err := os.ReadFile(bundlePath)
+	if err != nil {
+		t.Skipf("no SSR bundle at %s; run `pnpm -C frontend build:ssr` first", bundlePath)
+	}
+	vm, err := quickjs.NewVM(ssr.WithDefaultCache(1), ssr.WithBundlerJS(string(bundle)))
+	if err != nil {
+		t.Fatalf("NewVM: %v", err)
+	}
+	defer vm.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	menu := []map[string]any{{"title": "Posts", "path": "/admin/posts", "section": "内容"}}
+	render := func(avatar string) string {
+		html, err := vm.RenderComponent(ctx, "admin/dashboard", map[string]any{
+			"adminUser":   map[string]any{"id": 1, "username": "topbaruser", "avatar": avatar},
+			"adminMount":  "/admin",
+			"loginPath":   "/admin/login",
+			"currentPath": "/admin",
+			"adminMenu":   menu,
+		})
+		if err != nil {
+			t.Fatalf("RenderComponent(admin/dashboard, avatar=%q): %v", avatar, err)
+		}
+		return html
+	}
+
+	withAvatar := render("photos/alice.png")
+	if !strings.Contains(withAvatar, "<img") {
+		t.Errorf("SSR output with adminUser.avatar set carries no <img>; body: %s", withAvatar)
+	}
+	// The default fallback ("/uploads"), since this page never forwards a
+	// urlPrefix prop — proving the shell built a real src from the avatar path
+	// rather than merely detecting its presence.
+	if !strings.Contains(withAvatar, `src="/uploads/photos/alice.png"`) {
+		t.Errorf("SSR output's <img> does not point at the avatar path; body: %s", withAvatar)
+	}
+
+	withoutAvatar := render("")
+	if strings.Contains(withoutAvatar, "<img") {
+		t.Error("SSR output for a user with no avatar rendered an <img> anyway")
+	}
+}
+
 // maxButtonDepth walks markup counting button opens and closes. Deliberately
 // crude: it needs to spot nesting, not parse HTML.
 func maxButtonDepth(html string) int {

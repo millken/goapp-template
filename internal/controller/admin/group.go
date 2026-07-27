@@ -36,20 +36,28 @@ type caller struct {
 	group    *group
 	username string
 	status   int
+	avatar   string
 }
 
-// findCaller loads the group, username and status of the user with userID.
-// usersTable is interpolated (it is configurable) and has already been validated
-// by Admin.Validate against ^[A-Za-z_]\w*$; the id itself is parameterised.
+// findCaller loads the group, username, status and avatar of the user with
+// userID. usersTable is interpolated (it is configurable) and has already been
+// validated by Admin.Validate against ^[A-Za-z_]\w*$; the id itself is
+// parameterised.
+//
+// avatar rides along unconditionally rather than behind a marker: migration 006
+// (users.avatar) is itself unmarked, so the column exists in every generated
+// project regardless of whether the storage component is present. With storage
+// stripped the value is simply always empty and AdminShell renders nothing for
+// it — the same reasoning that keeps this query to one row per request.
 func findCaller(ctx context.Context, d *sqldb.DB, usersTable string, userID int64) (*caller, error) {
-	q := fmt.Sprintf(`SELECT u.username, u.status, g.superuser, g.permissions
+	q := fmt.Sprintf(`SELECT u.username, u.status, u.avatar, g.superuser, g.permissions
 		FROM %s u JOIN user_groups g ON g.id = u.group_id
 		WHERE u.id = ?`, usersTable)
 
 	var cl caller
 	var superuser int
 	var raw string
-	if err := d.QueryRowContext(ctx, q, userID).Scan(&cl.username, &cl.status, &superuser, &raw); err != nil {
+	if err := d.QueryRowContext(ctx, q, userID).Scan(&cl.username, &cl.status, &cl.avatar, &superuser, &raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// The join drops users whose group_id is null or dangling, so this
 			// covers "no group" and "unknown user" alike. Both deny.

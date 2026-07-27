@@ -34,7 +34,8 @@ func groupFixture(t *testing.T) *sqldb.DB {
 			password_hash TEXT NOT NULL,
 			created_at BIGINT NOT NULL,
 			group_id INTEGER REFERENCES user_groups(id),
-			status INTEGER NOT NULL DEFAULT 1)`,
+			status INTEGER NOT NULL DEFAULT 1,
+			avatar TEXT NOT NULL DEFAULT '')`,
 		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)
 		 VALUES (1, 'Administrators', 1, '[]', 0)`,
 		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)

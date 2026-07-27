@@ -453,9 +453,6 @@ func (a *Admin) renderUserForm(c *inertia.Context, item userRow, errs map[string
 	c.Set("item", item)
 	c.Set("groups", groups)
 	c.Set("basePath", a.userBase())
-	//goappctl:storage
-	c.Set("urlPrefix", a.Storage.URLPrefix())
-	//goappctl:end
 	if errs != nil {
 		c.Set("errors", errs)
 	}

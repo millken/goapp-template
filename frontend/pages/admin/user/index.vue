@@ -26,12 +26,16 @@ defineProps<{
   items: UserRow[]
   basePath: string
   adminMenu?: MenuItem[]
-  adminUser?: { id?: number; username?: string }
+  adminUser?: { id?: number; username?: string; avatar?: string }
   adminMount?: string
   loginPath?: string
   currentPath?: string
   flash?: Record<string, string>
   csrfToken?: string
+  // The storage prefix avatar paths are relative to — set once in resolve, not
+  // hardcoded here. A page rendered without it (storage stripped) falls back
+  // to the same default the service itself uses.
+  urlPrefix?: string
 }>()
 
 const columns = [
@@ -56,6 +60,7 @@ const askDelete = (row: Record<string, unknown>) => {
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
   >
     <PageHeader title="用户" description="后台账号及其权限分组。">
       <template #actions>
@@ -73,7 +78,7 @@ const askDelete = (row: Record<string, unknown>) => {
             <div class="flex items-center gap-2">
               <img
                 v-if="row.avatar"
-                :src="`/uploads/${row.avatar}`"
+                :src="`${urlPrefix ?? '/uploads'}/${row.avatar}`"
                 :alt="String(row.username)"
                 class="size-6 rounded-full border object-cover"
               />

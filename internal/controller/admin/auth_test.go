@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/millken/goapp-template/internal/service/session"
+	"github.com/millken/goapp-template/internal/service/storage"
 	"github.com/millken/inertia"
 )
 
@@ -69,6 +70,89 @@ func TestResolve_InjectsUsernameAndCurrentPath(t *testing.T) {
 	}
 	if gotPath != "/admin/probe" {
 		t.Errorf("currentPath = %v, want /admin/probe", gotPath)
+	}
+}
+
+// AdminShell shows the signed-in user's avatar beside their username, and both
+// come from adminUser — which comes from resolve's one query, the same one that
+// already loads username and status. A user with no avatar (the common case,
+// and every other stack's alice) must not be confused with one that has it, so
+// this sets one explicitly rather than trusting the seed data's default.
+func TestResolve_InjectsAdminUserAvatar(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`UPDATE users SET avatar = 'photos/alice.png' WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	var gotUser any
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {
+		gotUser, _ = ic.Get("adminUser")
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	u, ok := gotUser.(map[string]any)
+	if !ok {
+		t.Fatalf("adminUser = %#v, want a map", gotUser)
+	}
+	if u["avatar"] != "photos/alice.png" {
+		t.Errorf("adminUser.avatar = %v, want photos/alice.png", u["avatar"])
+	}
+}
+
+// The counterpart to the case above: a user with no avatar must not have one
+// manufactured for them. Without this, a stub that hardcoded a filename would
+// pass the test above and go undetected.
+func TestResolve_AdminUserAvatarIsEmptyWhenUnset(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+
+	var gotUser any
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {
+		gotUser, _ = ic.Get("adminUser")
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	u, ok := gotUser.(map[string]any)
+	if !ok {
+		t.Fatalf("adminUser = %#v, want a map", gotUser)
+	}
+	if u["avatar"] != "" {
+		t.Errorf("adminUser.avatar = %v, want empty for a user with none set", u["avatar"])
+	}
+}
+
+// urlPrefix is set once in resolve, next to adminMount, rather than by every
+// handler that used to set its own copy. A custom prefix (not the default
+// "/uploads") proves the value on the wire actually came from the configured
+// service rather than from a hardcoded fallback that happens to match the
+// default.
+func TestResolve_DeliversURLPrefix(t *testing.T) {
+	eng, adm, cookie := adminStack(t)
+	stor := storage.New(&storage.Config{Root: t.TempDir(), URLPrefix: "/media"})
+	if err := stor.Start(context.Background()); err != nil {
+		t.Fatalf("start storage: %v", err)
+	}
+	t.Cleanup(func() { _ = stor.Stop(context.Background()) })
+	adm.Storage = stor
+
+	r := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+
+	// The page body embeds the Inertia props as JSON spliced into a quoted JS
+	// string literal, so every `"` is written out as `\"` — see
+	// TestResolve_DeliversCanBrowseFiles for the same reasoning.
+	if !strings.Contains(w.Body.String(), `urlPrefix\":\"/media\"`) {
+		t.Errorf("urlPrefix did not reach the page as a prop with the configured value; body: %s", w.Body.String())
 	}
 }
 

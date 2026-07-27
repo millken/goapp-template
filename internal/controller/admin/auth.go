@@ -83,20 +83,25 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 	}
 
 	c.Set("adminMenu", a.menuItems(cl.group))
-	c.Set("adminUser", map[string]any{"id": id, "username": cl.username})
+	c.Set("adminUser", map[string]any{"id": id, "username": cl.username, "avatar": cl.avatar})
 	c.Set("adminMount", a.mount())
 	c.Set("loginPath", a.LoginPath())
 	c.Set("currentPath", c.Request.URL.Path)
 
 	//goappctl:storage
-	// One prop, read by one component (ImagePicker), set here rather than in
-	// the handlers that render it. resolve is the only place already holding
-	// the caller's group: a page handler would have to look it up again, and
-	// the admin area's rule is one query per request. Deriving it client-side
-	// from adminMenu was the alternative and was rejected — it would make the
-	// picker's behaviour depend on a sidebar entry existing.
+	// Two props, read by more than one component (ImagePicker, AdminShell, the
+	// user list and form), set here rather than in the handlers that render
+	// them. resolve is the only place already holding the caller's group: a page
+	// handler would have to look it up again, and the admin area's rule is one
+	// query per request. Deriving canBrowseFiles client-side from adminMenu was
+	// the alternative and was rejected — it would make the picker's behaviour
+	// depend on a sidebar entry existing. urlPrefix used to be set separately by
+	// every handler that needed it (renderUserForm, fileManagerPage); a per-handler
+	// copy of the same config value is a second source of truth, so it moved here
+	// instead, next to adminMount — the same category of shared, request-wide prop.
 	c.Set("canBrowseFiles", cl.group.Superuser ||
 		cl.group.Permissions.Allows("filemanager"+verbAccess))
+	c.Set("urlPrefix", a.Storage.URLPrefix())
 	//goappctl:end
 
 	// Every admin page renders at least the shell's logout form, so every admin
