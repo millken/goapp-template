@@ -112,6 +112,55 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 	}
 }
 
+// TestSSR_FileManagerRendersUnderQuickJS guards the file manager page against
+// the failure mode the dashboard test describes: a component touching
+// document/window at module scope kills the whole bundle. FileManager fetches
+// its listing on mount, which never runs server-side — so an empty grid is the
+// correct server render, and the assertion is on the chrome around it.
+func TestSSR_FileManagerRendersUnderQuickJS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skips the QuickJS VM in -short mode")
+	}
+	const bundlePath = "../frontend/dist/" + ssrBundleName
+	bundle, err := os.ReadFile(bundlePath)
+	if err != nil {
+		t.Skipf("no SSR bundle at %s; run `pnpm -C frontend build:ssr` first", bundlePath)
+	}
+	vm, err := quickjs.NewVM(ssr.WithDefaultCache(1), ssr.WithBundlerJS(string(bundle)))
+	if err != nil {
+		t.Fatalf("NewVM: %v", err)
+	}
+	defer vm.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	html, err := vm.RenderComponent(ctx, "admin/filemanager/index", map[string]any{
+		"basePath":    "/admin/filemanager",
+		"urlPrefix":   "/uploads",
+		"adminUser":   map[string]any{"id": 1, "username": "alice"},
+		"adminMount":  "/admin",
+		"loginPath":   "/admin/login",
+		"currentPath": "/admin/filemanager",
+		"adminMenu":   []map[string]any{{"title": "文件", "path": "/admin/filemanager", "section": "内容"}},
+		"csrfToken":   "tok",
+	})
+	if err != nil {
+		t.Fatalf("RenderComponent(admin/filemanager/index): %v", err)
+	}
+	// "全部文件" is not asserted here even though it appears in the component
+	// test's mock listing: it is data the API would return, and QuickJS has no
+	// global fetch, so refresh()'s fetch(...) call throws synchronously before
+	// any request is made. FileManager's own try/catch swallows that (the same
+	// as any other network failure) and settles into its empty state —
+	// "这个目录是空的" — which is what a server render can actually promise.
+	for _, want := range []string{"新建目录", "上传", "这个目录是空的"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("rendered page is missing %q", want)
+		}
+	}
+}
+
 // maxButtonDepth walks markup counting button opens and closes. Deliberately
 // crude: it needs to spot nesting, not parse HTML.
 func maxButtonDepth(html string) int {

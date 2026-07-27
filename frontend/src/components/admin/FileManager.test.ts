@@ -1,0 +1,149 @@
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp, h, nextTick } from 'vue'
+import FileManager from './FileManager.vue'
+
+// Mounted via createApp directly: the repo deliberately has no @vue/test-utils.
+function mount(props: Record<string, unknown> = {}) {
+  const el = document.createElement('div')
+  document.body.appendChild(el)
+  const app = createApp({
+    render: () =>
+      h(FileManager, { basePath: '/admin/filemanager', urlPrefix: '/uploads', ...props } as any),
+  })
+  app.mount(el)
+  return el
+}
+
+// The component's mount-time refresh() awaits both `fetch` and `res.json()`,
+// and this environment's fetch/Response polyfill resolves each of those over
+// several microtask turns rather than one — a single pair of `nextTick()`s
+// (enough in a browser) leaves the listing still in flight here. Looping
+// nextTick a bounded number of times drains that chain honestly, without
+// hard-coding a turn count that's really an implementation detail of the
+// polyfill.
+async function flush(times = 10) {
+  for (let i = 0; i < times; i++) await nextTick()
+}
+
+const listing = (over: Record<string, unknown> = {}) => ({
+  ok: true,
+  path: '',
+  breadcrumb: [{ name: '全部文件', path: '' }],
+  entries: [
+    { name: 'photos', path: 'photos', dir: true, size: 0, mtime: 0, url: '/uploads/photos' },
+    { name: 'a.png', path: 'a.png', dir: false, size: 3, mtime: 0, url: '/uploads/a.png' },
+  ],
+  total: 2,
+  page: 1,
+  pageSize: 40,
+  ...over,
+})
+
+let fetchMock: ReturnType<typeof vi.fn>
+
+beforeEach(() => {
+  fetchMock = vi.fn(async () => new Response(JSON.stringify(listing()), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }))
+  vi.stubGlobal('fetch', fetchMock)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  document.body.innerHTML = ''
+})
+
+describe('FileManager', () => {
+  it('lists the directory it was given on mount', async () => {
+    const el = mount()
+    await flush()
+    expect(fetchMock).toHaveBeenCalled()
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url).toContain('/admin/filemanager/api/list')
+    expect(el.textContent).toContain('a.png')
+    expect(el.textContent).toContain('photos')
+  })
+
+  it('sends the CSRF token on a mutation', async () => {
+    const el = mount({ csrfToken: 'tok' })
+    await flush()
+    const button = [...el.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('新建目录'),
+    )
+    expect(button).toBeTruthy()
+    // A mkdir needs a name, so drive it through the mkdir-name input exactly as
+    // a user would: set its value and fire the event shadcn's Input listens
+    // for. Its v-model goes through @vueuse/core's useVModel in passive mode,
+    // which syncs via a watcher rather than updating the ref inline — so the
+    // new value only lands after a tick, not synchronously within
+    // dispatchEvent. Clicking the button in the same microtask would still see
+    // the old (empty) name and silently no-op instead of proving the header.
+    const input = el.querySelector('input[data-testid="mkdir-name"]') as HTMLInputElement | null
+    if (input) {
+      input.value = 'newdir'
+      input.dispatchEvent(new Event('input'))
+      await nextTick()
+    }
+    button!.click()
+    await flush()
+    const call = fetchMock.mock.calls.find(([u]) => String(u).includes('/api/mkdir'))
+    expect(call).toBeTruthy()
+    const init = call![1] as RequestInit
+    expect((init.headers as Record<string, string>)['X-CSRF-Token']).toBe('tok')
+  })
+
+  it('emits select in pick mode instead of navigating', async () => {
+    const selected: unknown[] = []
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    createApp({
+      render: () =>
+        h(FileManager, {
+          basePath: '/admin/filemanager',
+          urlPrefix: '/uploads',
+          mode: 'pick',
+          onSelect: (e: unknown) => selected.push(e),
+        } as any),
+    }).mount(el)
+    await flush()
+
+    const file = [...el.querySelectorAll('[data-entry]')].find(
+      (n) => n.getAttribute('data-entry') === 'a.png',
+    ) as HTMLElement
+    expect(file).toBeTruthy()
+    file.click()
+    await nextTick()
+    expect(selected).toHaveLength(1)
+    expect((selected[0] as { path: string }).path).toBe('a.png')
+  })
+
+  it('hides files entirely in dirs mode', async () => {
+    const el = mount({ mode: 'dirs' })
+    await flush()
+    expect(el.textContent).toContain('photos')
+    expect(el.textContent).not.toContain('a.png')
+  })
+
+  it('pages through a total larger than one page', async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(JSON.stringify(listing({ total: 100, page: 1, pageSize: 40 })), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    )
+    const el = mount()
+    await flush()
+    expect(el.textContent).toContain('100')
+    const next = [...el.querySelectorAll('button')].find(
+      (b) => b.getAttribute('data-testid') === 'next-page',
+    )
+    expect(next).toBeTruthy()
+    next!.click()
+    await nextTick()
+    const last = String(fetchMock.mock.calls.at(-1)![0])
+    expect(last).toContain('page=2')
+  })
+})
