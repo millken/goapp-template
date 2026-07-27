@@ -23,7 +23,9 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
+	"strings"
 
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/inertia"
@@ -53,6 +55,10 @@ type Config struct {
 	AuthKey string `yaml:"auth_key"`
 	// UsersTable is the table login authenticates against (default "users").
 	UsersTable string `yaml:"users_table"`
+	// TrustedProxies are CIDR blocks whose X-Forwarded-For is believed when
+	// resolving the client address for the login throttle. Empty — the default —
+	// means the header is never read, because anyone can send it.
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 // Admin is the admin controller. It embeds *app.Services and holds its resolved
@@ -65,6 +71,8 @@ type Admin struct {
 	// perms maps a permission key to the routes it guards, filled during
 	// startup wiring by the registrar and read-only afterwards.
 	perms map[string][]string
+	// trusted is cfg.TrustedProxies parsed once by Validate.
+	trusted []netip.Prefix
 }
 
 // New constructs the admin controller. cfg may be nil; accessors apply defaults.
@@ -80,6 +88,17 @@ func (a *Admin) Validate() error {
 	}
 	if table := a.usersTable(); !tableNameRe.MatchString(table) {
 		return fmt.Errorf("admin: illegal users table name %q", table)
+	}
+	// Parsed once, here, so a typo stops startup. Left as a warning it would
+	// silently empty the trust list, and an empty trust list silently disables
+	// the login throttle's only defence against a forged X-Forwarded-For.
+	a.trusted = nil
+	for _, raw := range a.cfg.TrustedProxies {
+		p, err := netip.ParsePrefix(strings.TrimSpace(raw))
+		if err != nil {
+			return fmt.Errorf("admin: trusted_proxies %q: %w", raw, err)
+		}
+		a.trusted = append(a.trusted, p)
 	}
 	return nil
 }

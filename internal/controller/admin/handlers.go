@@ -2,9 +2,11 @@ package admin
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
+	"github.com/millken/goapp-template/internal/service/session"
 	"github.com/millken/inertia"
 )
 
@@ -49,42 +51,42 @@ func (a *Admin) LoginForm(c *inertia.Context) {
 // login with a generic error. Save emits the cookie before the redirect body
 // flushes (write-through writer).
 func (a *Admin) LoginSubmit(c *inertia.Context) {
+	sess := a.Session.Session(c)
+	ip := a.clientIP(c.Request)
+	if blocked, retry := a.loginBlocked(c.Request.Context(), ip); blocked {
+		c.Status(http.StatusTooManyRequests)
+		a.renderLogin(c, sess, fmt.Sprintf("尝试次数过多，请在 %d 分钟后重试。", int(retry.Minutes())+1))
+		return
+	}
+
 	username := c.PostForm("username")
 	password := c.PostForm("password")
-	sess := a.Session.Session(c)
 
 	user, err := authenticate(c.Request.Context(), a.DB, a.usersTable(), username, password)
 	if err != nil {
 		if errors.Is(err, errAccountDisabled) {
-			c.Set("loginPath", a.LoginPath())
-			c.Set("error", "该账号已被禁用。")
-			token, err := sess.CSRFToken(c.Request.Context())
-			if err != nil {
-				slog.Error("admin login: csrf token", "err", err)
-				c.AbortWithStatus(http.StatusInternalServerError)
-				return
-			}
-			c.Set("csrfToken", token)
-			if rerr := c.Render("admin/login"); rerr != nil {
-				slog.Error("render admin login", "err", rerr)
-			}
+			a.renderLogin(c, sess, "该账号已被禁用。")
 			return
 		}
 		if !errors.Is(err, errInvalidCredentials) {
 			slog.Error("admin login", "err", err) // db error, not a bad password
 		}
-		c.Set("loginPath", a.LoginPath())
-		c.Set("error", "invalid username or password")
-		token, err := sess.CSRFToken(c.Request.Context())
-		if err != nil {
-			slog.Error("admin login: csrf token", "err", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		c.Set("csrfToken", token)
-		if rerr := c.Render("admin/login"); rerr != nil {
-			slog.Error("render admin login", "err", rerr)
-		}
+		a.recordLoginFailure(c.Request.Context(), ip)
+		a.renderLogin(c, sess, "用户名或密码不正确")
+		return
+	}
+
+	// A new id for the authenticated session, before anything is written to it.
+	// The login page minted a CSRF token, which means a session already existed,
+	// and Store.Save keeps the id it is given — so without this, an id planted
+	// before sign-in would still be valid after it.
+	//
+	// Fatal on failure by design: Regenerate deletes the old entry before saving
+	// the new one, so an error means nothing moved and refusing is clean. Letting
+	// the sign-in continue would be signing in to the id we meant to abandon.
+	if err := sess.Regenerate(c.Request.Context()); err != nil {
+		slog.Error("admin login: regenerate session", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
@@ -92,6 +94,7 @@ func (a *Admin) LoginSubmit(c *inertia.Context) {
 	if _, err := sess.Save(c.Request.Context()); err != nil {
 		slog.Error("admin login: save session", "err", err)
 	}
+	a.clearLoginFailures(c.Request.Context(), ip)
 	if err := c.Redirect(a.mount()); err != nil {
 		slog.Error("admin login: redirect to dashboard", "err", err)
 	}
@@ -140,4 +143,24 @@ func (a *Admin) callerUnusable(c *inertia.Context, v any) bool {
 		return false
 	}
 	return cl.status == statusDisabled
+}
+
+// renderLogin re-renders the login page carrying an error, with the CSRF token
+// the form needs to be submittable again. Every path that shows the form after
+// a refusal goes through here — three of them repeated the same six lines
+// before, and a fourth that forgot the token would have rendered a form nobody
+// could submit.
+func (a *Admin) renderLogin(c *inertia.Context, sess session.Session, message string) {
+	token, err := sess.CSRFToken(c.Request.Context())
+	if err != nil {
+		slog.Error("admin login: csrf token", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Set("loginPath", a.LoginPath())
+	c.Set("csrfToken", token)
+	c.Set("error", message)
+	if err := c.Render("admin/login"); err != nil {
+		slog.Error("render admin login", "err", err)
+	}
 }

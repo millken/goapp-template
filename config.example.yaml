@@ -64,5 +64,10 @@ admin:
   login_path: /admin/login # default <mount>/login
   auth_key: admin_user_id # session key holding the logged-in admin's id
   users_table: users # login lookup table; created by the db migrations
+  # CIDRs whose X-Forwarded-For is believed when resolving the client address for
+  # the login throttle. Empty (the default) means the header is never read:
+  # anyone can send it, so trusting it without knowing the peer is a proxy lets a
+  # caller choose which bucket they are counted in.
+  trusted_proxies: []
   # Seed the first admin with: myapp admin create-user <username>
 #goappctl:end

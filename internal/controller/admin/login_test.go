@@ -379,3 +379,53 @@ func TestAuthenticate_DisabledAccount(t *testing.T) {
 		t.Errorf("wrong password on a disabled account: want errInvalidCredentials, got %v", err)
 	}
 }
+
+// Issuing a CSRF token on the login page creates a session before
+// authentication, and Store.Save keeps an id it is given — so without
+// regenerating, an id planted before sign-in stays valid after it. This is the
+// test that catches the hole the CSRF work would otherwise have opened.
+func TestLogin_RegeneratesTheSessionID(t *testing.T) {
+	eng, _ := loginStack(t)
+
+	// postForm fetches a token from the login page first, exactly as a browser
+	// would, and hands back the cookie that token belongs to — which is the id
+	// an attacker would try to fixate.
+	r, before := postForm(t, eng, nil, "/admin/login",
+		url.Values{"username": {"alice"}, "password": {"pw"}})
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+
+	after := w.Result().Cookies()
+	if len(after) == 0 {
+		t.Fatal("sign-in set no cookie")
+	}
+	if after[0].Value == before.Value {
+		t.Error("the session id survived sign-in — an id planted beforehand still works")
+	}
+}
+
+// A correct password against a disabled account is not a guess. Counting it
+// would let a disabled user throttle their own address while trying to work out
+// why they cannot get in.
+func TestLoginThrottle_DisabledAccountDoesNotCount(t *testing.T) {
+	eng, adm := loginStack(t)
+	ctx := context.Background()
+	if _, err := adm.DB.ExecContext(ctx,
+		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 3 {
+		r, _ := postForm(t, eng, nil, "/admin/login",
+			url.Values{"username": {"alice"}, "password": {"pw"}})
+		eng.ServeHTTP(httptest.NewRecorder(), r)
+	}
+
+	var n int
+	if err := adm.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM login_attempts`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("recorded %d attempts for a disabled account with the right password", n)
+	}
+}
