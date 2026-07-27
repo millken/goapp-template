@@ -21,6 +21,14 @@ type Session interface {
 	Save(ctx context.Context) (string, error)
 	// Destroy deletes the session from the Store (the caller clears the cookie).
 	Destroy(ctx context.Context) error
+	// CSRFToken returns the session's token, minting and persisting one on
+	// first call. Handlers that render a form call this; the middleware
+	// verifies it on unsafe requests.
+	CSRFToken(ctx context.Context) (string, error)
+	// Regenerate moves the session to a fresh id, keeping its values. Call it
+	// on sign-in: without it, a session established before authentication
+	// stays valid after it.
+	Regenerate(ctx context.Context) error
 }
 
 // Store is the pluggable session backing. memory (dev) and db (prod) ship with
