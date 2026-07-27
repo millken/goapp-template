@@ -168,3 +168,48 @@ func TestGenerateRequiresModule(t *testing.T) {
 		})
 	}
 }
+
+// The CSRF check is global — it runs on every unsafe method, in the session
+// middleware, not per area. A generated public resource's forms therefore need a
+// token exactly as the admin's do, and the field cannot come from the admin's
+// CsrfField component because a build without the admin component has no such
+// file. Without both halves every create, edit and delete in a freshly generated
+// resource answers 403.
+func TestResource_FormsCarryTheCSRFField(t *testing.T) {
+	root := t.TempDir()
+	if err := Resource("widget", Options{ModuleRoot: root, Module: testModule}); err != nil {
+		t.Fatalf("Resource: %v", err)
+	}
+
+	for _, rel := range []string{"frontend/pages/widget/index.vue", "frontend/pages/widget/form.vue"} {
+		page, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		got := string(page)
+		if !strings.Contains(got, `name="_csrf"`) {
+			t.Errorf("%s posts without a CSRF field", rel)
+		}
+		if !strings.Contains(got, "csrfToken?: string") {
+			t.Errorf("%s does not declare the csrfToken prop, so the field renders empty", rel)
+		}
+		// The import path, not the word: "CsrfField" also appears in the prop's
+		// own comment explaining why it is not used, so matching the bare name
+		// finds the explanation rather than the mistake.
+		if strings.Contains(got, "components/admin/") {
+			t.Errorf("%s imports from components/admin, which a no-admin build deletes", rel)
+		}
+	}
+
+	handler, err := os.ReadFile(filepath.Join(root, "internal/controller/widget/handler.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := string(handler)
+	if !strings.Contains(h, `c.Set("csrfToken"`) {
+		t.Error("handler.go never injects the token, so the field renders empty")
+	}
+	if !strings.Contains(h, "ct.Session == nil") {
+		t.Error("handler.go does not tolerate a build without the session component")
+	}
+}

@@ -114,6 +114,20 @@ exactly one place:
 <input type="hidden" name="_csrf" :value="csrfToken ?? ''">
 ```
 
+**Applies to the public generated resource too, which is easy to forget.**
+`gen resource` produces public pages with mutating forms and a handler that
+deliberately avoids the session. The check does not care: it runs in the session
+middleware on every unsafe method, so those forms need a token exactly as the
+admin's do. They cannot use the admin's `CsrfField` — a build without the admin
+component has no such file — so the input is written inline, and the handler
+tolerates a nil `Session` for a build without that component.
+
+(Recorded after the fact: §2 said "not just the admin area" and the plan's
+delivery task then omitted these templates, which shipped every generated
+public form answering 403. The contradiction was between two of my own
+documents, and a reviewer blessed the omission on the grounds that there was
+"no session there" — session is not absent, only not required.)
+
 **The generated templates cannot make this conditional.** `markers.forms` has no
 `.vue` form, and a marker in a file type it does not know makes `init` fail
 outright — so the field is unconditional in the scaffold. In a build with no

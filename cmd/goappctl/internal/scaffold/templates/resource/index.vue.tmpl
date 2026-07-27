@@ -2,6 +2,10 @@
 defineProps<{
   items: Array<{ id: number; name: string }>
   viewDir: string
+  // The CSRF token, when this build has a session component. Written inline
+  // rather than through the admin's CsrfField, which does not exist in a build
+  // without the admin component.
+  csrfToken?: string
 }>()
 </script>
 
@@ -17,6 +21,7 @@ defineProps<{
         <div class="space-x-2">
           <a :href="`/${viewDir}/${item.id}`" class="text-blue-600">Edit</a>
           <form :action="`/${viewDir}/${item.id}/delete`" method="post" class="inline">
+            <input type="hidden" name="_csrf" :value="csrfToken ?? ''">
             <button type="submit" class="text-red-600">Delete</button>
           </form>
         </div>

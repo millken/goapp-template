@@ -43,6 +43,7 @@ func (ct *Controller) Index(c *inertia.Context) {
 	// TODO: _ = ct.DB.Table("[[.Table]]").Scan(&items)
 	c.Set("items", items)
 	c.Set("viewDir", "[[.ViewDir]]")
+	c.Set("csrfToken", ct.csrfToken(c))
 	if err := c.Render("[[.ViewDir]]/index"); err != nil {
 		slog.Error("render [[.Package]] index", "err", err)
 	}
@@ -153,10 +154,29 @@ func (ct *Controller) nameTaken(ctx context.Context, name string, exceptID int64
 func (ct *Controller) renderForm(c *inertia.Context, item [[.Type]], errs map[string]string) {
 	c.Set("item", item)
 	c.Set("viewDir", "[[.ViewDir]]")
+	c.Set("csrfToken", ct.csrfToken(c))
 	if errs != nil {
 		c.Set("errors", errs)
 	}
 	if err := c.Render("[[.ViewDir]]/form"); err != nil {
 		slog.Error("render [[.Package]] form", "err", err)
 	}
+}
+
+// csrfToken is the token the page's forms need, or "" when this build has no
+// session component — there is then no middleware to check one either.
+//
+// A nil check rather than a goappctl marker: markers are stripped by `init` when
+// the project is created, and this file is written by `gen` afterwards, so a
+// marker here would ship verbatim into someone's repository.
+func (ct *Controller) csrfToken(c *inertia.Context) string {
+	if ct.Session == nil {
+		return ""
+	}
+	token, err := ct.Session.Session(c).CSRFToken(c.Request.Context())
+	if err != nil {
+		slog.Error("[[.Package]]: csrf token", "err", err)
+		return ""
+	}
+	return token
 }

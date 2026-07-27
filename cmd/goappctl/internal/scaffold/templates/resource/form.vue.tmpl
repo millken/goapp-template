@@ -2,6 +2,10 @@
 defineProps<{
   item: { id: number; name: string }
   viewDir: string
+  // The CSRF token, when this build has a session component. Written inline
+  // rather than through the admin's CsrfField, which does not exist in a build
+  // without the admin component.
+  csrfToken?: string
   // Set by the handler only when a submit failed validation: one message per bad
   // field. `item` carries what was typed, so the inputs repopulate on their own
   // — there is no separate `old` prop.
@@ -13,6 +17,7 @@ defineProps<{
   <div class="max-w-3xl mx-auto py-8">
     <h1 class="text-2xl font-bold mb-6">{{ item.id ? 'Edit' : 'New' }} [[.Type]]</h1>
     <form :action="item.id ? `/${viewDir}/${item.id}` : `/${viewDir}`" method="post" class="space-y-4">
+      <input type="hidden" name="_csrf" :value="csrfToken ?? ''">
       <div>
         <label class="block text-sm font-medium">Name</label>
         <input
