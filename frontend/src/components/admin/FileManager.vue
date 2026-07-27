@@ -8,7 +8,7 @@
 // Directory changes are component state, never navigation: routing them
 // through Inertia would put every `cd` in the browser history, and the back
 // button inside a modal would then mean "go up one folder" instead of "close".
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, File, Folder, Upload } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -195,7 +195,13 @@ async function upload(event: Event) {
   }
 }
 
-watch([path, page], refresh, { immediate: true })
+// Not `{ immediate: true }`: an immediate watcher fires during setup, which
+// runs under SSR too — and QuickJS has no fetch, so refresh() would throw and
+// the server would render a network-error banner it never earned (it never
+// tried the request). onMounted only runs client-side, which is exactly the
+// "we're alive in a browser" signal this needs, with no environment sniffing.
+onMounted(refresh)
+watch([path, page], refresh)
 watch(query, () => {
   page.value = 1
   refresh()

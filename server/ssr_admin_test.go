@@ -149,15 +149,34 @@ func TestSSR_FileManagerRendersUnderQuickJS(t *testing.T) {
 		t.Fatalf("RenderComponent(admin/filemanager/index): %v", err)
 	}
 	// "全部文件" is not asserted here even though it appears in the component
-	// test's mock listing: it is data the API would return, and QuickJS has no
-	// global fetch, so refresh()'s fetch(...) call throws synchronously before
-	// any request is made. FileManager's own try/catch swallows that (the same
-	// as any other network failure) and settles into its empty state —
+	// test's mock listing: it is data the API would return, and the component
+	// only loads its listing onMounted, which never runs server-side. So the
+	// server genuinely has no listing and settles into its empty state —
 	// "这个目录是空的" — which is what a server render can actually promise.
 	for _, want := range []string{"新建目录", "上传", "这个目录是空的"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("rendered page is missing %q", want)
 		}
+	}
+	// The server never attempted the listing request (onMounted doesn't run
+	// during SSR), so it must not claim one failed either: a "网络错误" banner
+	// here would be reporting a network error for a request that was never
+	// made, a lie about the server's own execution. Check both the error text
+	// and, separately, that no element carries the error paragraph's class —
+	// guards against the message being reworded while the banner itself
+	// regresses back to rendering (e.g. via a reintroduced `immediate: true`).
+	if strings.Contains(html, "网络错误") {
+		t.Error("rendered page contains the client network-error message, but the " +
+			"server never made a request that could have failed")
+	}
+	// The exact class attribute of the error <p>, not a bare "text-destructive"
+	// substring match: the manage-mode 删除 button renders variant="destructive",
+	// which Button maps to a class including "text-destructive-foreground" — a
+	// false positive that would fail even after the fix, since that button
+	// itself is expected in the chrome.
+	if strings.Contains(html, `class="text-sm text-destructive"`) {
+		t.Error("rendered page contains the error banner's <p class=\"text-sm text-destructive\">; " +
+			"the server has no listing and never tried to fetch one, so no error should render")
 	}
 }
 
