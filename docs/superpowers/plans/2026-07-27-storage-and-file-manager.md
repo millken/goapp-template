@@ -2575,10 +2575,13 @@ async function mutate(action: string, body: unknown): Promise<Record<string, unk
       return null
     }
     const fails = (out as { errors?: { name: string; error: string }[] })?.errors ?? []
-    if (fails.length) {
-      error.value = fails.map((f) => `${f.name}：${f.error}`).join('；')
-    }
+    const message = fails.length ? fails.map((f) => `${f.name}：${f.error}`).join('；') : ''
+    // refresh() clears `error` as its first statement, before its first
+    // `await` — so setting the per-item message before calling it would wipe it
+    // out in the same synchronous stack, before any render observes it. Set it
+    // only after refresh() has settled.
     await refresh()
+    if (message) error.value = message
     return out as Record<string, unknown>
   } catch {
     error.value = '网络错误'
@@ -2650,13 +2653,16 @@ async function upload(event: Event) {
       },
     )
     const out = await res.json().catch(() => null)
+    let message = ''
     if (!res.ok) {
-      error.value = (out as { error?: string })?.error ?? '上传失败'
+      message = (out as { error?: string })?.error ?? '上传失败'
     } else {
       const fails = (out as { errors?: { name: string; error: string }[] })?.errors ?? []
-      if (fails.length) error.value = fails.map((f) => `${f.name}：${f.error}`).join('；')
+      if (fails.length) message = fails.map((f) => `${f.name}：${f.error}`).join('；')
     }
+    // After refresh(), never before — see the note in mutate().
     await refresh()
+    if (message) error.value = message
   } catch {
     error.value = '网络错误'
   } finally {
