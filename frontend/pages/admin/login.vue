@@ -9,6 +9,7 @@
 // staged before bouncing someone here — a disabled account, say. This is the one
 // admin page outside AdminShell, which renders flash for every other page, so
 // forgetting it here means the reason is delivered and then silently discarded.
+import CsrfField from '@/components/admin/CsrfField.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,6 +20,7 @@ defineProps<{
   loginPath?: string
   error?: string
   flash?: Record<string, string>
+  csrfToken?: string
 }>()
 </script>
 
@@ -30,6 +32,7 @@ defineProps<{
       </CardHeader>
       <CardContent>
         <form :action="loginPath || '/admin/login'" method="post" class="space-y-4">
+          <CsrfField :token="csrfToken" />
           <Alert
             v-for="(message, kind) in flash || {}"
             :key="kind"

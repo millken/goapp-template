@@ -22,6 +22,7 @@ defineProps<{
   loginPath?: string
   currentPath?: string
   flash?: Record<string, string>
+  csrfToken?: string
 }>()
 
 const columns = [
@@ -45,6 +46,7 @@ const askDelete = (row: Record<string, unknown>) => {
     :mount="adminMount"
     :current-path="currentPath"
     :flash="flash"
+    :csrf-token="csrfToken"
   >
     <PageHeader title="分组" description="权限挂在分组上，不挂在个人上。">
       <template #actions>
@@ -86,6 +88,7 @@ const askDelete = (row: Record<string, unknown>) => {
       :action="`${basePath}/${pending?.id}/delete`"
       confirm-label="删除"
       cancel-label="取消"
+      :csrf-token="csrfToken"
       @update:open="(o) => !o && (pending = null)"
     />
   </AdminShell>

@@ -3,6 +3,7 @@ package admin
 import (
 	"errors"
 	"log/slog"
+	"net/http"
 
 	"github.com/millken/inertia"
 )
@@ -31,6 +32,13 @@ func (a *Admin) LoginForm(c *inertia.Context) {
 	}
 
 	c.Set("loginPath", a.LoginPath())
+	token, err := sess.CSRFToken(c.Request.Context())
+	if err != nil {
+		slog.Error("admin login: csrf token", "err", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Set("csrfToken", token)
 	if err := c.Render("admin/login"); err != nil {
 		slog.Error("render admin login", "err", err)
 	}
@@ -43,12 +51,20 @@ func (a *Admin) LoginForm(c *inertia.Context) {
 func (a *Admin) LoginSubmit(c *inertia.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
+	sess := a.Session.Session(c)
 
 	user, err := authenticate(c.Request.Context(), a.DB, a.usersTable(), username, password)
 	if err != nil {
 		if errors.Is(err, errAccountDisabled) {
 			c.Set("loginPath", a.LoginPath())
 			c.Set("error", "该账号已被禁用。")
+			token, err := sess.CSRFToken(c.Request.Context())
+			if err != nil {
+				slog.Error("admin login: csrf token", "err", err)
+				c.AbortWithStatus(http.StatusInternalServerError)
+				return
+			}
+			c.Set("csrfToken", token)
 			if rerr := c.Render("admin/login"); rerr != nil {
 				slog.Error("render admin login", "err", rerr)
 			}
@@ -59,13 +75,19 @@ func (a *Admin) LoginSubmit(c *inertia.Context) {
 		}
 		c.Set("loginPath", a.LoginPath())
 		c.Set("error", "invalid username or password")
+		token, err := sess.CSRFToken(c.Request.Context())
+		if err != nil {
+			slog.Error("admin login: csrf token", "err", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		c.Set("csrfToken", token)
 		if rerr := c.Render("admin/login"); rerr != nil {
 			slog.Error("render admin login", "err", rerr)
 		}
 		return
 	}
 
-	sess := a.Session.Session(c)
 	sess.Set(a.authKey(), user.ID)
 	if _, err := sess.Save(c.Request.Context()); err != nil {
 		slog.Error("admin login: save session", "err", err)

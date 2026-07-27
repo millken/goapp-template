@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import AdminShell from '@/components/admin/AdminShell.vue'
 import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'
+import CsrfField from '@/components/admin/CsrfField.vue'
 import DataTable from '@/components/admin/DataTable.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,7 @@ defineProps<{
   currentPath?: string
   // One-shot messages staged by the handlers before their redirects:
   flash?: Record<string, string>
+  csrfToken?: string
 }>()
 
 const columns = [
@@ -48,6 +50,7 @@ const askDelete = (row: Record<string, unknown>) => {
     :mount="adminMount"
     :current-path="currentPath"
     :flash="flash"
+    :csrf-token="csrfToken"
   >
     <PageHeader title="[[.Type]]">
       <template #actions>
@@ -81,6 +84,7 @@ const askDelete = (row: Record<string, unknown>) => {
       :open="pending !== null"
       :title="`删除“${pending?.name}”？`"
       :action="`${basePath}/${pending?.id}/delete`"
+      :csrf-token="csrfToken"
       @update:open="(o) => !o && (pending = null)"
     />
   </AdminShell>

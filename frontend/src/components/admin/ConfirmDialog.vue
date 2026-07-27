@@ -3,6 +3,7 @@
 // button submits a plain form POST to `action`, so the server stays the single
 // source of truth — no client-side mutation. Dialogs start closed; SSR emits no
 // teleported content, and server/ssr_fixture_test.go asserts none renders.
+import CsrfField from '@/components/admin/CsrfField.vue'
 import { Button } from '@/components/ui/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -15,6 +16,7 @@ defineProps<{
   action: string
   confirmLabel?: string
   cancelLabel?: string
+  csrfToken?: string
 }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 </script>
@@ -29,6 +31,7 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
       <DialogFooter>
         <Button variant="outline" @click="emit('update:open', false)">{{ cancelLabel ?? '取消' }}</Button>
         <form :action="action" method="post">
+          <CsrfField :token="csrfToken" />
           <Button type="submit" variant="destructive">{{ confirmLabel ?? '删除' }}</Button>
         </form>
       </DialogFooter>

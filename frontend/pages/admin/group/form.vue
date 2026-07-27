@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AdminShell from '@/components/admin/AdminShell.vue'
+import CsrfField from '@/components/admin/CsrfField.vue'
 import FormField from '@/components/admin/FormField.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
@@ -22,6 +23,7 @@ const props = defineProps<{
   loginPath?: string
   currentPath?: string
   flash?: Record<string, string>
+  csrfToken?: string
 }>()
 
 const editing = props.item.id > 0
@@ -34,6 +36,7 @@ const editing = props.item.id > 0
     :mount="adminMount"
     :current-path="currentPath"
     :flash="flash"
+    :csrf-token="csrfToken"
     :crumb="editing ? '编辑' : '新建'"
   >
     <PageHeader :title="editing ? '编辑分组' : '新建分组'" />
@@ -44,6 +47,7 @@ const editing = props.item.id > 0
           method="post"
           class="space-y-4"
         >
+          <CsrfField :token="csrfToken" />
           <FormField name="name" label="分组名" :error="errors?.name">
             <Input id="name" name="name" :model-value="item.name" :aria-invalid="!!errors?.name" />
           </FormField>

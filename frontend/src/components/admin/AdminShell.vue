@@ -16,6 +16,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import CsrfField from '@/components/admin/CsrfField.vue'
 import ThemeToggle from '@/components/admin/ThemeToggle.vue'
 import Toaster from '@/components/admin/Toaster.vue'
 
@@ -33,6 +34,7 @@ const props = defineProps<{
   currentPath?: string
   flash?: Record<string, string>
   crumb?: string
+  csrfToken?: string
 }>()
 
 const base = computed(() => props.mount || '/admin')
@@ -202,6 +204,7 @@ const flashVariant = (kind: string) =>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <form :action="`${base}/logout`" method="post">
+                <CsrfField :token="csrfToken" />
                 <DropdownMenuItem as="button" type="submit" class="w-full">
                   <LogOut />
                   登出

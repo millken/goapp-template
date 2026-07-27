@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AdminShell from '@/components/admin/AdminShell.vue'
+import CsrfField from '@/components/admin/CsrfField.vue'
 import FormField from '@/components/admin/FormField.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ defineProps<{
   currentPath?: string
   // One-shot messages staged by the handlers before their redirects:
   flash?: Record<string, string>
+  csrfToken?: string
 }>()
 </script>
 
@@ -33,6 +35,7 @@ defineProps<{
     :mount="adminMount"
     :current-path="currentPath"
     :flash="flash"
+    :csrf-token="csrfToken"
     :crumb="item.id ? 'Edit' : 'New'"
   >
     <PageHeader :title="`${item.id ? '编辑' : '新建'} [[.Type]]`" />
@@ -43,6 +46,7 @@ defineProps<{
           method="post"
           class="space-y-4"
         >
+          <CsrfField :token="csrfToken" />
           <FormField name="name" label="名称" :error="errors?.name">
             <Input
               id="name"

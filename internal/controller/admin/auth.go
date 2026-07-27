@@ -87,6 +87,16 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 	c.Set("adminMount", a.mount())
 	c.Set("loginPath", a.LoginPath())
 	c.Set("currentPath", c.Request.URL.Path)
+
+	// Every admin page renders at least the shell's logout form, so every admin
+	// page needs a token. resolve is the one place they all pass through.
+	token, err := a.Session.Session(c).CSRFToken(c.Request.Context())
+	if err != nil {
+		slog.Error("admin auth: csrf token", "err", err, "user", id)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return nil, false
+	}
+	c.Set("csrfToken", token)
 	return cl.group, true
 }
 

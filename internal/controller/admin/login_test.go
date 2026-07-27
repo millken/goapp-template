@@ -146,8 +146,13 @@ func TestLogin_BadPassword(t *testing.T) {
 	if w.Code == http.StatusFound {
 		t.Fatal("bad password must not redirect (no login)")
 	}
-	if len(w.Result().Cookies()) != 0 {
-		t.Fatal("bad password must not set a session cookie")
+	// A session cookie IS now expected: the re-rendered login form carries a
+	// CSRF token (session/csrf.go's CSRFToken), and minting one for an
+	// anonymous visitor is what gives them a session in the first place. This
+	// is not a login — auth still failed — it is the same mechanism a plain GET
+	// of the login page already triggers.
+	if len(w.Result().Cookies()) == 0 {
+		t.Fatal("expected a session cookie carrying the re-rendered form's CSRF token")
 	}
 }
 

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import AdminShell from '@/components/admin/AdminShell.vue'
 import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'
+import CsrfField from '@/components/admin/CsrfField.vue'
 import DataTable from '@/components/admin/DataTable.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import { Badge } from '@/components/ui/badge'
@@ -29,6 +30,7 @@ defineProps<{
   loginPath?: string
   currentPath?: string
   flash?: Record<string, string>
+  csrfToken?: string
 }>()
 
 const columns = [
@@ -52,6 +54,7 @@ const askDelete = (row: Record<string, unknown>) => {
     :mount="adminMount"
     :current-path="currentPath"
     :flash="flash"
+    :csrf-token="csrfToken"
   >
     <PageHeader title="用户" description="后台账号及其权限分组。">
       <template #actions>
@@ -99,6 +102,7 @@ const askDelete = (row: Record<string, unknown>) => {
           method="post"
           class="hidden"
         >
+          <CsrfField :token="csrfToken" />
           <input type="hidden" name="status" :value="row.status === 1 ? 0 : 1">
         </form>
       </CardContent>
@@ -111,6 +115,7 @@ const askDelete = (row: Record<string, unknown>) => {
       :action="`${basePath}/${pending?.id}/delete`"
       confirm-label="删除"
       cancel-label="取消"
+      :csrf-token="csrfToken"
       @update:open="(o) => !o && (pending = null)"
     />
   </AdminShell>

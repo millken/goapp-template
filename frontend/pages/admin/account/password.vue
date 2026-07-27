@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AdminShell from '@/components/admin/AdminShell.vue'
+import CsrfField from '@/components/admin/CsrfField.vue'
 import FormField from '@/components/admin/FormField.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,7 @@ defineProps<{
   loginPath?: string
   currentPath?: string
   flash?: Record<string, string>
+  csrfToken?: string
 }>()
 </script>
 
@@ -27,12 +29,14 @@ defineProps<{
     :mount="adminMount"
     :current-path="currentPath"
     :flash="flash"
+    :csrf-token="csrfToken"
     crumb="修改密码"
   >
     <PageHeader title="修改密码" description="修改你自己的登录密码。" />
     <Card class="max-w-lg">
       <CardContent class="pt-6">
         <form :action="basePath" method="post" class="space-y-4">
+          <CsrfField :token="csrfToken" />
           <FormField name="current" label="当前密码" :error="errors?.current">
             <Input id="current" name="current" type="password" :aria-invalid="!!errors?.current" />
           </FormField>
