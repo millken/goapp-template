@@ -230,6 +230,16 @@ func TestUserDeleteAndDisable_CannotTargetYourself(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			eng, adm, cookie := adminStack(t)
+			// A second superuser, so this case is about rule 1 alone. With only
+			// alice, the last-superuser guard refuses the change for its own
+			// reasons and the test would pass even with notSelf removed —
+			// verified: given a second superuser, a notSelf-stripped handler
+			// lets alice delete herself.
+			if _, err := adm.DB.ExecContext(context.Background(),
+				`INSERT INTO users (username, password_hash, created_at, status, group_id)
+				 VALUES ('bob', 'x', 0, 1, (SELECT id FROM user_groups WHERE name = 'Administrators'))`); err != nil {
+				t.Fatal(err)
+			}
 			var id int64
 			if err := adm.DB.QueryRowContext(context.Background(),
 				`SELECT id FROM users WHERE username = 'alice'`).Scan(&id); err != nil {
