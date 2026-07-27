@@ -4,9 +4,15 @@
 //
 // Routes come in through Resource, the registrar: one call registers the route,
 // attaches the permission guard, records the permission in an enumerable
-// catalogue, and — for Menu — adds a sidebar entry gated by the same key. Login
-// runs no middleware at all; logout and the dashboard require a session but no
-// permission, so a user whose group grants nothing can still sign in and out.
+// catalogue, and — for Menu — adds a sidebar entry gated by the same key.
+//
+// Three routes deliberately do not: logout, the dashboard, and the account
+// password page all take AuthMiddleware instead, requiring a session but no
+// permission. A user whose group grants nothing can therefore still sign in,
+// see where they are, change their own password, and sign out. Login itself
+// runs no middleware at all. That list of three is the complete answer to
+// "which routes skip the registrar" — see mountAccount for why the last one
+// has to be on it.
 //
 // It needs its own *Config (mount, auth key, users table), so serve.go wires it
 // explicitly rather than through the generated MountAll. The middlewares are

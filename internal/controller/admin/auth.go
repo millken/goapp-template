@@ -119,9 +119,11 @@ func userID(v any) (int64, bool) {
 }
 
 // AuthMiddleware enforces login on the routes it guards, without requiring any
-// permission. It is what the exempt routes use: logout, and the dashboard —
+// permission. It is what the three exempt routes use: logout, the dashboard —
 // which must stay reachable, or a user with no permissions logs in, sees only
-// 403, and cannot self-diagnose.
+// 403, and cannot self-diagnose — and the account password page, which cannot be
+// permission-gated without making it impossible for such a user to fix their own
+// credentials. Every other admin route goes through the registrar.
 func (a *Admin) AuthMiddleware() inertia.HandlerFunc {
 	return func(c *inertia.Context) {
 		if _, ok := a.resolve(c); !ok {
