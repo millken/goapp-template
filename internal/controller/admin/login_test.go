@@ -138,7 +138,7 @@ func TestProtectedRoute_RedirectsWhenUnauthenticated(t *testing.T) {
 }
 
 func TestLogin_BadPassword(t *testing.T) {
-	eng, _ := loginStack(t)
+	eng, adm := loginStack(t)
 
 	w := httptest.NewRecorder()
 	eng.ServeHTTP(w, postForm("/admin/login", url.Values{"username": {"alice"}, "password": {"wrong"}}))
@@ -146,13 +146,26 @@ func TestLogin_BadPassword(t *testing.T) {
 	if w.Code == http.StatusFound {
 		t.Fatal("bad password must not redirect (no login)")
 	}
-	// A session cookie IS now expected: the re-rendered login form carries a
-	// CSRF token (session/csrf.go's CSRFToken), and minting one for an
-	// anonymous visitor is what gives them a session in the first place. This
-	// is not a login — auth still failed — it is the same mechanism a plain GET
-	// of the login page already triggers.
-	if len(w.Result().Cookies()) == 0 {
+	// A session cookie is now expected, and that is not a weakening: the
+	// re-rendered form carries a CSRF token, and minting one is what gives an
+	// anonymous visitor a session at all — a plain GET of the login page does
+	// the same. What this test was really protecting is that a failed attempt
+	// leaves you unauthenticated, so it asserts that directly rather than
+	// through the absence of a cookie, which no longer stands in for it.
+	cookies := w.Result().Cookies()
+	if len(cookies) == 0 {
 		t.Fatal("expected a session cookie carrying the re-rendered form's CSRF token")
+	}
+
+	eng.GET("/admin/probe", adm.AuthMiddleware(), func(c *inertia.Context) {
+		t.Error("a failed login produced a session that reaches guarded routes")
+	})
+	r := httptest.NewRequest(http.MethodGet, "/admin/probe", nil)
+	r.AddCookie(&http.Cookie{Name: cookies[0].Name, Value: cookies[0].Value})
+	w2 := httptest.NewRecorder()
+	eng.ServeHTTP(w2, r)
+	if w2.Code != http.StatusFound {
+		t.Errorf("status = %d, want a redirect to login — the session must not be authenticated", w2.Code)
 	}
 }
 

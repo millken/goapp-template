@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newCSRFSession returns a session backed by the memory store, with a recorder
@@ -174,4 +175,37 @@ type failingDelete struct{ Store }
 
 func (failingDelete) Delete(context.Context, string) error {
 	return errors.New("store is unavailable")
+}
+
+// The other failure path. Once the old entry is gone, a failed save leaves no
+// session at all — which is the safe direction, and the direction the code
+// comment claims. Worth pinning: a future change that restored the old id here
+// to "recover" would resurrect exactly the id Regenerate just destroyed.
+func TestRegenerate_FailedSaveLeavesNoSession(t *testing.T) {
+	s, svc := newCSRFSession(t)
+	ctx := context.Background()
+	old, err := s.Save(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inner := svc.store
+	svc.store = failingSave{inner}
+	if err := s.Regenerate(ctx); err == nil {
+		t.Fatal("Regenerate reported success though the save failed")
+	}
+	if s.ID() != "" {
+		t.Errorf("id = %q, want empty — a half-finished regeneration must not hold an id", s.ID())
+	}
+	svc.store = inner
+	if _, _, ok, _ := svc.store.Load(ctx, old); ok {
+		t.Error("the old entry survived; the id Regenerate destroyed is still usable")
+	}
+}
+
+// failingSave is a Store whose Save always fails; everything else passes through.
+type failingSave struct{ Store }
+
+func (failingSave) Save(context.Context, string, map[string]any, time.Duration) (string, error) {
+	return "", errors.New("store is unavailable")
 }
