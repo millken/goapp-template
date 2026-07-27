@@ -325,6 +325,13 @@ func (s *Service) Upload(ctx context.Context, dir, filename string, r io.Reader)
 	}
 	ext := strings.ToLower(path.Ext(name))
 	if !slices.Contains(s.allowedExt(), ext) {
+		if ext == "" {
+			// sanitiseFilename trims leading dots, so a name that arrived as
+			// e.g. ".png" lands here as "png" with no extension at all — a
+			// message naming the extension %q as "" would blame the wrong
+			// thing; the real reason is that there is no extension left.
+			return Entry{}, fmt.Errorf("%w: 文件名缺少扩展名", ErrRejected)
+		}
 		return Entry{}, fmt.Errorf("%w: 不接受的文件类型 %q", ErrRejected, ext)
 	}
 

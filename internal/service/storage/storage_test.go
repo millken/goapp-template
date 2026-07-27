@@ -114,6 +114,23 @@ func TestUpload_AllowedExtIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+// TestUpload_ADotfileGetsAnHonestRejectionMessage covers sanitiseFilename's
+// side effect on a leading-dot name: sanitiseFilename(".png") is "png", not
+// ".png" — the leading dot is trimmed along with the rest, so the extension
+// check sees no extension at all. Rejecting it is right; blaming an empty
+// extension ("") for it was not.
+func TestUpload_ADotfileGetsAnHonestRejectionMessage(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+	_, err := s.Upload(ctx, "", ".png", strings.NewReader("x"))
+	if !errors.Is(err, ErrRejected) {
+		t.Fatalf("a dotfile with no extension left must be rejected, got %v", err)
+	}
+	if strings.Contains(err.Error(), `""`) {
+		t.Errorf("message = %q, must not blame an empty extension it never had", err.Error())
+	}
+}
+
 func TestBrowse_SortsFiltersAndPaginates(t *testing.T) {
 	ctx := context.Background()
 	s := startedService(t)
