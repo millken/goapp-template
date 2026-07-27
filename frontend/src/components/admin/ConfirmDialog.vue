@@ -14,6 +14,7 @@ defineProps<{
   description?: string
   action: string
   confirmLabel?: string
+  cancelLabel?: string
 }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 </script>
@@ -23,12 +24,12 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>()
     <DialogContent>
       <DialogHeader>
         <DialogTitle>{{ title }}</DialogTitle>
-        <DialogDescription>{{ description ?? 'This cannot be undone.' }}</DialogDescription>
+        <DialogDescription>{{ description ?? '此操作不可撤销。' }}</DialogDescription>
       </DialogHeader>
       <DialogFooter>
-        <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
+        <Button variant="outline" @click="emit('update:open', false)">{{ cancelLabel ?? '取消' }}</Button>
         <form :action="action" method="post">
-          <Button type="submit" variant="destructive">{{ confirmLabel ?? 'Delete' }}</Button>
+          <Button type="submit" variant="destructive">{{ confirmLabel ?? '删除' }}</Button>
         </form>
       </DialogFooter>
     </DialogContent>

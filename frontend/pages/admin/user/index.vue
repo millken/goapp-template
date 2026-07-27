@@ -104,8 +104,10 @@ const askDelete = (row: Record<string, unknown>) => {
     <ConfirmDialog
       :open="pending !== null"
       :title="`删除用户“${pending?.username}”？`"
+      description="该账号将被永久删除，其会话会在下一次请求时失效。此操作不可撤销。"
       :action="`${basePath}/${pending?.id}/delete`"
       confirm-label="删除"
+      cancel-label="取消"
       @update:open="(o) => !o && (pending = null)"
     />
   </AdminShell>

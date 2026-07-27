@@ -80,14 +80,14 @@ func TestMenuItems_SectionOrderFollowsRegistration(t *testing.T) {
 	a.AddMenuItem(MenuItem{Title: "Settings", Path: "/admin/settings", Section: "System"})
 	a.AddMenuItem(MenuItem{Title: "Groups", Path: "/admin/group", Section: "Access"})
 	a.AddMenuItem(MenuItem{Title: "Users", Path: "/admin/user", Section: "Access"})
-	a.AddMenuItem(MenuItem{Title: "Posts", Path: "/admin/post"}) // empty → "Content"
+	a.AddMenuItem(MenuItem{Title: "Posts", Path: "/admin/post"}) // empty → "内容"
 
 	got := a.menuItems(&group{Superuser: true})
 	titles := make([]string, len(got))
 	for i, m := range got {
 		titles[i] = m.Section + ":" + m.Title
 	}
-	want := "System:Settings,Access:Groups,Access:Users,Content:Posts"
+	want := "System:Settings,Access:Groups,Access:Users,内容:Posts"
 	if s := strings.Join(titles, ","); s != want {
 		t.Errorf("menu = %q, want %q", s, want)
 	}

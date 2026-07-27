@@ -70,7 +70,7 @@ describe('DataTable', () => {
 
   it('shows the empty state when the table itself is empty', () => {
     const el = mount({ columns, data: [] })
-    expect(el.textContent).toContain('No results.')
+    expect(el.textContent).toContain('还没有记录。')
   })
 
   // A filter that matches nothing is not an empty table. Saying "No posts yet."
@@ -84,7 +84,7 @@ describe('DataTable', () => {
     input.value = 'zzz'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await nextTick()
-    expect(el.textContent).toContain('Nothing matches that filter.')
+    expect(el.textContent).toContain('没有匹配该筛选条件的记录。')
     expect(el.textContent).not.toContain('No posts yet.')
   })
 

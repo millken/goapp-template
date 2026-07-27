@@ -82,9 +82,10 @@ const askDelete = (row: Record<string, unknown>) => {
     <ConfirmDialog
       :open="pending !== null"
       :title="`删除分组“${pending?.name}”？`"
-      description="只有没有成员的分组可以删除。"
+      description="只有没有成员的分组可以删除。此操作不可撤销。"
       :action="`${basePath}/${pending?.id}/delete`"
       confirm-label="删除"
+      cancel-label="取消"
       @update:open="(o) => !o && (pending = null)"
     />
   </AdminShell>

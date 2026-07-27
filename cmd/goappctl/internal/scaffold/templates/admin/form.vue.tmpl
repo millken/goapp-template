@@ -35,7 +35,7 @@ defineProps<{
     :flash="flash"
     :crumb="item.id ? 'Edit' : 'New'"
   >
-    <PageHeader :title="`${item.id ? 'Edit' : 'New'} [[.Type]]`" />
+    <PageHeader :title="`${item.id ? '编辑' : '新建'} [[.Type]]`" />
     <Card class="max-w-lg">
       <CardContent class="pt-6">
         <form
@@ -43,7 +43,7 @@ defineProps<{
           method="post"
           class="space-y-4"
         >
-          <FormField name="name" label="Name" :error="errors?.name">
+          <FormField name="name" label="名称" :error="errors?.name">
             <Input
               id="name"
               name="name"
@@ -52,8 +52,8 @@ defineProps<{
             />
           </FormField>
           <div class="flex gap-2">
-            <Button type="submit">Save</Button>
-            <Button as="a" :href="basePath" variant="outline">Cancel</Button>
+            <Button type="submit">保存</Button>
+            <Button as="a" :href="basePath" variant="outline">取消</Button>
           </div>
         </form>
       </CardContent>

@@ -26,7 +26,7 @@ defineProps<{
   <div class="min-h-screen flex items-center justify-center bg-muted/40">
     <Card class="w-80">
       <CardHeader>
-        <CardTitle>Admin sign in</CardTitle>
+        <CardTitle>后台登录</CardTitle>
       </CardHeader>
       <CardContent>
         <form :action="loginPath || '/admin/login'" method="post" class="space-y-4">
@@ -41,11 +41,11 @@ defineProps<{
             <AlertDescription>{{ error }}</AlertDescription>
           </Alert>
           <div class="space-y-1.5">
-            <Label for="username">Username</Label>
+            <Label for="username">用户名</Label>
             <Input id="username" name="username" autocomplete="username" required />
           </div>
           <div class="space-y-1.5">
-            <Label for="password">Password</Label>
+            <Label for="password">密码</Label>
             <Input
               id="password"
               name="password"
@@ -54,7 +54,7 @@ defineProps<{
               required
             />
           </div>
-          <Button type="submit" class="w-full">Sign in</Button>
+          <Button type="submit" class="w-full">登录</Button>
         </form>
       </CardContent>
     </Card>

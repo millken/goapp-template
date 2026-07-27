@@ -17,6 +17,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import ThemeToggle from '@/components/admin/ThemeToggle.vue'
+import Toaster from '@/components/admin/Toaster.vue'
 
 interface MenuItem {
   title: string
@@ -42,7 +43,7 @@ const path = computed(() =>
 // Home is hardcoded, not a registered menu item: the dashboard is an exempt
 // route, so every signed-in user sees it regardless of permission filtering.
 const sections = computed(() => {
-  const home = { title: 'Home', items: [{ title: 'Overview', path: base.value }] }
+  const home = { title: '首页', items: [{ title: '概览', path: base.value }] }
   const out: { title: string; items: MenuItem[] }[] = [home]
   // Seeded with Home already at 0, so an item registered under that section name
   // joins the built-in column instead of pushing a second one with the same title.
@@ -86,16 +87,45 @@ const crumbs = computed(() => {
 })
 
 const sectionIcons: Record<string, unknown> = {
-  Home: Gauge,
-  Content: FileText,
-  Access: Users,
-  System: Settings,
+  首页: Gauge,
+  内容: FileText,
+  访问控制: Users,
+  系统: Settings,
 }
 const iconFor = (title: string) => sectionIcons[title] ?? FileText
 
-// One-shot messages staged by the server before a redirect (sess.Flash), keyed
-// by kind. The session middleware consumes them, so they vanish on the next
-// navigation — no dismiss button needed.
+// One-shot messages staged by the server before a redirect (sess.Flash). The
+// session middleware consumes them, so they vanish on the next navigation.
+//
+// A key is either a bare kind ("success") or "<style>:<kind>" when the handler
+// named the presentation explicitly via flashAs. The style has to ride in the
+// key because a flash value must be a flat string — store_db round-trips the
+// session through JSON and store_memory does not.
+//
+// The default follows the kind: a success is a receipt you do not need once
+// read, so it goes to a toast that dismisses itself; anything else is context
+// you may need while fixing something, so it stays in the page.
+function split(key: string): { style: string; kind: string } {
+  const at = key.indexOf(':')
+  if (at > 0) {
+    return { style: key.slice(0, at), kind: key.slice(at + 1) }
+  }
+  return { style: key === 'success' ? 'toast' : 'alert', kind: key }
+}
+
+const byStyle = (want: string) =>
+  computed(() => {
+    const out: Record<string, string> = {}
+    for (const [key, message] of Object.entries(props.flash ?? {})) {
+      const { style, kind } = split(key)
+      if (style === want) out[kind] = message
+    }
+    return out
+  })
+
+const alerts = byStyle('alert')
+const toasts = byStyle('toast')
+
 const flashVariant = (kind: string) =>
   kind === 'error' ? 'destructive' : kind === 'success' ? 'success' : 'default'
 </script>
@@ -154,13 +184,13 @@ const flashVariant = (kind: string) =>
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" size="sm">
-                {{ user?.username ?? 'account' }}
+                {{ user?.username ?? '账号' }}
                 <ChevronDown class="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel class="font-normal text-muted-foreground">
-                Signed in as <span class="font-medium text-foreground">{{ user?.username }}</span>
+                已登录为 <span class="font-medium text-foreground">{{ user?.username }}</span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem as="a" :href="`${base}/account/password`">
@@ -171,7 +201,7 @@ const flashVariant = (kind: string) =>
               <form :action="`${base}/logout`" method="post">
                 <DropdownMenuItem as="button" type="submit" class="w-full">
                   <LogOut />
-                  Log out
+                  登出
                 </DropdownMenuItem>
               </form>
             </DropdownMenuContent>
@@ -181,7 +211,7 @@ const flashVariant = (kind: string) =>
 
       <main class="p-8">
         <Alert
-          v-for="(message, kind) in flash || {}"
+          v-for="(message, kind) in alerts"
           :key="kind"
           :variant="flashVariant(kind)"
           class="mb-4"
@@ -191,5 +221,7 @@ const flashVariant = (kind: string) =>
         <slot />
       </main>
     </div>
+
+    <Toaster :messages="toasts" />
   </div>
 </template>

@@ -57,9 +57,9 @@ func TestAdmin_WritesFlashOnEveryRedirect(t *testing.T) {
 	}
 	got := string(handler)
 	for _, want := range []string{
-		`ct.flash(c, "success", "Post created")`,
-		`ct.flash(c, "success", "Post updated")`,
-		`ct.flash(c, "success", "Post deleted")`,
+		`ct.flash(c, "success", "Post 已创建")`,
+		`ct.flash(c, "success", "Post 已更新")`,
+		`ct.flash(c, "success", "Post 已删除")`,
 		`sess.Flash(kind, message)`,
 	} {
 		if !strings.Contains(got, want) {
@@ -104,7 +104,7 @@ func TestAdmin_IndexUsesTableAndOverlaysStartClosed(t *testing.T) {
 		`import AdminShell from '@/components/admin/AdminShell.vue'`,
 		`import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'`,
 		`const pending = ref<Post | null>(null)`, // overlay starts closed
-		"No post yet.",
+		"还没有 post。",
 		"`${basePath}/${pending?.id}/delete`",
 		"`${basePath}/${row.id}/edit`",
 		`search-key="name"`,
@@ -136,7 +136,7 @@ func TestAdmin_RoutesGoThroughTheRegistrar(t *testing.T) {
 		`r := adm.Resource(eng, "post")`,
 		"r.GET(ct.base, ct.Index)",
 		"r.POST(ct.base+\"/:id/delete\", ct.Delete)",
-		`r.Menu("Content", "Post", ct.base)`,
+		`r.Menu("内容", "Post", ct.base)`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("handler.go missing %q:\n%s", want, got)

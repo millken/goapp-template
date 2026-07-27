@@ -24,15 +24,15 @@ defineProps<{
     :current-path="currentPath"
     :flash="flash"
   >
-    <PageHeader title="Dashboard" :description="`Signed in as ${adminUser?.username ?? ''}.`" />
+    <PageHeader title="仪表盘" :description="`已登录为 ${adminUser?.username ?? ''}。`" />
     <Card>
       <CardHeader>
-        <CardTitle>Getting started</CardTitle>
-        <CardDescription>This project scaffolds admin resources.</CardDescription>
+        <CardTitle>从这里开始</CardTitle>
+        <CardDescription>这个项目可以脚手架生成后台资源。</CardDescription>
       </CardHeader>
       <CardContent class="text-sm text-muted-foreground">
-        Generate an admin resource with <code>goappctl gen admin &lt;name&gt;</code>;
-        it registers itself in the menu on the left.
+        用 <code>goappctl gen admin &lt;name&gt;</code> 生成一个后台资源，
+        它会把自己注册进左边的菜单。
       </CardContent>
     </Card>
   </AdminShell>

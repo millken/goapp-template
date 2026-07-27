@@ -69,7 +69,7 @@ func (a *Admin) mountUsers(eng *inertia.Engine) {
 	r.POST(base+"/:id", a.userUpdate)
 	r.POST(base+"/:id/delete", a.userDelete)
 	r.POST(base+"/:id/status", a.userSetStatus)
-	r.Menu("Access", "Users", base)
+	r.Menu("访问控制", "用户", base)
 }
 
 func (a *Admin) userBase() string { return a.Prefix() + "/user" }
@@ -442,9 +442,31 @@ func (a *Admin) renderUserForm(c *inertia.Context, item userRow, errs map[string
 // flash stages a one-shot message for the page we are about to redirect to. The
 // session middleware injects it as the `flash` prop on the next request and
 // clears it, so it shows exactly once.
+//
+// How it is shown follows from the kind, and the default is the right answer
+// almost always: a success is a receipt you do not need once you have read it,
+// so it becomes a toast that dismisses itself; an error is context you need
+// while fixing something, so it stays on the page until the next navigation.
+// Use flashAs when a particular message wants the other treatment.
 func (a *Admin) flash(c *inertia.Context, kind, message string) {
+	a.stageFlash(c, kind, message)
+}
+
+// flashAs stages a message with the presentation named explicitly — "toast" for
+// the transient corner notice, "alert" for the one that stays in the page.
+//
+// The style rides in the flash key rather than beside the message because a
+// flash value has to be a flat string: store_db round-trips the session through
+// JSON and store_memory does not, so a struct would read back as two different
+// types depending on which store is configured. session/flash.go documents the
+// same constraint.
+func (a *Admin) flashAs(c *inertia.Context, style, kind, message string) {
+	a.stageFlash(c, style+":"+kind, message)
+}
+
+func (a *Admin) stageFlash(c *inertia.Context, key, message string) {
 	sess := a.Session.Session(c)
-	sess.Flash(kind, message)
+	sess.Flash(key, message)
 	if _, err := sess.Save(c.Request.Context()); err != nil {
 		slog.Error("admin: stage flash", "err", err)
 	}

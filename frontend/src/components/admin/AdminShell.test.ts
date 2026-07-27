@@ -42,7 +42,7 @@ describe('AdminShell', () => {
     expect(panel.textContent).not.toContain('Users')
     // Home is contributed by the shell rather than the menu, which makes it the
     // one item likely to be concatenated into every panel by mistake.
-    expect(panel.textContent).not.toContain('Overview')
+    expect(panel.textContent).not.toContain('概览')
 
     const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
     expect(crumbs.textContent).toContain('Content')
@@ -61,8 +61,8 @@ describe('AdminShell', () => {
   it('resolves an unregistered admin path to Home by prefix', () => {
     const el = mount({ ...props, currentPath: '/admin/nothing-registered-here' })
     const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
-    expect(crumbs.textContent).toContain('Home')
-    expect(crumbs.textContent).toContain('Overview')
+    expect(crumbs.textContent).toContain('首页')
+    expect(crumbs.textContent).toContain('概览')
   })
 
   // The no-match fallback needs a path outside the mount to reach at all: Home's
@@ -72,8 +72,8 @@ describe('AdminShell', () => {
   it('falls back to Home for a path outside the mount', () => {
     const el = mount({ ...props, currentPath: '/somewhere-else' })
     const crumbs = el.querySelector('nav[aria-label="Breadcrumb"]')!
-    expect(crumbs.textContent).toContain('Home')
-    expect(el.querySelectorAll('aside')[1].textContent).toContain('Overview')
+    expect(crumbs.textContent).toContain('首页')
+    expect(el.querySelectorAll('aside')[1].textContent).toContain('概览')
   })
 
   // Logout is the one control that must really submit. It is a menu item inside
@@ -104,14 +104,14 @@ describe('AdminShell', () => {
   it('merges a section named Home into the built-in one', () => {
     const el = mount({
       ...props,
-      menu: [{ title: 'Settings', path: '/admin/settings', section: 'Home' }],
+      menu: [{ title: 'Settings', path: '/admin/settings', section: '首页' }],
       currentPath: '/admin/settings',
     })
     const rail = el.querySelectorAll('aside')[0]
-    expect(rail.textContent!.match(/Home/g)).toHaveLength(1)
+    expect(rail.textContent!.match(/首页/g)).toHaveLength(1)
     // And the registered item lands in Home's own panel, beside Overview.
     const panel = el.querySelectorAll('aside')[1]
-    expect(panel.textContent).toContain('Overview')
+    expect(panel.textContent).toContain('概览')
     expect(panel.textContent).toContain('Settings')
   })
 
@@ -124,5 +124,40 @@ describe('AdminShell', () => {
     const el = mount(props)
     await openUserMenu(el)
     expect(document.querySelector('a[href="/admin/account/password"]')).not.toBeNull()
+  })
+})
+
+// A success is a receipt you do not need once read; an error is context you need
+// while fixing something. The default routing follows that, and flashAs can
+// override it — the style rides in the key because a flash value has to be a
+// flat string.
+describe('AdminShell flash routing', () => {
+  const alertText = (el: HTMLElement) =>
+    [...el.querySelectorAll('main [class*="mb-4"]')].map((n) => n.textContent).join('|')
+
+  it('shows a success as a toast, not an inline alert', async () => {
+    const el = mount({ ...props, flash: { success: '用户已创建' } })
+    await nextTick()
+    expect(el.querySelector('main')!.textContent).not.toContain('用户已创建')
+    expect(document.body.textContent).toContain('用户已创建')
+  })
+
+  it('shows an error inline, where it stays', () => {
+    const el = mount({ ...props, flash: { error: '不能删除自己的账号' } })
+    expect(alertText(el)).toContain('不能删除自己的账号')
+  })
+
+  // Both directions, and each has to contradict its own default or the case
+  // proves nothing: an unparsed "toast:error" key would fall through to alert,
+  // which is exactly where the default would have put a bare error anyway.
+  it('honours an explicit style over the default', async () => {
+    const toasted = mount({ ...props, flash: { 'toast:error': '同步失败，稍后重试' } })
+    await nextTick()
+    expect(toasted.querySelector('main')!.textContent).not.toContain('同步失败，稍后重试')
+    expect(document.body.textContent).toContain('同步失败，稍后重试')
+
+    const alerted = mount({ ...props, flash: { 'alert:success': '导入完成，请检查结果' } })
+    await nextTick()
+    expect(alertText(alerted)).toContain('导入完成，请检查结果')
   })
 })

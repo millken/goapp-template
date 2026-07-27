@@ -18,7 +18,7 @@ function toggle() {
 </script>
 
 <template>
-  <Button variant="ghost" size="icon-sm" aria-label="Toggle theme" @click="toggle">
+  <Button variant="ghost" size="icon-sm" aria-label="切换主题" @click="toggle">
     <Sun v-if="!dark" />
     <Moon v-else />
   </Button>

@@ -41,7 +41,7 @@ func (a *Admin) mountGroups(eng *inertia.Engine) {
 	r.GET(base+"/:id/edit", a.groupEdit)
 	r.POST(base+"/:id", a.groupUpdate)
 	r.POST(base+"/:id/delete", a.groupDelete)
-	r.Menu("Access", "Groups", base)
+	r.Menu("访问控制", "分组", base)
 }
 
 func (a *Admin) groupBase() string { return a.Prefix() + "/group" }

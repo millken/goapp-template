@@ -29,7 +29,7 @@ type menuEntry struct {
 // locking is needed.
 func (a *Admin) AddMenuItem(item MenuItem) {
 	if item.Section == "" {
-		item.Section = "Content"
+		item.Section = "内容"
 	}
 	a.menu = append(a.menu, menuEntry{item: item})
 }
@@ -38,7 +38,7 @@ func (a *Admin) AddMenuItem(item MenuItem) {
 // the registrar; resources go through Registrar.Menu rather than calling this.
 func (a *Admin) addResourceMenuItem(item MenuItem, resource string) {
 	if item.Section == "" {
-		item.Section = "Content"
+		item.Section = "内容"
 	}
 	a.menu = append(a.menu, menuEntry{item: item, resource: resource})
 }

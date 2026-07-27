@@ -61,7 +61,7 @@ func TestSSR_GeneratedAdminListRendersUnderQuickJS(t *testing.T) {
 
 	// Rows, the sortable header, and the row-action trigger must all be there —
 	// a component that threw during render would take its subtree with it.
-	for _, want := range []string{"row 1", "row 20", "Name", "pagination-item"} {
+	for _, want := range []string{"row 1", "row 20", "名称", "pagination-item"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("SSR output missing %q", want)
 		}

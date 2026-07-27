@@ -43,7 +43,7 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 			"and no page can render: %v", err)
 	}
 
-	menu := []map[string]any{{"title": "Posts", "path": "/admin/posts", "section": "Content"}}
+	menu := []map[string]any{{"title": "Posts", "path": "/admin/posts", "section": "内容"}}
 
 	// AdminShell shows only the *active* section's items in the panel — that's
 	// the point of the two-column design, one full column per section instead
@@ -56,7 +56,7 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 		"loginPath":   "/admin/login",
 		"currentPath": "/admin",
 		"adminMenu":   menu,
-		"flash":       map[string]string{"success": "Saved"},
+		"flash":       map[string]string{"error": "该账号已被禁用。"},
 	})
 	if err != nil {
 		t.Fatalf("RenderComponent(admin/dashboard): %v", err)
@@ -74,7 +74,7 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 	// attributes, so asserting "admin" passed whether or not the username ever
 	// reached the topbar — and that hop, page prop → shell prop, is otherwise
 	// untested. A name that cannot appear in a path makes the check real.
-	for _, want := range []string{"Dashboard", "Saved", "topbaruser", "Content", "Overview"} {
+	for _, want := range []string{"仪表盘", "该账号已被禁用。", "topbaruser", "内容", "概览"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("SSR output (currentPath=/admin) missing %q", want)
 		}
@@ -89,12 +89,12 @@ func TestSSR_AdminDashboardRendersUnderQuickJS(t *testing.T) {
 		"loginPath":   "/admin/login",
 		"currentPath": "/admin/posts",
 		"adminMenu":   menu,
-		"flash":       map[string]string{"success": "Saved"},
+		"flash":       map[string]string{"error": "该账号已被禁用。"},
 	})
 	if err != nil {
 		t.Fatalf("RenderComponent(admin/dashboard, currentPath=/admin/posts): %v", err)
 	}
-	for _, want := range []string{"Posts", "Content"} {
+	for _, want := range []string{"Posts", "内容"} {
 		if !strings.Contains(htmlContent, want) {
 			t.Errorf("SSR output (currentPath=/admin/posts) missing %q", want)
 		}

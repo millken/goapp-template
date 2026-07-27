@@ -44,7 +44,7 @@ func Mount(eng *inertia.Engine, svc *app.Services, adm *admin.Admin) {
 	r.GET(ct.base+"/:id/edit", ct.Edit)
 	r.POST(ct.base+"/:id", ct.Update)
 	r.POST(ct.base+"/:id/delete", ct.Delete)
-	r.Menu("Content", "[[.Type]]", ct.base)
+	r.Menu("内容", "[[.Type]]", ct.base)
 }
 
 // Index lists all [[.Table]].
@@ -77,7 +77,7 @@ func (ct *Controller) Create(c *inertia.Context) {
 	}
 
 	// TODO: _ = ct.DB.Table("[[.Table]]").Insert(&item)
-	ct.flash(c, "success", "[[.Type]] created")
+	ct.flash(c, "success", "[[.Type]] 已创建")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
 }
 
@@ -107,7 +107,7 @@ func (ct *Controller) Update(c *inertia.Context) {
 	}
 
 	// TODO: _ = ct.DB.Table("[[.Table]]").Where("id","=",id).Update(map[string]any{...})
-	ct.flash(c, "success", "[[.Type]] updated")
+	ct.flash(c, "success", "[[.Type]] 已更新")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
 }
 
@@ -116,7 +116,7 @@ func (ct *Controller) Delete(c *inertia.Context) {
 	id, _ := c.Params.GetInt64("id")
 	// TODO: _ = ct.DB.Exec("DELETE FROM [[.Table]] WHERE id = ?", id)
 	_ = id
-	ct.flash(c, "success", "[[.Type]] deleted")
+	ct.flash(c, "success", "[[.Type]] 已删除")
 	http.Redirect(c.Writer, c.Request, ct.base, http.StatusSeeOther)
 }
 

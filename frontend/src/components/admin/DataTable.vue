@@ -92,7 +92,7 @@ const colspan = computed(() => props.columns.length + (slots['row-actions'] ? 1 
   <div class="space-y-4">
     <Input
       v-if="searchKey"
-      :placeholder="`Filter by ${searchKey}…`"
+      :placeholder="`按${searchKey}筛选…`"
       class="max-w-xs"
       @update:model-value="setFilter"
     />
@@ -128,8 +128,8 @@ const colspan = computed(() => props.columns.length + (slots['row-actions'] ? 1 
              here yet" copy, which would read as a lie when 40 rows exist and the
              search simply matched none of them. -->
         <TableEmpty v-if="!table.getRowModel().rows.length" :colspan="colspan">
-          <slot v-if="!data.length" name="empty">No results.</slot>
-          <template v-else>Nothing matches that filter.</template>
+          <slot v-if="!data.length" name="empty">还没有记录。</slot>
+          <template v-else>没有匹配该筛选条件的记录。</template>
         </TableEmpty>
       </TableBody>
     </Table>
