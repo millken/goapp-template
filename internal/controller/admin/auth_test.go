@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/millken/goapp-template/internal/service/session"
+	//goappctl:storage
 	"github.com/millken/goapp-template/internal/service/storage"
+	//goappctl:end
 	"github.com/millken/inertia"
 )
 
@@ -129,6 +131,8 @@ func TestResolve_AdminUserAvatarIsEmptyWhenUnset(t *testing.T) {
 	}
 }
 
+//goappctl:storage
+
 // urlPrefix is set once in resolve, next to adminMount, rather than by every
 // handler that used to set its own copy. A custom prefix (not the default
 // "/uploads") proves the value on the wire actually came from the configured
@@ -155,6 +159,8 @@ func TestResolve_DeliversURLPrefix(t *testing.T) {
 		t.Errorf("urlPrefix did not reach the page as a prop with the configured value; body: %s", w.Body.String())
 	}
 }
+
+//goappctl:end
 
 // userID coerces because the two session stores disagree about number types, but
 // coercion must not turn a value this code never wrote into a valid id.
