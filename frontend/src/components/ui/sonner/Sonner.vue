@@ -1,4 +1,11 @@
 <script lang="ts" setup>
+// LOCAL DEVIATION from the registry copy — keep it through `gen ui --force`.
+// vue-sonner 2.x ships its stylesheet as a separate export and the registry
+// component does not import it. Without this line the toaster has neither its
+// positioning rules nor its card styles: toasts render as bare text wherever the
+// document flow puts them. Recorded in the README beside the other deviations.
+import "vue-sonner/style.css"
+
 import type { ToasterProps } from "vue-sonner"
 import { reactiveOmit } from "@vueuse/core"
 import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon, XIcon } from "lucide-vue-next"

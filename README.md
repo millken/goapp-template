@@ -173,9 +173,12 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 
 后台用 [shadcn-vue](https://www.shadcn-vue.com/)：组件**源码复制进仓库**（`frontend/src/components/ui/`），
 不是 npm 依赖 —— 和 `gen resource` 产出一样，是「你拥有的普通文件」。数据表格能力来自
-[@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。有两处改动没有跟上游保持一致，
-`gen ui --force` 更新组件时要留意别覆盖回去：`frontend/src/components/ui/alert/index.ts` 多了一个
-`success` 变体（上游只有 `default`、`destructive`）；所有 `@/registry/default/ui` 导入都已重写成
+[@tanstack/vue-table](https://tanstack.com/table)（headless，只有逻辑）。有三处改动没有跟上游保持一致，
+`gen ui --force` 更新组件时会把它们冲掉 —— `frontend/src/components/ui/deviations.test.ts`
+会因此变红，那时要做的是把改动补回去而不是删测试：`alert/index.ts` 多了一个 `success` 变体
+（上游只有 `default`、`destructive`）；`sonner/Sonner.vue` 补了一行
+`import "vue-sonner/style.css"`（vue-sonner 2.x 把样式单独 export，registry 的拷贝没引，
+不引的话 toast 既没有定位也没有卡片样式）；所有 `@/registry/default/ui` 导入都已重写成
 `@/components/ui`。在这些 shadcn 拷贝之上，`frontend/src/components/admin/` 放的是拼出后台页面的
 组合组件（`AdminShell`、`PageHeader`、`DataTable`、`FormField`、`ConfirmDialog`、`ThemeToggle`）——
 生成的页面靠它们拼装，不直接摸 shadcn 层。

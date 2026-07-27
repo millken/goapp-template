@@ -37,5 +37,5 @@ onMounted(() => {
 </script>
 
 <template>
-  <Sonner position="bottom-right" rich-colors />
+  <Sonner position="bottom-right" />
 </template>
