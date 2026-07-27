@@ -79,6 +79,47 @@ func TestAdmin_WritesFlashOnEveryRedirect(t *testing.T) {
 	}
 }
 
+// TestAdmin_GeneratedFormsCarryTheCSRFField covers the one place nothing else
+// looks. The frontend audit reads frontend/pages and the admin composites, never
+// the templates; index.vue.tmpl is caught indirectly because the committed SSR
+// fixture drifts, but form.vue.tmpl has no fixture — the regeneration recipe
+// deletes it. So a change that dropped the field from every create and edit page
+// the generator produces would go unnoticed until enforcement 403s them all,
+// which is exactly the failure the field exists to prevent.
+func TestAdmin_GeneratedFormsCarryTheCSRFField(t *testing.T) {
+	root := t.TempDir()
+	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
+		t.Fatalf("Admin: %v", err)
+	}
+
+	for _, rel := range []string{"frontend/pages/admin/post/index.vue", "frontend/pages/admin/post/form.vue"} {
+		page, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		got := string(page)
+		// The prop has to reach the page, and the page has to hand it to the
+		// composites that own the forms. Either half missing renders an empty
+		// field, which looks fine and fails on submit.
+		for _, want := range []string{"csrfToken", `:csrf-token="csrfToken"`} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s is missing %q", rel, want)
+			}
+		}
+	}
+
+	// The form page's own submit goes through CsrfField directly rather than a
+	// composite, so it needs the element — not merely the import, which is what
+	// a bare "CsrfField" check would match while the field itself was gone.
+	form, err := os.ReadFile(filepath.Join(root, "frontend/pages/admin/post/form.vue"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(form), "<CsrfField") {
+		t.Error("form.vue imports CsrfField but never renders it, so its form posts without a token")
+	}
+}
+
 func TestAdmin_RefusesOverwrite(t *testing.T) {
 	root := t.TempDir()
 	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
