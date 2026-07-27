@@ -309,7 +309,10 @@ members per group. Both are one query.
 ## 11. Out of scope
 
 - Audit log of administrative actions.
-- Last-login tracking, failed-login counting, lockout.
+- Last-login tracking, failed-login counting, lockout. **Superseded:** counting
+  and lockout came back one spec later and now ship — see
+  `2026-07-27-csrf-and-login-throttling-design.md` and migration
+  `005_login_attempts`. Last-login tracking is still not done.
 - Email, password reset by email, public registration.
 - Bulk actions on the user list.
 - Per-user permission overrides — permissions live on the group, and that stays

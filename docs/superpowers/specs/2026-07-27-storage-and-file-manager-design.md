@@ -85,6 +85,13 @@ file does not learn about storage at all.
 `006_user_avatar.up.sql` is **not** marked. A column nobody writes to is
 harmless; a conditionally-numbered migration is not.
 
+The number is 006 because 005 is `login_attempts`, landed by the CSRF and
+login-throttling spec (commit `3bd0b17`). Worth writing down: the
+user-management spec's §11 still lists lockout as out of scope, which was true
+when it was written and stopped being true one spec later — that document is
+getting a pointer to its successor as part of this change, so the next reader
+picking the next migration number does not have to reconstruct this.
+
 ## 4. The storage service
 
 ```
@@ -102,7 +109,8 @@ internal/service/storage/
 storage:
   root: uploads # required — the browsable tree
   url_prefix: /uploads # public read path
-  # max_upload_size: 8388608     # bytes, default 8MB
+  # max_upload_size: 8388608     # bytes per file, default 8MB
+  # max_request_size: 67108864   # bytes per upload request, default 64MB
   # page_size: 40                # entries per page in the file manager
   # allowed_ext: [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".zip"]
 #goappctl:end
@@ -148,11 +156,18 @@ a test:
    `Service` rejects those before calling (§4.4). A backend may assume this and
    must not re-derive it as security.
 2. **Directories are real entities.** `Mkdir` then `List` on the parent must show
-   the directory, even empty. An object store has to emulate this with a
-   zero-byte marker object. Known cost, chosen so the UI can have empty folders.
+   the directory, even when it is empty. Chosen so the UI can have empty folders;
+   how a backend achieves it is the backend's business (§7.1 has a note for the
+   object-store case, but it is not part of this contract).
 3. **`Save` overwrites.** Not-overwriting is a policy, and it lives in `Service`
    (§4.4), which renames before calling.
-4. **`Remove` on a directory is recursive.**
+4. **`Remove` deletes whatever is at `name`, recursively.** One method, three
+   obligations, because the caller does not know or care which case it has: a
+   file is removed, an **empty** directory is removed (not an error, not a
+   no-op), and a non-empty directory is removed with everything under it.
+   `os.Root` offers both `Remove` and `RemoveAll` and only the second satisfies
+   this, which is why §4.3 names it; an object store gets the recursive case for
+   free from prefix deletion and has to be careful about the empty one.
 5. **`Open` returns a `ReadSeekCloser`**, because `http.ServeContent` needs Seek
    for Range and conditional requests. A backend without native seeking must
    wrap.
@@ -181,6 +196,11 @@ func (s *Service) Stop(ctx) error    // close the root
 func (s *Service) FS() fs.FS         // for the public static route
 func (s *Service) URLPrefix() string
 func (s *Service) URLFor(name string) string
+
+// ValidatePath is clean() with the cleaned value thrown away: the exported way
+// for another package to ask "is this a legal path inside the tree?" without
+// clean() itself becoming API. §6's avatar validation is its only caller today.
+func (s *Service) ValidatePath(name string) error
 
 type Listing struct {
     Path       string
@@ -211,9 +231,13 @@ the root.
 `allowed_ext`; the client filename reduced to its base and sanitised (path
 separators and control characters out, runs of whitespace to `-`, Unicode
 letters kept — Chinese filenames are legitimate); a collision resolved by
-appending `-2`, `-3` … before the extension; the size capped by
-`http.MaxBytesReader` at the handler (§5.2) so the cap is enforced before bytes
-are written, not after.
+appending `-2`, `-3` … before the extension.
+
+`Upload` takes **one file's** reader and enforces `max_upload_size` on it with an
+`io.LimitReader` of `max+1`: reading past the cap aborts that file and returns a
+policy error, before the bytes are committed. The cap is per file, not per
+request — see §5.2 for the request-level ceiling, which is a different failure
+with a different shape.
 
 **Browse** lists the directory, filters by case-insensitive substring on the name
 when `query` is set (current directory only — not recursive), sorts directories
@@ -233,10 +257,18 @@ eng.GET(stor.URLPrefix()+"/*", inertia.StaticFileServer(stor.URLPrefix(), stor.F
 
 Not `eng.StaticFS`: that helper returns early in development mode
 (`engine.go:303`) because dist is Vite's job in dev — but uploads must be
-readable in both modes. Registering the route directly is also what makes it win
-over the dist `/*`: the router keeps the deepest wildcard it passed while
-descending, and a registered route is matched before the dev-server proxy
-fallback.
+readable in both modes. Registering the route directly also settles who wins,
+and the two modes are two different contests:
+
+- **prod** — `eng.StaticFS("/", assetsFS)` has registered `GET /*`, so
+  `/uploads/*` competes with it inside the router. The tree keeps the deepest
+  wildcard it passed while descending, so the longer prefix wins **regardless of
+  registration order**. Measured, not assumed: both orders were registered
+  against `router.Lookup` and `/uploads/a/b.png` matched `/uploads/*` while
+  `/assets/main.js` still matched `/*`. §7.2 keeps this as a test.
+- **dev** — `StaticFS` registered nothing, so there is no `/*` to beat. The
+  competition is `ServeHTTP`'s fallback (`engine.go:347`), which proxies to Vite
+  only when the router finds no route at all.
 
 ### 5.2 The admin API
 
@@ -280,6 +312,27 @@ therefore answer 200 with
 every item they can and report the failures per item, and the UI reports both
 halves. Nothing is rolled back, consistently with §4.2's no-atomicity rule.
 
+**Upload has a second failure class that is not per-item, and conflating the two
+would be a bug.** Per-item errors require that the part was read to its end;
+some failures make the *body* unreadable, and then there are no further parts to
+report on:
+
+| Class | Cause | Answer |
+|---|---|---|
+| Item | extension, per-file `max_upload_size`, illegal name, backend error | 200, listed in `errors[]`, remaining parts still processed |
+| Body | `max_request_size` tripped, malformed multipart, client disconnect | 413 or 400 with `{"error":…}`, **no `errors[]` at all** |
+
+This is why `max_upload_size` is enforced per part with `io.LimitReader` (§4.4)
+rather than by a single `http.MaxBytesReader`: `MaxBytesReader` caps the whole
+body, so one oversized file among five would break the stream mid-part and take
+the other four down with it — a per-item problem reported as a total failure.
+
+`MaxBytesReader` still wraps the body, but at `max_request_size` (default 64MB,
+config), where it means what it says: this request is abusive, stop reading. A
+body-level failure keeps whatever already landed on disk — partial upload, no
+rollback, same rule as everywhere else — and the UI recovers by refreshing the
+listing rather than by trusting the response. §8 records it.
+
 ### 5.3 Permission fallout, and the degraded picker
 
 The picker opens inside a *user* page but calls *filemanager* endpoints. An
@@ -287,7 +340,21 @@ administrator with `user.modify` and no `filemanager.access` would get a 403 on
 a button we drew for them.
 
 So `resolve` (which already sets `adminMenu`, `adminUser`, `csrfToken`) also
-sets, inside a `goappctl:storage` block:
+sets, inside a `goappctl:storage` block, a prop only one component reads. That
+is a coupling, and it is deliberate — the reasoning belongs in the spec because
+the next reader will ask why it is not computed locally:
+
+- **`resolve` is the only place that already holds `g`.** `guard` calls it and
+  keeps the group to itself; a page handler that wanted the group would have to
+  resolve again, and resolve does a lookup. The admin area has an explicit
+  one-query-per-request rule (`handlers.go` cites it), so "compute it in the
+  handler that needs it" costs a query, while computing it here costs a map
+  lookup on a group already in memory. The cost argument runs the other way.
+- **Deriving it on the client from `adminMenu` was the alternative** — the menu
+  entry is gated by the same key, so the boolean is already on the page. It was
+  rejected because it makes the picker's behaviour depend on a sidebar entry
+  existing: delete the menu line and the picker silently degrades for everyone,
+  with nothing connecting cause to effect.
 
 ```go
 c.Set("canBrowseFiles", g.Superuser || g.Permissions.Allows("filemanager"+verbAccess))
@@ -329,9 +396,12 @@ Existing `components/ui` pieces cover it: `dialog`, `pagination`, `button`,
 ```
 
 the user list gets an avatar cell, and `AdminShell` shows the signed-in user's
-avatar. Server-side, `avatar` is validated as a clean relative path under the
-storage root (reusing `clean`) — a form field that writes a string into a
-database is not a reason to trust the string.
+avatar. Server-side, `avatar` is validated with `Storage.ValidatePath` (§4.4) —
+a form field that writes a string into a database is not a reason to trust the
+string, and this is the one reason `clean` gets an exported wrapper. An empty
+value is valid and means "no avatar"; the path is **not** required to exist,
+because a file can be deleted after the form was rendered and refusing the save
+would be a worse answer than a broken image.
 
 ## 7. Testing
 
@@ -339,13 +409,30 @@ database is not a reason to trust the string.
 
 `internal/service/storage/backendtest` exports
 `Run(t *testing.T, newBackend func(t *testing.T) Backend)`, and `local_test.go`
-calls it. It is one test per numbered semantic in §4.2 — empty directory
-survives `List`, `Save` overwrites, `Remove` recurses, `Open` seeks, missing
-paths wrap `fs.ErrNotExist`, existing paths wrap `fs.ErrExist`. Writing an S3
-backend later means running this suite, not rereading this document.
+calls it. Writing an S3 backend later means running this suite, not rereading
+this document — so the suite's precision *is* the interface's value, and a
+semantic that is only prose is a semantic the second implementation will get
+wrong.
 
-This is the mitigation for §2's accepted risk. Without it the interface is one
-implementation's shape with an `interface` keyword in front.
+One test per numbered semantic in §4.2, and where a semantic has cases, one test
+per case:
+
+| §4.2 | Assertions |
+|---|---|
+| 1 paths | the suite only ever passes cleaned paths; `""` addresses the root |
+| 2 directories are real | `Mkdir("a")` then `List("")` shows `a` with `IsDir`; `List("a")` on the empty directory succeeds and returns none |
+| 3 `Save` overwrites | second `Save` to one name replaces content and leaves one entry |
+| 4 `Remove` | **three separate tests** — a file; an **empty** directory (succeeds, is not `fs.ErrNotExist`, is not a silent no-op leaving the directory listed); a non-empty directory (it and its children are gone). The empty-directory case is the one a naive implementation gets wrong in both directions: `os.Root.Remove` would pass it while failing the third, and a prefix-delete backend may treat "no objects under this prefix" as nothing to do |
+| 5 `Open` seeks | `Seek` to a middle offset returns the expected tail; `Seek(0, io.SeekEnd)` reports the size |
+| 6 errors | missing path wraps `fs.ErrNotExist`; `Mkdir` over an existing name wraps `fs.ErrExist`; both checked with `errors.Is`, never by string |
+
+An implementer's note that is **not** part of the contract: an object store
+typically satisfies semantic 2 with a zero-byte marker object, and semantic 4's
+empty-directory case is exactly where that marker has to be cleaned up. How is
+its business; the table above is what it has to pass.
+
+This suite is the mitigation for §2's accepted risk. Without it the interface is
+one implementation's shape with an `interface` keyword in front.
 
 ### 7.2 The rest
 
@@ -353,8 +440,18 @@ implementation's shape with an `interface` keyword in front.
   `a/../../b`, backslashes, NUL, over-long segments), plus a symlink planted in
   the tree that points outside it, asserting `os.Root` refuses rather than
   asserting the cleaner caught it.
-- **Upload policy** — extension whitelist, size cap trips at the cap, collision
-  produces `name-2.png`, a filename of `../../x.png` lands as `x.png`.
+- **Upload policy** — extension whitelist, the per-file cap trips at the cap,
+  collision produces `name-2.png`, a filename of `../../x.png` lands as
+  `x.png`.
+- **The two upload failure classes (§5.2)** — a multipart body with one
+  oversized file among several returns 200 and reports exactly that file in
+  `errors[]`, with the others saved (this is the assertion a `MaxBytesReader`
+  implementation fails); a body over `max_request_size` returns 413 with no
+  `errors[]`.
+- **Route precedence** — with both `/*` and `/uploads/*` registered,
+  `/uploads/a/b.png` resolves to the uploads handler and `/assets/main.js` still
+  resolves to dist, asserted in **both registration orders** so the test fails
+  if the router ever becomes order-sensitive. §5.1's claim rests on this.
 - **Browse** — directories first, case-insensitive sort, substring filter,
   page boundaries, and that `total` counts filtered entries.
 - **Handlers** — the existing admin test pattern (httptest + a temp SQLite DB):
@@ -383,6 +480,15 @@ implementation's shape with an `interface` keyword in front.
   second `Backend`. This is exactly the axis the interface exists for.
 - **Last-writer-wins.** Two admins uploading the same name at the same moment
   produce one file, not an error.
+- **A failed upload request still leaves files.** A body-level failure (§5.2)
+  keeps the parts that were already written. There is no transaction over a
+  multipart stream, and pretending otherwise would mean buffering the whole
+  request before committing any of it.
+- **Renaming or moving a file orphans references to it.** `users.avatar` stores
+  a path, and nothing rewrites it when the file is renamed or moved — the user
+  gets a broken image, not an error. Reference tracking is a real feature with
+  real cost (who else stores paths? what happens on delete?) and the template
+  does not have it. Worth knowing before someone reports it as a bug.
 
 ## 9. Out of scope
 
