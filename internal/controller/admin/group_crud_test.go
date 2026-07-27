@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/millken/inertia"
@@ -235,5 +238,93 @@ func TestPermissionRows_SeparatesStaleKeys(t *testing.T) {
 	}
 	if len(stale) != 1 || stale[0] != "billing.modify" {
 		t.Errorf("stale = %v, want [billing.modify]", stale)
+	}
+}
+
+// The list page shows "N 项权限" for a non-superuser group. The count was never
+// computed — every group read 0 regardless of what it actually held, which is a
+// wrong number rather than a missing one.
+func TestGroupsIndex_CountsEachGroupsPermissions(t *testing.T) {
+	eng, adm, cookie := groupStack(t)
+	ctx := context.Background()
+	if _, err := adm.DB.ExecContext(ctx,
+		`INSERT INTO user_groups (name, superuser, permissions, created_at)
+		 VALUES ('Editors', 0, '["user.access","user.modify"]', 0)`); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/admin/group", nil)
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	eng.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	var page struct {
+		Items []struct {
+			Name string `json:"name"`
+			Keys int    `json:"keys"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(pageData(t, w.Body.String()), &page); err != nil {
+		t.Fatalf("decode page data: %v", err)
+	}
+
+	found := false
+	for _, g := range page.Items {
+		if g.Name != "Editors" {
+			continue
+		}
+		found = true
+		if g.Keys != 2 {
+			t.Errorf("Editors reports %d permission keys, want 2", g.Keys)
+		}
+	}
+	if !found {
+		t.Errorf("Editors missing from the list; got %+v", page.Items)
+	}
+}
+
+// pageData pulls the Inertia payload out of a rendered response. The template
+// embeds it as a quoted JS string literal, so unquoting is what turns it back
+// into JSON.
+func pageData(t *testing.T, body string) []byte {
+	t.Helper()
+	const marker = "__INERTIA_PAGE_DATA__="
+	i := strings.Index(body, marker)
+	if i < 0 {
+		t.Fatalf("no page data in the response: %s", body)
+	}
+	rest := body[i+len(marker):]
+	j := strings.Index(rest, ";</script>")
+	if j < 0 {
+		t.Fatalf("page data is not terminated: %s", rest)
+	}
+	raw, err := strconv.Unquote(rest[:j])
+	if err != nil {
+		t.Fatalf("unquote page data: %v", err)
+	}
+	return []byte(raw)
+}
+
+// A hand-crafted POST of superuser=0 must not read as "checked". A browser only
+// ever sends the value or nothing at all, so this is about what arrives from
+// outside the form.
+func TestGroupCreate_SuperuserOnlyAcceptsTheCheckboxValue(t *testing.T) {
+	eng, adm, cookie := groupStack(t)
+	if w := post(t, eng, cookie, "/admin/group", url.Values{
+		"name": {"NotSuper"}, "superuser": {"0"},
+	}); w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
+	}
+
+	var superuser int
+	if err := adm.DB.QueryRowContext(context.Background(),
+		`SELECT superuser FROM user_groups WHERE name = 'NotSuper'`).Scan(&superuser); err != nil {
+		t.Fatal(err)
+	}
+	if superuser != 0 {
+		t.Error(`superuser=0 was read as checked`)
 	}
 }

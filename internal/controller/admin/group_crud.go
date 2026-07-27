@@ -17,6 +17,10 @@ import (
 	"github.com/millken/inertia"
 )
 
+// errGroupHasMembers aborts the delete transaction, which is how the refusal and
+// the deletion stay one atomic decision.
+var errGroupHasMembers = errors.New("admin: group still has members")
+
 // groupRow is one row of the group list, and the edit form's model.
 type groupRow struct {
 	ID        int64  `json:"id"`
@@ -45,9 +49,12 @@ func (a *Admin) groupBase() string { return a.Prefix() + "/group" }
 // groupsIndex lists groups with their member counts — one query with a join
 // rather than a count per row.
 func (a *Admin) groupsIndex(c *inertia.Context) {
-	q := fmt.Sprintf(`SELECT g.id, g.name, g.superuser, COUNT(u.id)
+	// permissions comes back with the row and is counted in Go rather than by the
+	// database: json_array_length is SQLite's spelling and this file has to work
+	// on the other two dialects as well.
+	q := fmt.Sprintf(`SELECT g.id, g.name, g.superuser, g.permissions, COUNT(u.id)
 		FROM user_groups g LEFT JOIN %s u ON u.group_id = g.id
-		GROUP BY g.id, g.name, g.superuser
+		GROUP BY g.id, g.name, g.superuser, g.permissions
 		ORDER BY g.name`, a.usersTable())
 
 	rows, err := a.DB.QueryContext(c.Request.Context(), q)
@@ -62,12 +69,21 @@ func (a *Admin) groupsIndex(c *inertia.Context) {
 	for rows.Next() {
 		var g groupRow
 		var superuser int
-		if err := rows.Scan(&g.ID, &g.Name, &superuser, &g.Members); err != nil {
+		var raw string
+		if err := rows.Scan(&g.ID, &g.Name, &superuser, &raw, &g.Members); err != nil {
 			slog.Error("admin: scan group", "err", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 		g.Superuser = superuser != 0
+		// Unreadable stored permissions leave the count at zero rather than
+		// failing the whole page: the list is how you reach the edit form that
+		// repairs such a group.
+		var keys []string
+		if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+			slog.Error("admin: group has unreadable permissions", "err", err, "group", g.ID)
+		}
+		g.Keys = len(keys)
 		items = append(items, g)
 	}
 	if err := rows.Err(); err != nil {
@@ -91,7 +107,7 @@ func (a *Admin) groupCreate(c *inertia.Context) {
 	ctx := c.Request.Context()
 	item := groupRow{
 		Name:      c.PostForm("name"),
-		Superuser: c.PostForm("superuser") != "",
+		Superuser: c.PostForm("superuser") == "1",
 	}
 
 	if v := a.validateGroup(ctx, item, 0); !v.OK() {
@@ -141,7 +157,7 @@ func (a *Admin) groupUpdate(c *inertia.Context) {
 	item := groupRow{
 		ID:        id,
 		Name:      c.PostForm("name"),
-		Superuser: c.PostForm("superuser") != "",
+		Superuser: c.PostForm("superuser") == "1",
 	}
 	keys := a.submittedKeys(c)
 
@@ -189,26 +205,31 @@ func (a *Admin) groupDelete(c *inertia.Context) {
 	ctx := c.Request.Context()
 	id, _ := c.Params.GetInt64("id")
 
+	// Counting and deleting in one transaction: apart they are a race in which a
+	// user added to the group between the two statements is left with no group,
+	// and a user with no group is refused everything including logout.
+	//
+	// No last-superuser guard is needed here — an empty group has no members to
+	// contribute to that count in the first place.
 	var members int
-	q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE group_id = ?`, a.usersTable())
-	if err := a.DB.QueryRowContext(ctx, q, id).Scan(&members); err != nil {
-		slog.Error("admin: count group members", "err", err, "group", id)
-		a.flash(c, "error", "删除失败，请查看日志")
-		a.redirect(c, a.groupBase())
-		return
-	}
-	if members > 0 {
+	err := a.DB.Transaction(func(tx *sqldb.Tx) error {
+		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE group_id = ?`, a.usersTable())
+		if err := tx.QueryRowContext(ctx, q, id).Scan(&members); err != nil {
+			return err
+		}
+		if members > 0 {
+			return errGroupHasMembers
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM user_groups WHERE id = ?`, id)
+		return err
+	})
+	switch {
+	case errors.Is(err, errGroupHasMembers):
 		a.flash(c, "error", fmt.Sprintf("该分组还有 %d 个成员，请先把他们转到别的分组", members))
-		a.redirect(c, a.groupBase())
-		return
-	}
-
-	// An empty group cannot be the last superuser's group, so no guard is
-	// needed: the count it protects only ever includes groups with members.
-	if _, err := a.DB.ExecContext(ctx, `DELETE FROM user_groups WHERE id = ?`, id); err != nil {
+	case err != nil:
 		slog.Error("admin: delete group", "err", err, "group", id)
 		a.flash(c, "error", "删除失败，请查看日志")
-	} else {
+	default:
 		a.flash(c, "success", "分组已删除")
 	}
 	a.redirect(c, a.groupBase())
