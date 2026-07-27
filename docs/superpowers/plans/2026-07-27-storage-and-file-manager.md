@@ -465,9 +465,15 @@ func (b *localBackend) List(_ context.Context, dir string) ([]Entry, error) {
 	for _, de := range des {
 		info, err := de.Info()
 		if err != nil {
-			// Raced with a delete between ReadDir and Info. It is gone; a
-			// listing that reports it would be lying about the present.
-			continue
+			// Only one error is expected here: the entry was deleted between
+			// ReadDir and Info, and a listing that reported it would be lying
+			// about the present. Anything else — a permission or I/O failure —
+			// is returned, because a listing that silently drops entries looks
+			// exactly like a directory with fewer files in it.
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, err
 		}
 		out = append(out, entryOf(de.Name(), info))
 	}

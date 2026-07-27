@@ -39,12 +39,11 @@ func (b *localBackend) List(_ context.Context, dir string) ([]Entry, error) {
 	for _, de := range des {
 		info, err := de.Info()
 		if err != nil {
-			// Raced with a delete between ReadDir and Info. The entry is gone,
-			// and a listing that reports it would be lying about what is present.
-			// We skip only this race condition, since any listing that includes
-			// a deleted entry is incomplete and misleading. Other errors—permission
-			// or I/O problems—must be returned to the caller so they know the
-			// listing may be incomplete.
+			// Only one error is expected here: the entry was deleted between
+			// ReadDir and Info, and a listing that reported it would be lying
+			// about the present. Anything else — a permission or I/O failure —
+			// is returned, because a listing that silently drops entries looks
+			// exactly like a directory with fewer files in it.
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
