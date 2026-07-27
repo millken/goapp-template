@@ -132,7 +132,6 @@ func TestResolve_AdminUserAvatarIsEmptyWhenUnset(t *testing.T) {
 }
 
 //goappctl:storage
-
 // urlPrefix is set once in resolve, next to adminMount, rather than by every
 // handler that used to set its own copy. A custom prefix (not the default
 // "/uploads") proves the value on the wire actually came from the configured
