@@ -89,6 +89,7 @@ const editing = props.item.id > 0
               name="avatar"
               :model-value="item.avatar"
               :can-browse="canBrowseFiles"
+              :admin-mount="adminMount"
               :url-prefix="urlPrefix ?? '/uploads'"
               :csrf-token="csrfToken"
             />

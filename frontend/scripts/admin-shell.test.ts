@@ -68,3 +68,47 @@ describe('every page that renders AdminShell forwards urlPrefix', () => {
     },
   )
 })
+
+// ImagePicker used to default its basePath to the literal '/admin/filemanager',
+// which is only right when admin.Config.Mount happens to still be the
+// default. A caller that forgot to override it (pages/admin/user/form.vue did,
+// until this was caught) got a picker whose every fetch 404s the moment an
+// operator sets a different mount — and since the 404 arrives as HTML, not
+// JSON, res.json() throws and the user just sees a generic 网络错误 with
+// nothing pointing back at the missing wiring.
+//
+// So basePath is no longer an override a caller can just leave out: ImagePicker
+// derives it from `adminMount`, the same shared page prop every admin page
+// already carries (see AdminShell's `mount`, forwarded the same way). The
+// check below is the same shape as offendingAdminShellUsages above, just
+// requiring the attribute's value actually reference adminMount rather than a
+// literal — so a caller cannot satisfy it by hardcoding the right-looking
+// string back in.
+function offendingImagePickerUsages(files: string[]): string[] {
+  const offenders: string[] = []
+  for (const file of files) {
+    const src = readFileSync(join(root, file), 'utf8')
+    for (const m of src.matchAll(/<ImagePicker\b[^>]*>/g)) {
+      const tag = m[0]
+      if (!/:admin-mount="[^"]*adminMount[^"]*"/.test(tag)) {
+        offenders.push(`${file}: ${tag.replace(/\s+/g, ' ')}`)
+      }
+    }
+  }
+  return offenders
+}
+
+describe('every <ImagePicker> derives its base path from adminMount', () => {
+  it('has no <ImagePicker> usage missing :admin-mount="adminMount" (pages)', () => {
+    const files = filesWithSuffix('pages/admin', '.vue')
+    expect(offendingImagePickerUsages(files)).toEqual([])
+  })
+
+  it.skipIf(!templatesPresent)(
+    'has no <ImagePicker> usage missing :admin-mount="adminMount" (generator templates)',
+    () => {
+      const files = filesWithSuffix(templatesDir, '.vue.tmpl')
+      expect(offendingImagePickerUsages(files)).toEqual([])
+    },
+  )
+})

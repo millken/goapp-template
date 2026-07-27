@@ -10,6 +10,7 @@
 // fallback, never touched at setup time — QuickJS has no location.
 import { computed } from 'vue'
 import { ChevronDown, FileText, Gauge, KeyRound, LogOut, Settings, Users } from 'lucide-vue-next'
+import { mediaUrl } from '@/lib/media-url'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -48,7 +49,7 @@ const base = computed(() => props.mount || '/admin')
 // data migration. Same shape as ImagePicker's `preview` computed.
 const avatarSrc = computed(() => {
   if (!props.user?.avatar) return ''
-  return `${props.urlPrefix ?? '/uploads'}/${props.user.avatar}`
+  return mediaUrl(props.urlPrefix ?? '/uploads', props.user.avatar)
 })
 const path = computed(() =>
   props.currentPath ?? (typeof location === 'undefined' ? base.value : location.pathname),

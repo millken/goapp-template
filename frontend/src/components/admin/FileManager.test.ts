@@ -9,7 +9,7 @@ function mount(props: Record<string, unknown> = {}) {
   document.body.appendChild(el)
   const app = createApp({
     render: () =>
-      h(FileManager, { basePath: '/admin/filemanager', urlPrefix: '/uploads', ...props } as any),
+      h(FileManager, { basePath: '/admin/filemanager', ...props } as any),
   })
   app.mount(el)
   return el
@@ -102,7 +102,6 @@ describe('FileManager', () => {
       render: () =>
         h(FileManager, {
           basePath: '/admin/filemanager',
-          urlPrefix: '/uploads',
           mode: 'pick',
           onSelect: (e: unknown) => selected.push(e),
         } as any),

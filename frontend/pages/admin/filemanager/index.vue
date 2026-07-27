@@ -32,7 +32,7 @@ defineProps<{
     <PageHeader title="文件" />
     <Card>
       <CardContent class="pt-6">
-        <FileManager :base-path="basePath" :url-prefix="urlPrefix" :csrf-token="csrfToken" />
+        <FileManager :base-path="basePath" :csrf-token="csrfToken" />
       </CardContent>
     </Card>
   </AdminShell>

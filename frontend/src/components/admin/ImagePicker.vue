@@ -6,9 +6,19 @@
 // it is false this degrades to a text input: the picker's endpoints would 403,
 // and a button guaranteed to fail is worse than a field the user can still type
 // into.
+//
+// adminMount, not a raw basePath string: admin.Config.Mount is
+// operator-configurable, so the file manager's API base has to be derived
+// from what the server actually reports (the adminMount page prop every admin
+// page already carries) rather than a literal default. A caller that used to
+// pass nothing here got away with it only when the operator's mount happened
+// to match the hardcoded guess — everywhere else the picker fetched a route
+// that does not exist. See admin-shell.test.ts, which fails a page that omits
+// this the same way it already fails one that forgets urlPrefix.
 import { computed, ref, watch } from 'vue'
 import FileManagerDialog from '@/components/admin/FileManagerDialog.vue'
 import type { FmEntry } from '@/components/admin/FileManager.vue'
+import { mediaUrl } from '@/lib/media-url'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -16,13 +26,15 @@ const props = withDefaults(
   defineProps<{
     name: string
     modelValue?: string
-    basePath?: string
+    adminMount?: string
     urlPrefix?: string
     csrfToken?: string
     canBrowse?: boolean
   }>(),
-  { modelValue: '', basePath: '/admin/filemanager', urlPrefix: '/uploads', canBrowse: false },
+  { modelValue: '', urlPrefix: '/uploads', canBrowse: false },
 )
+
+const basePath = computed(() => `${props.adminMount || '/admin'}/filemanager`)
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -45,9 +57,7 @@ watch(
 
 const preview = computed(() => {
   if (!value.value) return ''
-  const prefix = props.urlPrefix.replace(/\/+$/, '')
-  const path = value.value.replace(/^\/+/, '')
-  return `${prefix}/${path}`
+  return mediaUrl(props.urlPrefix, value.value)
 })
 
 function set(v: string) {
@@ -72,7 +82,6 @@ function set(v: string) {
       <FileManagerDialog
         v-model:open="open"
         :base-path="basePath"
-        :url-prefix="urlPrefix"
         :csrf-token="csrfToken"
         title="选择图片"
         @select="(entry: FmEntry) => set(entry.path)"

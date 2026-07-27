@@ -26,7 +26,6 @@ type Crumb = { name: string; path: string }
 const props = withDefaults(
   defineProps<{
     basePath: string
-    urlPrefix: string
     csrfToken?: string
     mode?: 'manage' | 'pick' | 'dirs'
   }>(),

@@ -6,6 +6,7 @@ import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'
 import CsrfField from '@/components/admin/CsrfField.vue'
 import DataTable from '@/components/admin/DataTable.vue'
 import PageHeader from '@/components/admin/PageHeader.vue'
+import { mediaUrl } from '@/lib/media-url'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -78,7 +79,7 @@ const askDelete = (row: Record<string, unknown>) => {
             <div class="flex items-center gap-2">
               <img
                 v-if="row.avatar"
-                :src="`${urlPrefix ?? '/uploads'}/${row.avatar}`"
+                :src="mediaUrl(urlPrefix ?? '/uploads', String(row.avatar))"
                 :alt="String(row.username)"
                 class="size-6 rounded-full border object-cover"
               />

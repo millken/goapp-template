@@ -10,15 +10,16 @@ import {
 withDefaults(
   defineProps<{
     open: boolean
-    basePath?: string
-    urlPrefix?: string
+    // Required, not defaulted: a hardcoded '/admin/filemanager' guess broke
+    // silently the moment admin.Config.Mount was anything else. Every caller
+    // now derives this from the adminMount the server actually reported (see
+    // ImagePicker's own basePath computed) rather than repeating a literal.
+    basePath: string
     csrfToken?: string
     mode?: 'pick' | 'dirs'
     title?: string
   }>(),
   {
-    basePath: '/admin/filemanager',
-    urlPrefix: '/uploads',
     mode: 'pick',
     title: '选择文件',
   },
@@ -44,7 +45,6 @@ function choose(entry: FmEntry) {
       </DialogHeader>
       <FileManager
         :base-path="basePath"
-        :url-prefix="urlPrefix"
         :csrf-token="csrfToken"
         :mode="mode"
         @select="choose"
