@@ -2137,18 +2137,16 @@ func (a *Admin) fmUpload(c *inertia.Context) {
 		name := part.FileName()
 		e, err := a.Storage.Upload(ctx, dir, name, part)
 		if err != nil {
+			// Every error from Upload is this item's alone — §5.2's table puts
+			// a backend failure in the item class alongside the policy ones,
+			// and Move/Delete already work this way. The caller learns more
+			// from a per-file report than from a batch truncated at the first
+			// error, so the loop always continues to the next part.
 			fails = append(fails, map[string]string{"name": name, "error": itemReason(err)})
-			// Drain: the next part is only reachable past this one's bytes.
-			_, _ = io.Copy(io.Discard, part)
+			// part.Close drains whatever was not read, so nothing else is
+			// needed before moving on.
 			_ = part.Close()
-			if errors.Is(err, storage.ErrBadPath) || errors.Is(err, storage.ErrRejected) {
-				continue
-			}
-			// A storage failure that is not policy (a full disk, say) will
-			// repeat for every remaining part; stop and say so.
-			_ = part.Close()
-			a.fmFail(c, err)
-			return
+			continue
 		}
 		_ = part.Close()
 
