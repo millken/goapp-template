@@ -213,3 +213,50 @@ func TestResolve_DisabledUserSeesTheReasonOnTheLoginPage(t *testing.T) {
 		t.Errorf("the login page did not carry the reason; body: %s", w2.Body.String())
 	}
 }
+
+// Deleting a user does not purge their session, and findCaller cannot tell a
+// deleted user from one with no group — its join drops both. Without an escape
+// hatch that covers them, the deleted user gets 403 on every admin page, 403 on
+// logout, and a login page that redirects them back to the 403: clearing cookies
+// by hand would be the only way out.
+func TestLoginForm_RendersForADeletedUsersSession(t *testing.T) {
+	eng, adm := loginStack(t)
+	cookie := loginAndGetCookie(t, eng)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`DELETE FROM users WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code == http.StatusFound {
+		t.Fatalf("redirected to %q — a deleted user must be able to reach the form",
+			w.Header().Get("Location"))
+	}
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+}
+
+// Same trap by a different route: a group deleted out from under a user, or a
+// dangling group_id, is indistinguishable from deletion to findCaller.
+func TestLoginForm_RendersForAGrouplessSession(t *testing.T) {
+	eng, adm := loginStack(t)
+	cookie := loginAndGetCookie(t, eng)
+	if _, err := adm.DB.ExecContext(context.Background(),
+		`UPDATE users SET group_id = NULL WHERE username = 'alice'`); err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/admin/login", nil)
+	r.AddCookie(cookie)
+	eng.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 — a group-less user must reach the form", w.Code)
+	}
+}

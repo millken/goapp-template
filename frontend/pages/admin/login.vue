@@ -4,8 +4,11 @@
 // so this page needs no client-side auth logic. `loginPath` and `error` are
 // provided by the admin module's handlers.
 //
-// `error` is the form-level channel (bad credentials). Per-field messages use
-// the `errors` prop instead; the two coexist and login only needs this one.
+// Two channels reach this page, and it has to render both. `error` is what the
+// handler sets when a sign-in attempt fails. `flash` is what the *admin area*
+// staged before bouncing someone here — a disabled account, say. This is the one
+// admin page outside AdminShell, which renders flash for every other page, so
+// forgetting it here means the reason is delivered and then silently discarded.
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +18,7 @@ import { Label } from '@/components/ui/label'
 defineProps<{
   loginPath?: string
   error?: string
+  flash?: Record<string, string>
 }>()
 </script>
 
@@ -26,6 +30,13 @@ defineProps<{
       </CardHeader>
       <CardContent>
         <form :action="loginPath || '/admin/login'" method="post" class="space-y-4">
+          <Alert
+            v-for="(message, kind) in flash || {}"
+            :key="kind"
+            :variant="kind === 'error' ? 'destructive' : 'default'"
+          >
+            <AlertDescription>{{ message }}</AlertDescription>
+          </Alert>
           <Alert v-if="error" variant="destructive">
             <AlertDescription>{{ error }}</AlertDescription>
           </Alert>

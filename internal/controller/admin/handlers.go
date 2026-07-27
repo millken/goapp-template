@@ -14,15 +14,15 @@ func (a *Admin) LoginForm(c *inertia.Context) {
 	sess := a.Session.Session(c)
 	if v, ok := sess.Get(a.authKey()); ok && v != nil && v != "" {
 		// Authenticated — but send them to the dashboard only if their account
-		// still works. A disabled user arrives here *because* resolve bounced
-		// them, so redirecting on the strength of the session alone would send
-		// them back to the page that bounced them: an endless loop in which the
-		// explanation resolve staged is never rendered. Rendering the form
-		// instead ends the loop and lets the flash through.
+		// still works. A user whose account was disabled or deleted arrives here
+		// *because* the admin area refused them, so redirecting on the strength
+		// of the session alone would send them back to the page that refused
+		// them: every admin page 403 or bounce, logout included, and the login
+		// form never rendering. Showing the form instead is the way out.
 		//
 		// The extra lookup is confined to the login page, which is not the
 		// authenticated request path the one-query-per-request rule is about.
-		if !a.callerDisabled(c, v) {
+		if !a.callerUnusable(c, v) {
 			if err := c.Redirect(a.mount()); err != nil {
 				slog.Error("admin login: redirect to dashboard", "err", err)
 			}
@@ -97,13 +97,24 @@ func (a *Admin) Dashboard(c *inertia.Context) {
 // Anything else — an unreadable id, a missing user, a storage failure — reports
 // false, so the only behaviour this can change is ending the redirect loop for a
 // user who really is disabled.
-func (a *Admin) callerDisabled(c *inertia.Context, v any) bool {
+func (a *Admin) callerUnusable(c *inertia.Context, v any) bool {
 	id, ok := userID(v)
 	if !ok {
-		return false
+		// An unreadable id is not a session anyone can use either.
+		return true
 	}
 	cl, err := findCaller(c.Request.Context(), a.DB, a.usersTable(), id)
-	if err != nil {
+	switch {
+	case errors.Is(err, errNoGroup):
+		// findCaller cannot tell "deleted" from "no group" — its join drops
+		// both — and neither can log in or out. Redirecting them to the
+		// dashboard would bounce them straight back here: 403 on every admin
+		// page, 403 on logout, and the login form never rendering. Clearing
+		// cookies by hand would be the only way out.
+		return true
+	case err != nil:
+		// A storage failure says nothing about this session. Keep the old
+		// behaviour and let the dashboard report the outage.
 		return false
 	}
 	return cl.status == statusDisabled
