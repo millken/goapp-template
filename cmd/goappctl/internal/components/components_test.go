@@ -20,6 +20,8 @@ func TestClosure(t *testing.T) {
 		{"admin with db already picked", []string{"db", "admin"}, []string{"db", "session", "admin"}, []string{"session"}},
 		{"all", []string{"ssr", "admin", "session", "db"}, []string{"db", "session", "admin", "ssr"}, nil},
 		{"blank entries ignored", []string{"db", "", " "}, []string{"db"}, nil},
+		{"storage is independent", []string{"storage"}, []string{"storage"}, nil},
+		{"storage with admin", []string{"admin", "storage"}, []string{"db", "session", "admin", "storage"}, []string{"db", "session"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -103,6 +105,34 @@ func TestOwnedPathsExist(t *testing.T) {
 	} {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Errorf("tooling path %q does not exist: %v", p, err)
+		}
+	}
+}
+
+// TestStorageOwnsItsAdminSideFiles pins the arrangement that makes "admin on,
+// storage off" strip correctly: the file manager's files live under directories
+// admin owns, so storage has to name them individually. Deletion is idempotent,
+// so the overlap is harmless — but a missing entry here is a generated project
+// that references a service it does not have.
+func TestStorageOwnsItsAdminSideFiles(t *testing.T) {
+	c, ok := Get("storage")
+	if !ok {
+		t.Fatal("no storage component")
+	}
+	want := []string{
+		"internal/service/storage",
+		"internal/controller/admin/filemanager.go",
+		"internal/controller/admin/filemanager_test.go",
+		"frontend/pages/admin/filemanager",
+		"frontend/src/components/admin/FileManager.vue",
+		"frontend/src/components/admin/FileManager.test.ts",
+		"frontend/src/components/admin/FileManagerDialog.vue",
+		"frontend/src/components/admin/ImagePicker.vue",
+		"frontend/src/components/admin/ImagePicker.test.ts",
+	}
+	for _, w := range want {
+		if !slices.Contains(c.Owned, w) {
+			t.Errorf("storage does not own %q", w)
 		}
 	}
 }

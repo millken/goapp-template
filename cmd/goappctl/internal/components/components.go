@@ -59,14 +59,22 @@ var All = []Component{
 	{
 		Name: "storage",
 		// No Deps: the service and its public route stand alone. The file
-		// manager UI lives inside the admin area and will be listed here too —
-		// admin's directories go wholesale, so naming its files individually is
-		// what makes "admin on, storage off" strip correctly. Those entries
-		// arrive with the files themselves; TestOwnedPathsExist refuses a path
-		// that is not there yet.
+		// manager UI lives inside the admin area, so its files are named
+		// individually rather than owning a directory: admin's directories go
+		// wholesale, and naming the overlap is what makes "admin on, storage
+		// off" strip correctly. Deleting them again when admin is also off is
+		// harmless — deletion is idempotent.
 		Owned: []string{
 			"internal/service/storage",
 			"server/uploads_route_test.go",
+			"internal/controller/admin/filemanager.go",
+			"internal/controller/admin/filemanager_test.go",
+			"frontend/pages/admin/filemanager",
+			"frontend/src/components/admin/FileManager.vue",
+			"frontend/src/components/admin/FileManager.test.ts",
+			"frontend/src/components/admin/FileManagerDialog.vue",
+			"frontend/src/components/admin/ImagePicker.vue",
+			"frontend/src/components/admin/ImagePicker.test.ts",
 		},
 	},
 	{
@@ -76,6 +84,10 @@ var All = []Component{
 			"frontend/ssr-esm-render.ts",
 			"frontend/vite.config.ssr.ts",
 			"server/ssr_admin_test.go",
+			// Renders hand-written admin pages under QuickJS: needs both admin
+			// (the pages) and ssr (the VM and bundle). Owned by admin too, same
+			// as ssr_admin_test.go — either component being off must delete it.
+			"server/ssr_newpages_test.go",
 		},
 	},
 }

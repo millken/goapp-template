@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/millken/goapp-template/cmd/goappctl/internal/components"
+	"github.com/millken/goapp-template/cmd/goappctl/internal/markers"
 	"github.com/millken/goapp-template/cmd/goappctl/internal/scaffold"
 	"sort"
 )
@@ -161,7 +163,7 @@ func TestRun_Combos(t *testing.T) {
 		wantPresent []string
 	}{
 		{
-			name: "all-on", with: []string{"db", "session", "admin", "ssr"},
+			name: "all-on", with: []string{"db", "session", "admin", "storage", "ssr"},
 			wantPresent: []string{"mattn/go-sqlite3", "buke/quickjs-go"},
 		},
 		{
@@ -180,6 +182,19 @@ func TestRun_Combos(t *testing.T) {
 			name: "ssr-only", with: []string{"ssr"},
 			wantAbsent:  []string{"mattn/go-sqlite3"},
 			wantPresent: []string{"buke/quickjs-go"},
+		},
+		{
+			// The combination the marker layout exists for: the admin area
+			// present, its file manager gone. A leak here is a reference to a
+			// deleted package, so this fails at build rather than subtly.
+			name: "admin-without-storage", with: []string{"db", "session", "admin"},
+			wantPresent: []string{"mattn/go-sqlite3"},
+		},
+		{
+			// Storage with no admin: the service and the public route survive
+			// with no UI at all.
+			name: "storage-only", with: []string{"storage"},
+			wantAbsent: []string{"mattn/go-sqlite3", "buke/quickjs-go"},
 		},
 	}
 	for _, c := range cases {
@@ -290,8 +305,16 @@ func TestRun_ThenGen(t *testing.T) {
 	}
 }
 
+// assertNoMarkers re-parses every file with markers.Strip rather than doing a
+// blunt substring search: several test files document the marker mechanism in
+// prose (e.g. "guarded by its own goappctl:storage marker, not a nil check"),
+// and a bytes.Contains check cannot tell that comment apart from a real
+// surviving `//goappctl:name` block. Strip can, because it requires the exact
+// comment-syntax prefix a real marker uses; prose fails that match and the
+// file strips to itself unchanged.
 func assertNoMarkers(t *testing.T, root string) {
 	t.Helper()
+	opts := markers.Options{Known: components.Known()}
 	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
@@ -300,8 +323,22 @@ func assertNoMarkers(t *testing.T, root string) {
 		if err != nil {
 			return err
 		}
-		if bytes.Contains(data, []byte("goappctl:")) {
-			rel, _ := filepath.Rel(root, p)
+		if !markers.HasMarkers(data) {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, p)
+		if !markers.Supported(p) {
+			// No comment form to have stripped it with, so any mention here
+			// would have shipped verbatim into every generated project.
+			t.Errorf("%s still contains a goappctl marker (unsupported file type)", rel)
+			return nil
+		}
+		out, _, err := markers.Strip(rel, data, opts)
+		if err != nil {
+			t.Errorf("%s: still contains a malformed goappctl marker: %v", rel, err)
+			return nil
+		}
+		if !bytes.Equal(out, data) {
 			t.Errorf("%s still contains a goappctl marker", rel)
 		}
 		return nil

@@ -445,12 +445,17 @@ func stagedFlash(t *testing.T, eng *inertia.Engine, cookie *http.Cookie, from *h
 	return w.Body.String()
 }
 
+//goappctl:storage
+
+// The blank line above is load-bearing: without it gofmt folds the marker into
+// this doc comment as a directive, and stripping the block would then delete
+// the marker plus the function while leaving the first half of the comment
+// behind, attached to nothing.
+//
 // TestUserAvatar_RoundTripsAndIsValidated is entirely about the avatar field,
 // which userCreate only captures and validateUser only checks inside their own
 // goappctl:storage markers (user_crud.go): with the component off, posting
 // "avatar" is a no-op and nothing here would have anything to assert.
-//
-//goappctl:storage
 func TestUserAvatar_RoundTripsAndIsValidated(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	ctx := context.Background()

@@ -40,12 +40,18 @@ Go + Vue 3 + Inertia.js 应用模板。
 <!--goappctl:session-->
 ├── internal/service/session/    # 签名 cookie + memory/db store
 <!--goappctl:end-->
+<!--goappctl:storage-->
+├── internal/service/storage/    # 上传文件树（os.Root + Backend 接口）
+<!--goappctl:end-->
 ├── internal/validate/           # 表单校验（纯 stdlib，规则是 func(string) error）
 ├── internal/controller/         # HTTP 控制器（嵌入 *app.Services，无生命周期）
 ├── internal/controller/mount_gen.go  #   MountAll：非 admin 区域路由挂载（gen:mounts 区块）
 ├── internal/controller/site/    #   公开路由（/ 和 /api/health）
 <!--goappctl:admin-->
 ├── internal/controller/admin/   #   后台：登录/登出 + 权限（组）+ dashboard + 菜单
+<!--goappctl:end-->
+<!--goappctl:storage-->
+├── internal/controller/admin/filemanager.go  #   文件管理器：页面 + JSON API
 <!--goappctl:end-->
 ├── server/server.go             # inertia.Engine 构造
 ├── server/mode_dev.go           # !prod：从磁盘读 dist
@@ -55,6 +61,11 @@ Go + Vue 3 + Inertia.js 应用模板。
 <!--goappctl:admin-->
 ├── frontend/pages/admin/        # login / dashboard
 ├── frontend/src/components/admin/ #   AdminShell / PageHeader / DataTable / FormField / ConfirmDialog / ThemeToggle
+<!--goappctl:end-->
+<!--goappctl:storage-->
+├── frontend/src/components/admin/FileManager.vue #   媒体库组件（页面/弹窗/移动目标共用）
+<!--goappctl:end-->
+<!--goappctl:admin-->
 ├── frontend/src/components/ui/   #   复制进来的 shadcn-vue 组件（admin 专属）
 ├── frontend/src/lib/utils.ts     #   cn() / valueUpdater()
 <!--goappctl:end-->
