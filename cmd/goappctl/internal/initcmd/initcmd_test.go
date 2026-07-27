@@ -161,6 +161,14 @@ func TestRun_Combos(t *testing.T) {
 		// user did not ask for.
 		wantAbsent  []string
 		wantPresent []string
+		// wantFilesAbsent are repo-relative paths that must not survive.
+		// Distinct from assertNoMarkers below: this checks that a whole
+		// storage-owned file under admin is gone, not just that it carries no
+		// marker. A leak here is a reference to a deleted package, which
+		// Run's own internal `go build ./...` (step 8) would already fail
+		// on — asserting the file's absence directly names the mechanism
+		// rather than leaving it to that opaque build error.
+		wantFilesAbsent []string
 	}{
 		{
 			name: "all-on", with: []string{"db", "session", "admin", "storage", "ssr"},
@@ -187,8 +195,16 @@ func TestRun_Combos(t *testing.T) {
 			// The combination the marker layout exists for: the admin area
 			// present, its file manager gone. A leak here is a reference to a
 			// deleted package, so this fails at build rather than subtly.
+			// The `with` list is identical to "no-ssr" above — same generated
+			// project, same build — so wantFilesAbsent is what actually makes
+			// this case worth having: it names the specific storage-owned
+			// files under admin/ that "admin on, storage off" must strip.
 			name: "admin-without-storage", with: []string{"db", "session", "admin"},
 			wantPresent: []string{"mattn/go-sqlite3"},
+			wantFilesAbsent: []string{
+				"internal/controller/admin/filemanager.go",
+				"internal/controller/admin/filemanager_test.go",
+			},
 		},
 		{
 			// Storage with no admin: the service and the public route survive
@@ -222,6 +238,11 @@ func TestRun_Combos(t *testing.T) {
 			for _, dep := range c.wantPresent {
 				if !bytes.Contains(gomod, []byte(dep)) {
 					t.Errorf("go.mod lost %s", dep)
+				}
+			}
+			for _, rel := range c.wantFilesAbsent {
+				if _, err := os.Stat(filepath.Join(root, rel)); err == nil {
+					t.Errorf("%s survived a build that stripped its component", rel)
 				}
 			}
 

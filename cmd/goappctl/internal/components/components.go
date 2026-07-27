@@ -67,6 +67,7 @@ var All = []Component{
 		Owned: []string{
 			"internal/service/storage",
 			"server/uploads_route_test.go",
+			"commands/serve_test.go",
 			"internal/controller/admin/filemanager.go",
 			"internal/controller/admin/filemanager_test.go",
 			"frontend/pages/admin/filemanager",
