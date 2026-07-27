@@ -2478,7 +2478,7 @@ Create `frontend/src/components/admin/FileManager.vue`:
 // Directory changes are component state, never navigation: routing them
 // through Inertia would put every `cd` in the browser history, and the back
 // button inside a modal would then mean "go up one folder" instead of "close".
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, File, Folder, Upload } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -2665,7 +2665,13 @@ async function upload(event: Event) {
   }
 }
 
-watch([path, page], refresh, { immediate: true })
+// Not `{ immediate: true }`: an immediate watcher fires during setup, which runs
+// under SSR too — and QuickJS has no fetch, so refresh() would throw and the
+// server would render a network-error banner for a request it never made.
+// onMounted is the framework's own "we are alive in a browser" signal and needs
+// no environment sniffing.
+onMounted(refresh)
+watch([path, page], refresh)
 watch(query, () => {
   page.value = 1
   refresh()
@@ -2890,13 +2896,26 @@ func TestSSR_FileManagerRendersUnderQuickJS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderComponent(admin/filemanager/index): %v", err)
 	}
-	for _, want := range []string{"新建目录", "上传", "全部文件"} {
+	for _, want := range []string{"新建目录", "上传", "这个目录是空的"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("rendered page is missing %q", want)
 		}
 	}
+	// A server render must carry no error: the server has no listing and never
+	// tried to fetch one, so an error banner would describe a request that never
+	// happened. Match the error paragraph's exact class — a bare
+	// "text-destructive" also matches the delete button's
+	// "text-destructive-foreground".
+	for _, unwanted := range []string{"网络错误", `class="text-sm text-destructive"`} {
+		if strings.Contains(html, unwanted) {
+			t.Errorf("rendered page contains %q; the component fetched during SSR", unwanted)
+		}
+	}
 }
 ```
+
+Note the breadcrumb text (`全部文件`) is deliberately **not** asserted: it arrives
+with the listing, so it cannot exist in a server render.
 
 - [ ] **Step 7: Build and verify everything**
 
