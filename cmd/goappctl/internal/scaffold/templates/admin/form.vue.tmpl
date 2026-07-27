@@ -25,6 +25,7 @@ defineProps<{
   // One-shot messages staged by the handlers before their redirects:
   flash?: Record<string, string>
   csrfToken?: string
+  urlPrefix?: string
 }>()
 </script>
 
@@ -36,6 +37,7 @@ defineProps<{
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
     :crumb="item.id ? 'Edit' : 'New'"
   >
     <PageHeader :title="`${item.id ? '编辑' : '新建'} [[.Type]]`" />

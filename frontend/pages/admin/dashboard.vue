@@ -14,6 +14,7 @@ defineProps<{
   currentPath?: string
   flash?: Record<string, string>
   csrfToken?: string
+  urlPrefix?: string
 }>()
 </script>
 
@@ -25,6 +26,7 @@ defineProps<{
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
   >
     <PageHeader title="仪表盘" :description="`已登录为 ${adminUser?.username ?? ''}。`" />
     <Card>

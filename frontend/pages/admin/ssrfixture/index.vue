@@ -48,6 +48,7 @@ defineProps<{
   // One-shot messages staged by the handlers before their redirects:
   flash?: Record<string, string>
   csrfToken?: string
+  urlPrefix?: string
 }>()
 
 const columns = [
@@ -71,6 +72,7 @@ const askDelete = (row: Record<string, unknown>) => {
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
   >
     <PageHeader title="Ssrfixture">
       <template #actions>

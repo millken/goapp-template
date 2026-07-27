@@ -23,6 +23,7 @@ defineProps<{
   currentPath?: string
   flash?: Record<string, string>
   csrfToken?: string
+  urlPrefix?: string
 }>()
 
 const columns = [
@@ -47,6 +48,7 @@ const askDelete = (row: Record<string, unknown>) => {
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
   >
     <PageHeader title="分组" description="权限挂在分组上，不挂在个人上。">
       <template #actions>

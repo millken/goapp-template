@@ -19,6 +19,7 @@ defineProps<{
   currentPath?: string
   flash?: Record<string, string>
   csrfToken?: string
+  urlPrefix?: string
 }>()
 </script>
 
@@ -30,6 +31,7 @@ defineProps<{
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
     crumb="修改密码"
   >
     <PageHeader title="修改密码" description="修改你自己的登录密码。" />

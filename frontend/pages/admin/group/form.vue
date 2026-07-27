@@ -24,6 +24,7 @@ const props = defineProps<{
   currentPath?: string
   flash?: Record<string, string>
   csrfToken?: string
+  urlPrefix?: string
 }>()
 
 const editing = props.item.id > 0
@@ -37,6 +38,7 @@ const editing = props.item.id > 0
     :current-path="currentPath"
     :flash="flash"
     :csrf-token="csrfToken"
+    :url-prefix="urlPrefix"
     :crumb="editing ? '编辑' : '新建'"
   >
     <PageHeader :title="editing ? '编辑分组' : '新建分组'" />
