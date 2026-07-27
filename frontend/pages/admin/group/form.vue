@@ -5,6 +5,7 @@ import PageHeader from '@/components/admin/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import PermissionGrid from './PermissionGrid.vue'
 
 interface MenuItem { title: string; path: string; order?: number; section?: string }
 type GroupRow = { id: number; name: string; superuser: boolean; members: number; keys: number }
@@ -12,6 +13,8 @@ type GroupRow = { id: number; name: string; superuser: boolean; members: number;
 const props = defineProps<{
   item: GroupRow
   basePath: string
+  permissions: { resource: string; access: boolean; modify: boolean }[]
+  stale?: string[]
   errors?: Record<string, string>
   adminMenu?: MenuItem[]
   adminUser?: { id?: number; username?: string }
@@ -34,7 +37,7 @@ const editing = props.item.id > 0
     :crumb="editing ? '编辑' : '新建'"
   >
     <PageHeader :title="editing ? '编辑分组' : '新建分组'" />
-    <Card class="max-w-lg">
+    <Card>
       <CardContent class="pt-6">
         <form
           :action="editing ? `${basePath}/${item.id}` : basePath"
@@ -56,6 +59,14 @@ const editing = props.item.id > 0
               >
               绕过所有权限检查
             </label>
+          </FormField>
+
+          <FormField name="permissions" label="权限">
+            <PermissionGrid
+              :rows="permissions"
+              :stale="stale"
+              :superuser="item.superuser"
+            />
           </FormField>
 
           <div class="flex gap-2">

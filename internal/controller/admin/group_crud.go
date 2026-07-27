@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/dnsoa/go/sqldb"
@@ -266,18 +268,111 @@ func (a *Admin) findGroupRow(ctx context.Context, id int64) (*groupRow, []string
 	return &g, keys, nil
 }
 
-// submittedKeys reads the permission checkboxes. Task 6 replaces this with the
-// normalising version; until then it preserves whatever is stored.
-func (a *Admin) submittedKeys(c *inertia.Context) []string {
-	return c.Request.Form["permissions"]
+// permRow is one resource's two checkboxes in the grid.
+type permRow struct {
+	Resource string `json:"resource"`
+	Access   bool   `json:"access"`
+	Modify   bool   `json:"modify"`
 }
 
-// renderGroupForm renders the create/edit form. Task 6 adds the permission grid
-// and the stale-key list; `stale` is accepted now so the signature does not
-// change under Task 6's callers.
+// permissionRows turns a group's stored keys into grid rows, and returns the
+// keys that no longer correspond to a registered route.
+//
+// Rows come from the catalogue — the routes actually registered at startup — so
+// the grid cannot offer a permission nothing checks. Keys outside it are stale:
+// a resource that was renamed or removed. They are reported rather than dropped
+// quietly, because the alternative is a group holding permissions its own edit
+// page never showed.
+func (a *Admin) permissionRows(keys []string) ([]permRow, []string) {
+	held := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		held[k] = true
+	}
+
+	seen := map[string]bool{}
+	rows := []permRow{}
+	known := map[string]bool{}
+	for _, p := range a.Permissions() {
+		known[p.Key] = true
+		resource, _, ok := splitPermKey(p.Key)
+		if !ok || seen[resource] {
+			continue
+		}
+		seen[resource] = true
+		rows = append(rows, permRow{
+			Resource: resource,
+			Access:   held[resource+verbAccess],
+			Modify:   held[resource+verbModify],
+		})
+	}
+
+	stale := []string{}
+	for _, k := range keys {
+		if !known[k] {
+			stale = append(stale, k)
+		}
+	}
+	slices.Sort(stale)
+	return rows, stale
+}
+
+// splitPermKey splits "post.modify" into ("post", ".modify"). Reported false for
+// anything that is not a permission key, which Resource's name validation makes
+// impossible for registered resources but not for stored data.
+func splitPermKey(key string) (resource, verb string, ok bool) {
+	for _, v := range []string{verbAccess, verbModify} {
+		if strings.HasSuffix(key, v) {
+			return strings.TrimSuffix(key, v), v, true
+		}
+	}
+	return "", "", false
+}
+
+// submittedKeys reads the permission checkboxes and normalises them: modify
+// implies access, one-way, exactly as permSet.Allows has it. The grid does the
+// same thing client-side for immediate feedback, which is why this cannot be
+// left to the grid — convenience there, enforcement here.
+//
+// Keys not in the catalogue are ignored rather than trusted, so a hand-made POST
+// cannot store a permission the interface would never show.
+func (a *Admin) submittedKeys(c *inertia.Context) []string {
+	if err := c.Request.ParseForm(); err != nil {
+		slog.Error("admin: parse permission form", "err", err)
+		return nil
+	}
+	known := map[string]bool{}
+	for _, p := range a.Permissions() {
+		known[p.Key] = true
+	}
+
+	set := map[string]bool{}
+	for _, k := range c.Request.Form["permissions"] {
+		if !known[k] {
+			continue
+		}
+		set[k] = true
+		if resource, verb, ok := splitPermKey(k); ok && verb == verbModify {
+			set[resource+verbAccess] = true
+		}
+	}
+
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// renderGroupForm renders the create/edit form with the permission grid.
 func (a *Admin) renderGroupForm(c *inertia.Context, item groupRow, errs map[string]string, keys, stale []string) {
+	rows, computedStale := a.permissionRows(keys)
+	if stale == nil {
+		stale = computedStale
+	}
 	c.Set("item", item)
-	c.Set("keys", keys)
+	c.Set("permissions", rows)
+	c.Set("stale", stale)
 	c.Set("basePath", a.groupBase())
 	if errs != nil {
 		c.Set("errors", errs)
