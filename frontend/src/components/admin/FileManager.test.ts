@@ -126,6 +126,43 @@ describe('FileManager', () => {
     expect(el.textContent).not.toContain('a.png')
   })
 
+  it('keeps a per-item failure message visible after the refresh that follows it', async () => {
+    const el = mount({ csrfToken: 'tok' })
+    await flush()
+
+    fetchMock.mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/api/mkdir')) {
+        return new Response(
+          JSON.stringify({ ok: true, errors: [{ name: 'newdir', error: '已存在' }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      // The follow-up refresh() this mutation triggers — a normal listing,
+      // which is exactly what used to wipe the error message above out
+      // before it ever reached the DOM.
+      return new Response(JSON.stringify(listing()), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const button = [...el.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('新建目录'),
+    )
+    const input = el.querySelector('input[data-testid="mkdir-name"]') as HTMLInputElement | null
+    expect(input).toBeTruthy()
+    input!.value = 'newdir'
+    input!.dispatchEvent(new Event('input'))
+    await nextTick()
+    button!.click()
+    // Both the mutation's fetch and the refresh() it kicks off have to
+    // settle before the message can be asserted — a couple of nextTick()s
+    // is not enough, per flush()'s own note above.
+    await flush()
+
+    expect(el.textContent).toContain('newdir：已存在')
+  })
+
   it('pages through a total larger than one page', async () => {
     fetchMock.mockImplementation(
       async () =>
