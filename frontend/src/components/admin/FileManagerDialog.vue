@@ -41,7 +41,13 @@ function choose(entry: FmEntry) {
     <DialogContent class="max-w-3xl">
       <DialogHeader>
         <DialogTitle>{{ title }}</DialogTitle>
-        <DialogDescription>点击文件夹进入，点击文件选中。</DialogDescription>
+        <DialogDescription>
+          {{
+            mode === 'dirs'
+              ? '点击文件夹进入，选择「选择此目录」将其作为目标。'
+              : '点击文件夹进入，点击文件选中。'
+          }}
+        </DialogDescription>
       </DialogHeader>
       <FileManager
         :base-path="basePath"

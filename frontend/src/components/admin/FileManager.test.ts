@@ -40,6 +40,22 @@ const listing = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
+// Ticks the per-entry "选择" toggle for the entry at `path`, the same control
+// a user clicks before a mutation that needs a selection (删除, 移动到…).
+async function select(el: HTMLElement, path: string) {
+  const li = el.querySelector(`[data-entry="${path}"]`) as HTMLElement
+  const button = [...li.querySelectorAll('button')].find((b) => b.textContent?.includes('选择'))
+  button!.click()
+  await nextTick()
+}
+
+// ConfirmDialog and the move FileManagerDialog render through DialogPortal,
+// which teleports to document.body rather than into the mounted root — so
+// their buttons never show up under `el`, only as its siblings.
+function outsideButtons(el: HTMLElement) {
+  return [...document.querySelectorAll('button')].filter((b) => !el.contains(b))
+}
+
 let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
@@ -52,6 +68,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
   document.body.innerHTML = ''
 })
 
@@ -221,5 +238,227 @@ describe('FileManager', () => {
     await nextTick()
     const last = String(fetchMock.mock.calls.at(-1)![0])
     expect(last).toContain('page=2')
+  })
+
+  // Finding 1: recursive delete had no confirmation at all. These pin that a
+  // click on 删除 opens ConfirmDialog instead of firing the request, that the
+  // dialog names what it is about to destroy, and that the request only goes
+  // out once the confirm button inside it is clicked.
+  describe('delete confirmation', () => {
+    it('does not delete on click — it opens a confirmation naming the count', async () => {
+      const el = mount({ csrfToken: 'tok' })
+      await flush()
+      await select(el, 'a.png')
+
+      const deleteBtn = [...el.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '删除',
+      )
+      deleteBtn!.click()
+      await flush()
+
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/api/delete'))).toBe(false)
+      expect(document.body.textContent).toContain('1 项')
+    })
+
+    it('calls out that a directory takes everything inside it with it', async () => {
+      const el = mount({ csrfToken: 'tok' })
+      await flush()
+      await select(el, 'photos')
+
+      const deleteBtn = [...el.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '删除',
+      )
+      deleteBtn!.click()
+      await flush()
+
+      expect(document.body.textContent).toContain('目录')
+    })
+
+    it('deletes only once the dialog is confirmed', async () => {
+      const el = mount({ csrfToken: 'tok' })
+      await flush()
+      await select(el, 'a.png')
+
+      const deleteBtn = [...el.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '删除',
+      )
+      deleteBtn!.click()
+      await flush()
+
+      const confirmBtn = outsideButtons(el).find((b) => b.textContent?.trim() === '删除')
+      expect(confirmBtn).toBeTruthy()
+      confirmBtn!.click()
+      await flush()
+
+      const call = fetchMock.mock.calls.find(([u]) => String(u).includes('/api/delete'))
+      expect(call).toBeTruthy()
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ paths: ['a.png'] })
+    })
+  })
+
+  // Finding 2: Service.Move, /api/move and mode="dirs" all existed with no
+  // caller. These pin the 移动到… control end to end: it opens a dirs-mode
+  // FileManagerDialog, "选择此目录" is how the root (or any folder with no
+  // subfolder of its own) gets chosen, and a colliding item's failure surfaces
+  // the same way mkdir/upload's already do.
+  describe('move', () => {
+    it('posts the selected paths and the chosen directory, root included', async () => {
+      const el = mount({ csrfToken: 'tok' })
+      await flush()
+      await select(el, 'a.png')
+
+      const moveBtn = [...el.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '移动到…',
+      )
+      expect(moveBtn).toBeTruthy()
+      moveBtn!.click()
+      await flush()
+
+      const chooseCurrent = outsideButtons(el).find(
+        (b) => b.getAttribute('data-testid') === 'choose-current-dir',
+      )
+      expect(chooseCurrent).toBeTruthy()
+      chooseCurrent!.click()
+      await flush()
+
+      const call = fetchMock.mock.calls.find(([u]) => String(u).includes('/api/move'))
+      expect(call).toBeTruthy()
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({
+        paths: ['a.png'],
+        to: '',
+      })
+    })
+
+    it('surfaces a colliding item the same way mkdir and upload report a failure', async () => {
+      const el = mount({ csrfToken: 'tok' })
+      await flush()
+      await select(el, 'a.png')
+
+      fetchMock.mockImplementation(async (url: unknown) => {
+        if (String(url).includes('/api/move')) {
+          return new Response(
+            JSON.stringify({ ok: true, errors: [{ name: 'a.png', error: '同名项已存在' }] }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          )
+        }
+        return new Response(JSON.stringify(listing()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      })
+
+      const moveBtn = [...el.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === '移动到…',
+      )
+      moveBtn!.click()
+      await flush()
+      const chooseCurrent = outsideButtons(el).find(
+        (b) => b.getAttribute('data-testid') === 'choose-current-dir',
+      )
+      chooseCurrent!.click()
+      await flush()
+
+      expect(el.textContent).toContain('a.png：同名项已存在')
+    })
+  })
+
+  // Finding: rename now 409s on a name collision instead of overwriting. No
+  // special-case code was needed for this — mutate() already surfaces any
+  // non-ok response's body.error — but the shape is new enough to pin.
+  it('surfaces a 409 from renaming onto an existing name', async () => {
+    const el = mount({ csrfToken: 'tok' })
+    await flush()
+
+    fetchMock.mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/api/rename')) {
+        return new Response(JSON.stringify({ error: '同名项已存在' }), {
+          status: 409,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify(listing()), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    const original = window.prompt
+    window.prompt = () => 'photos'
+    try {
+      const li = el.querySelector('[data-entry="a.png"]') as HTMLElement
+      const renameBtn = [...li.querySelectorAll('button')].find((b) =>
+        b.textContent?.includes('重命名'),
+      )
+      renameBtn!.click()
+      await flush()
+    } finally {
+      window.prompt = original
+    }
+
+    expect(el.textContent).toContain('同名项已存在')
+  })
+
+  // Finding 5: the query watcher had no debounce (one request per keystroke)
+  // and, on top of that, double-fired when the page wasn't already 1 (it set
+  // page.value = 1 *and* called refresh() itself, while the [path, page]
+  // watcher fired again from the page change it just made).
+  describe('search debounce', () => {
+    it('typing several characters quickly issues exactly one request', async () => {
+      const el = mount()
+      await flush()
+      fetchMock.mockClear()
+
+      const input = el.querySelector('input[data-testid="search"]') as HTMLInputElement
+      vi.useFakeTimers()
+      try {
+        let typed = ''
+        for (const ch of 'photo') {
+          typed += ch
+          input.value = typed
+          input.dispatchEvent(new Event('input'))
+          await nextTick() // let v-model propagate the keystroke into `query`
+          vi.advanceTimersByTime(50) // well under the debounce delay
+        }
+        vi.advanceTimersByTime(300)
+      } finally {
+        vi.useRealTimers()
+      }
+      await flush()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(String(fetchMock.mock.calls[0][0])).toContain('q=photo')
+    })
+
+    it('a query change from page 2 issues one request, not two', async () => {
+      fetchMock.mockImplementation(
+        async () =>
+          new Response(JSON.stringify(listing({ total: 100, page: 2, pageSize: 40 })), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      )
+      const el = mount()
+      await flush()
+      const next = [...el.querySelectorAll('button')].find(
+        (b) => b.getAttribute('data-testid') === 'next-page',
+      )
+      next!.click()
+      await flush()
+      fetchMock.mockClear()
+
+      const input = el.querySelector('input[data-testid="search"]') as HTMLInputElement
+      vi.useFakeTimers()
+      try {
+        input.value = 'a'
+        input.dispatchEvent(new Event('input'))
+        await nextTick()
+        vi.advanceTimersByTime(300)
+      } finally {
+        vi.useRealTimers()
+      }
+      await flush()
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
   })
 })

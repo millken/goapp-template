@@ -8,8 +8,15 @@
 // Directory changes are component state, never navigation: routing them
 // through Inertia would put every `cd` in the browser history, and the back
 // button inside a modal would then mean "go up one folder" instead of "close".
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, File, Folder, Upload } from 'lucide-vue-next'
+import ConfirmDialog from '@/components/admin/ConfirmDialog.vue'
+// FileManagerDialog itself renders a FileManager (for its pick/dirs modes),
+// so this is a two-file import cycle — FileManager -> FileManagerDialog ->
+// FileManager. Harmless: both sides only touch the import inside their
+// <template>, which runs long after both modules have finished evaluating,
+// never at module-init time.
+import FileManagerDialog from '@/components/admin/FileManagerDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -46,12 +53,29 @@ const error = ref('')
 const selected = ref<Set<string>>(new Set())
 const newDirName = ref('')
 const uploadInput = ref<HTMLInputElement | null>(null)
+const confirmingDelete = ref(false)
+const moveOpen = ref(false)
 
 const visible = computed(() =>
   props.mode === 'dirs' ? entries.value.filter((e) => e.dir) : entries.value,
 )
 const pages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const canMutate = computed(() => props.mode === 'manage')
+
+// Spec §8's accepted trade-off: no trash, no undo — a confirm dialog naming
+// what is about to go is the only guard. Delete is recursive, so a selected
+// directory has to be called out specifically: "3 items" undersells it when
+// one of the three is a folder full of other files.
+const selectedHasDir = computed(() =>
+  entries.value.some((e) => selected.value.has(e.path) && e.dir),
+)
+const deleteTitle = computed(() => `删除所选的 ${selected.value.size} 项？`)
+const deleteDescription = computed(() => {
+  const base = `将永久删除 ${selected.value.size} 项，此操作不可撤销。`
+  return selectedHasDir.value
+    ? `${base}其中包含目录，目录内的全部内容都会一并删除。`
+    : base
+})
 
 async function refresh() {
   busy.value = true
@@ -149,7 +173,15 @@ async function mkdir() {
   newDirName.value = ''
 }
 
-async function removeSelected() {
+// removeSelected only opens the confirmation — see performDelete for the
+// actual mutation, run once the dialog's own confirm button is clicked.
+function removeSelected() {
+  if (!selected.value.size) return
+  confirmingDelete.value = true
+}
+
+async function performDelete() {
+  confirmingDelete.value = false
   if (!selected.value.size) return
   await mutate('delete', { paths: [...selected.value] })
 }
@@ -157,7 +189,35 @@ async function removeSelected() {
 async function rename(entry: FmEntry) {
   const name = window.prompt('新名称', entry.name)?.trim()
   if (!name || name === entry.name) return
+  // A 409 here ("同名项已存在") arrives as a plain body.error, which mutate()
+  // already surfaces through `error` below — no special case needed.
   await mutate('rename', { path: entry.path, name })
+}
+
+function openMove() {
+  if (!selected.value.size) return
+  moveOpen.value = true
+}
+
+// The target is whatever FileManagerDialog's dirs-mode picker emits — either
+// a subfolder entered and chosen, or the current directory itself (including
+// the root; see FileManager's own "选择此目录" control below, the only way to
+// move something back out of a folder). A collision comes back as a per-item
+// error, which mutate() already turns into the same `f.name：f.error` message
+// mkdir and upload use — no special case needed here either.
+async function performMove(target: FmEntry) {
+  moveOpen.value = false
+  if (!selected.value.size) return
+  await mutate('move', { paths: [...selected.value], to: target.path })
+}
+
+// dirs mode has no file entries to click (see `visible` above), so the only
+// way to pick a destination is a dedicated control for "the folder I'm
+// looking at right now" — otherwise the root, and any folder without a
+// subfolder of its own, could never be chosen at all.
+function chooseCurrent() {
+  const name = breadcrumb.value.at(-1)?.name ?? '全部文件'
+  emit('select', { name, path: path.value, dir: true, size: 0, mtime: 0, url: '' })
 }
 
 async function upload(event: Event) {
@@ -209,10 +269,25 @@ async function upload(event: Event) {
 // "we're alive in a browser" signal this needs, with no environment sniffing.
 onMounted(refresh)
 watch([path, page], refresh)
+
+// Debounced, and careful not to double up with the watcher above. Typing
+// "photo" is five keystrokes; without a debounce that is five requests, one
+// per character. And a plain `page.value = 1; refresh()` here — the shape
+// this replaced — fires refresh() directly *and* triggers the [path, page]
+// watcher whenever page.value actually changes (i.e. it wasn't 1 already),
+// which is exactly the case a search typed from page 2 or later hits: two
+// concurrent, identical requests. Setting page.value = 1 and calling refresh()
+// are kept mutually exclusive below so exactly one fires either way.
+const SEARCH_DEBOUNCE_MS = 300
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 watch(query, () => {
-  page.value = 1
-  refresh()
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    if (page.value === 1) refresh()
+    else page.value = 1
+  }, SEARCH_DEBOUNCE_MS)
 })
+onUnmounted(() => clearTimeout(searchTimer))
 </script>
 
 <template>
@@ -226,6 +301,21 @@ watch(query, () => {
           </button>
         </template>
       </nav>
+
+      <!-- dirs mode has no clickable file entries, and a directory entry click
+           navigates into it rather than choosing it — so picking the folder
+           currently open (including the root, reachable no other way) needs
+           its own control. -->
+      <Button
+        v-if="mode === 'dirs'"
+        type="button"
+        variant="outline"
+        size="sm"
+        data-testid="choose-current-dir"
+        @click="chooseCurrent"
+      >
+        选择此目录
+      </Button>
 
       <div class="ml-auto flex items-center gap-2">
         <Input
@@ -255,6 +345,14 @@ watch(query, () => {
             data-testid="upload-input"
             @change="upload"
           />
+          <Button
+            type="button"
+            variant="outline"
+            :disabled="busy || !selected.size"
+            @click="openMove"
+          >
+            移动到…
+          </Button>
           <Button
             type="button"
             variant="destructive"
@@ -338,5 +436,32 @@ watch(query, () => {
         <ChevronRight class="size-4" />
       </Button>
     </div>
+
+    <!-- v-if="canMutate", not just "reachable only from the manage toolbar":
+         FileManagerDialog's own dirs-mode picker is itself a FileManager, so
+         an unconditional render here would have every dirs-mode instance
+         spawn another move dialog of its own — an infinite tree of nested
+         dialogs. Gating on canMutate stops the recursion one level down,
+         where mode is 'dirs' and canMutate is false. Overlays start closed —
+         SSR emits no teleported content. -->
+    <template v-if="canMutate">
+      <ConfirmDialog
+        :open="confirmingDelete"
+        :title="deleteTitle"
+        :description="deleteDescription"
+        confirm-label="删除"
+        cancel-label="取消"
+        @update:open="(o: boolean) => (confirmingDelete = o)"
+        @confirm="performDelete"
+      />
+      <FileManagerDialog
+        v-model:open="moveOpen"
+        :base-path="basePath"
+        :csrf-token="csrfToken"
+        mode="dirs"
+        title="移动到…"
+        @select="performMove"
+      />
+    </template>
   </div>
 </template>
