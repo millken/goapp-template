@@ -1,6 +1,21 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
+
+// Mocked so the routing assertions below read the decision, not sonner's DOM:
+// whether a toast paints is sonner's business, and happy-dom does not flush it.
+const toasted = vi.fn()
+vi.mock('vue-sonner', () => ({
+  toast: {
+    success: (m: string) => toasted(m),
+    error: (m: string) => toasted(m),
+  },
+  Toaster: { name: 'Toaster', render: () => null },
+}))
+vi.mock('@/components/ui/sonner', () => ({
+  Toaster: { name: 'Toaster', render: () => null },
+}))
+
 import AdminShell from './AdminShell.vue'
 
 // Mounted via createApp directly: the repo deliberately has no @vue/test-utils.
@@ -136,10 +151,11 @@ describe('AdminShell flash routing', () => {
     [...el.querySelectorAll('main [class*="mb-4"]')].map((n) => n.textContent).join('|')
 
   it('shows a success as a toast, not an inline alert', async () => {
+    toasted.mockClear()
     const el = mount({ ...props, flash: { success: '用户已创建' } })
     await nextTick()
     expect(el.querySelector('main')!.textContent).not.toContain('用户已创建')
-    expect(document.body.textContent).toContain('用户已创建')
+    expect(toasted).toHaveBeenCalledWith('用户已创建')
   })
 
   it('shows an error inline, where it stays', () => {
@@ -151,10 +167,11 @@ describe('AdminShell flash routing', () => {
   // proves nothing: an unparsed "toast:error" key would fall through to alert,
   // which is exactly where the default would have put a bare error anyway.
   it('honours an explicit style over the default', async () => {
-    const toasted = mount({ ...props, flash: { 'toast:error': '同步失败，稍后重试' } })
+    toasted.mockClear()
+    const el = mount({ ...props, flash: { 'toast:error': '同步失败，稍后重试' } })
     await nextTick()
-    expect(toasted.querySelector('main')!.textContent).not.toContain('同步失败，稍后重试')
-    expect(document.body.textContent).toContain('同步失败，稍后重试')
+    expect(el.querySelector('main')!.textContent).not.toContain('同步失败，稍后重试')
+    expect(toasted).toHaveBeenCalledWith('同步失败，稍后重试')
 
     const alerted = mount({ ...props, flash: { 'alert:success': '导入完成，请检查结果' } })
     await nextTick()

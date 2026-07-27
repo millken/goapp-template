@@ -181,7 +181,7 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 生成的页面靠它们拼装，不直接摸 shadcn 层。
 
 - **只服务后台。** 这些文件归 `admin` 组件所有，`goappctl init` 不选 admin 时 `main.css` 里的
-  主题块随之消失，公开页面体积回到原样。**依赖不会一起消失**：8 个 npm 包仍留在
+  主题块随之消失，公开页面体积回到原样。**依赖不会一起消失**：9 个 npm 包仍留在
   `frontend/package.json` 里 —— 移除它们会让 `pnpm-lock.yaml` 失效，而模板自带的 CI
   跑的是 `pnpm install --frozen-lockfile`，锁文件和 package.json 对不上就直接失败。
   实测未使用的依赖不占用打包体积，trim 后多背的只是一次下载，不是运行时重量。
@@ -189,8 +189,9 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 - **不含表单校验组件。** 校验在服务端（[internal/validate](internal/validate/validate.go)），
   失败时重渲染并给出 `errors` prop —— 不需要客户端再来一套。
 
-初始带 12 个组件：`alert` `badge` `button` `card` `dialog` `dropdown-menu` `input`
-`label` `pagination` `select` `separator` `table`。加新组件用生成器：
+初始带 13 个组件：`alert` `badge` `button` `card` `dialog` `dropdown-menu` `input`
+`label` `pagination` `select` `separator` `sonner` `table`。其中 `sonner` 是 shadcn
+淘汰自家 toast 之后的替代品，底层是 `vue-sonner`。加新组件用生成器：
 
 ```bash
 goappctl gen ui tooltip                  # 可一次多个：gen ui tooltip popover
