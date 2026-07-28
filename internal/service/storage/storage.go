@@ -537,8 +537,10 @@ func (s *Service) SetMaxRequestSizeForTest(n int64) { s.cfg.MaxRequestSize = n }
 // the underlying error may name a filesystem path.
 func Reason(err error) string {
 	switch {
-	case errors.Is(err, ErrBadPath), errors.Is(err, ErrRejected):
-		return err.Error()
+	case errors.Is(err, ErrBadPath):
+		return detail(err, ErrBadPath)
+	case errors.Is(err, ErrRejected):
+		return detail(err, ErrRejected)
 	case errors.Is(err, fs.ErrNotExist):
 		return "不存在"
 	case errors.Is(err, fs.ErrExist):
@@ -546,4 +548,21 @@ func Reason(err error) string {
 	default:
 		return "操作失败"
 	}
+}
+
+// detail is the part of a sentinel-wrapped message written for a human, with
+// the sentinel's own text removed. Every construction site is a single
+// fmt.Errorf("%w: …", sentinel), so the sentinel's text is a literal prefix.
+//
+// Without this the browser is shown `storage: rejected: 不接受的文件类型
+// ".exe"` — a Go package name and an English sentinel bolted onto a Chinese
+// sentence. The prefix is there for logs and errors.Is, not for a user.
+func detail(err error, sentinel error) string {
+	msg, ok := strings.CutPrefix(err.Error(), sentinel.Error()+": ")
+	if !ok || msg == "" {
+		// A bare sentinel, or one wrapped some other way: there is no sentence
+		// written for a human here, so do not invent one out of the plumbing.
+		return "操作失败"
+	}
+	return msg
 }

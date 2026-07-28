@@ -300,8 +300,10 @@ func TestBrowse_BuildsABreadcrumb(t *testing.T) {
 // than risk echoing a filesystem path.
 func TestReason_IsTheSingleVocabulary(t *testing.T) {
 	cases := map[error]string{
-		fmt.Errorf("%w: 举例", ErrBadPath):  "storage: illegal path: 举例",
-		fmt.Errorf("%w: 举例", ErrRejected): "storage: rejected: 举例",
+		// The sentinel's own text is plumbing — it belongs in logs and in
+		// errors.Is, not on a user's screen. Only the detail survives.
+		fmt.Errorf("%w: 举例", ErrBadPath):  "举例",
+		fmt.Errorf("%w: 举例", ErrRejected): "举例",
 		fs.ErrNotExist:                    "不存在",
 		fs.ErrExist:                       "同名项已存在",
 		errors.New("disk on fire"):        "操作失败",
@@ -590,4 +592,33 @@ func TestURLFor_ChineseFilenameRoundTripsThroughTheStaticRoute(t *testing.T) {
 		t.Fatalf("the static route could not open what URLFor(%q) pointed at (%q): %v", "图片.png", got, err)
 	}
 	f.Close()
+}
+
+// TestReason_DoesNotLeakTheSentinelPrefix pins that a user-facing message is a
+// sentence, not a Go error chain. Found by driving a real upload: rejecting
+// notes.exe answered `storage: rejected: 不接受的文件类型 ".exe"`, which is what
+// the file manager then printed on screen.
+func TestReason_DoesNotLeakTheSentinelPrefix(t *testing.T) {
+	ctx := context.Background()
+	s := startedService(t)
+
+	_, err := s.Upload(ctx, "", "notes.exe", strings.NewReader("x"))
+	if err == nil {
+		t.Fatal("an unlisted extension must be rejected")
+	}
+	msg := Reason(err)
+	if strings.Contains(msg, "storage:") || strings.Contains(msg, "rejected") {
+		t.Errorf("Reason = %q; a browser must not be shown the sentinel's own text", msg)
+	}
+	if !strings.Contains(msg, ".exe") {
+		t.Errorf("Reason = %q; it must still say which extension was refused", msg)
+	}
+
+	if got := Reason(fmt.Errorf("%w: 路径不合法", ErrBadPath)); got != "路径不合法" {
+		t.Errorf("Reason(ErrBadPath) = %q, want the detail alone", got)
+	}
+	// A bare sentinel carries no detail to show; the generic message is right.
+	if got := Reason(ErrRejected); got != "操作失败" {
+		t.Errorf("Reason(bare sentinel) = %q, want the generic message", got)
+	}
 }

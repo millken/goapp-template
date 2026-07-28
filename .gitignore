@@ -44,6 +44,10 @@ config.yaml
 # Local dev SQLite database (dsn: app.db in config.yaml)
 app.db
 *.db
+
+# Uploaded files (root: uploads in config.yaml). The tree is runtime data, not
+# template content — a generated project keeps its own.
+uploads/
 .superpowers/
 
 # MCP client config (local tooling, not part of the template)
