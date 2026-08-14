@@ -1,6 +1,14 @@
 // Package admin is the authenticated admin controller area: a login/logout flow
-// backed by a users table and the session service, a dashboard, per-resource
-// permissions, and a menu registry filtered to what the caller may reach.
+// backed by the `admins` table and the session service, a dashboard,
+// per-resource permissions, and a menu registry filtered to what the caller may
+// reach.
+//
+// The accounts live in `admins`, not `users`, and the same holds for
+// `admin_groups` and `admin_login_attempts`: these rows are operators of this
+// area, and naming them `users` would take the one table name an application is
+// most likely to want for its own end users. The Go identifiers here still read
+// "user" — a userRow, /admin/user — because inside package admin there is
+// nothing else a user could be.
 //
 // Routes come in through Resource, the registrar: one call registers the route,
 // attaches the permission guard, records the permission in an enumerable
@@ -14,7 +22,7 @@
 // "which routes skip the registrar" — see mountAccount for why the last one
 // has to be on it.
 //
-// It needs its own *Config (mount, auth key, users table), so serve.go wires it
+// It needs its own *Config (mount, auth key, admins table), so serve.go wires it
 // explicitly rather than through the generated MountAll. The middlewares are
 // attached per route, so neither ever filters by path.
 package admin
@@ -34,13 +42,13 @@ import (
 // Defaults applied by the accessors below when [admin] is absent or a field is
 // left empty.
 const (
-	defaultMount      = "/admin"
-	defaultLoginLeaf  = "/login"
-	defaultAuthKey    = "admin_user_id"
-	defaultUsersTable = "users"
+	defaultMount       = "/admin"
+	defaultLoginLeaf   = "/login"
+	defaultAuthKey     = "admin_user_id"
+	defaultAdminsTable = "admins"
 )
 
-// tableNameRe restricts the users table name to a safe identifier, since it is
+// tableNameRe restricts the admins table name to a safe identifier, since it is
 // interpolated directly into SQL.
 var tableNameRe = regexp.MustCompile(`^[A-Za-z_]\w*$`)
 
@@ -53,8 +61,9 @@ type Config struct {
 	// AuthKey is the session key whose truthy presence means "logged in"
 	// (default "admin_user_id"); its value is the authenticated user id.
 	AuthKey string `yaml:"auth_key"`
-	// UsersTable is the table login authenticates against (default "users").
-	UsersTable string `yaml:"users_table"`
+	// Table is the table login authenticates against (default "admins"). It is
+	// interpolated into SQL, so Validate holds it to ^[A-Za-z_]\w*$.
+	Table string `yaml:"table"`
 	// TrustedProxies are CIDR blocks whose X-Forwarded-For is believed when
 	// resolving the client address for the login throttle. Empty — the default —
 	// means the header is never read, because anyone can send it.
@@ -80,14 +89,14 @@ func New(svc *app.Services, cfg *Config) *Admin {
 	return &Admin{Services: svc, cfg: cfg}
 }
 
-// Validate requires a present [admin] config section and a safe users-table
+// Validate requires a present [admin] config section and a safe admins-table
 // name (interpolated into SQL). Accessors stay nil-safe so tests may skip it.
 func (a *Admin) Validate() error {
 	if a.cfg == nil {
 		return errors.New("admin: enabled but [admin] config section missing")
 	}
-	if table := a.usersTable(); !tableNameRe.MatchString(table) {
-		return fmt.Errorf("admin: illegal users table name %q", table)
+	if table := a.adminsTable(); !tableNameRe.MatchString(table) {
+		return fmt.Errorf("admin: illegal admins table name %q", table)
 	}
 	// Parsed once, here, so a typo stops startup. Left as a warning it would
 	// silently empty the trust list, and an empty trust list silently disables
@@ -153,9 +162,9 @@ func (a *Admin) authKey() string {
 	return cmp.Or(a.cfg.AuthKey, defaultAuthKey)
 }
 
-func (a *Admin) usersTable() string {
+func (a *Admin) adminsTable() string {
 	if a.cfg == nil {
-		return defaultUsersTable
+		return defaultAdminsTable
 	}
-	return cmp.Or(a.cfg.UsersTable, defaultUsersTable)
+	return cmp.Or(a.cfg.Table, defaultAdminsTable)
 }

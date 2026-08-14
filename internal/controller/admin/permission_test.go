@@ -156,12 +156,12 @@ func putInGroup(t *testing.T, adm *Admin, name string, superuser bool, keysJSON 
 		su = 1
 	}
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES (?, ?, ?, 0)`,
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at) VALUES (?, ?, ?, 0)`,
 		name, su, keysJSON); err != nil {
 		t.Fatalf("insert group %s: %v", name, err)
 	}
 	if _, err := adm.DB.ExecContext(ctx,
-		`UPDATE users SET group_id = (SELECT id FROM user_groups WHERE name = ?) WHERE username = 'alice'`,
+		`UPDATE admins SET group_id = (SELECT id FROM admin_groups WHERE name = ?) WHERE username = 'alice'`,
 		name); err != nil {
 		t.Fatalf("move alice into %s: %v", name, err)
 	}
@@ -209,7 +209,7 @@ func TestGuard_EndToEnd(t *testing.T) {
 func TestGuard_NoGroupIsForbidden(t *testing.T) {
 	eng, adm := loginStack(t)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`UPDATE users SET group_id = NULL WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET group_id = NULL WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 

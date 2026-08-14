@@ -1,2 +1,2 @@
--- 001_init.down.sql
+-- 001_init.down.sql (SQLite)
 DROP TABLE IF EXISTS app_meta;

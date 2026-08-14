@@ -43,12 +43,12 @@ func newAdminCreateUserCmd() *cobra.Command {
 			if appCfg.DB == nil {
 				return fmt.Errorf("no [db] config section; admin users require a database")
 			}
-			table := "users"
-			if appCfg.Admin != nil && appCfg.Admin.UsersTable != "" {
-				table = appCfg.Admin.UsersTable
+			table := "admins"
+			if appCfg.Admin != nil && appCfg.Admin.Table != "" {
+				table = appCfg.Admin.Table
 			}
 			if !tableNameRe.MatchString(table) {
-				return fmt.Errorf("illegal users table name %q", table)
+				return fmt.Errorf("illegal admins table name %q", table)
 			}
 
 			ctx := cmd.Context()

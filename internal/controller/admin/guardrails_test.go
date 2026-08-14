@@ -14,7 +14,7 @@ func countEnabledSuperusers(t *testing.T, adm *Admin) int {
 	t.Helper()
 	var n int
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM users u JOIN user_groups g ON g.id = u.group_id
+		`SELECT COUNT(*) FROM admins u JOIN admin_groups g ON g.id = u.group_id
 		 WHERE g.superuser = 1 AND u.status = 1`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestKeepingASuperuser_RollsBackTheChange(t *testing.T) {
 	}
 
 	err := adm.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE users SET status = 0 WHERE username = 'alice'`)
+		_, err := tx.ExecContext(ctx, `UPDATE admins SET status = 0 WHERE username = 'alice'`)
 		return err
 	})
 	if !errors.Is(err, errLastSuperuser) {
@@ -50,10 +50,10 @@ func TestKeepingASuperuser_CoversAllFourPaths(t *testing.T) {
 		name string
 		sql  string
 	}{
-		{"disable the user", `UPDATE users SET status = 0 WHERE username = 'alice'`},
-		{"delete the user", `DELETE FROM users WHERE username = 'alice'`},
-		{"move the user out of the superuser group", `UPDATE users SET group_id = NULL WHERE username = 'alice'`},
-		{"clear the group's superuser flag", `UPDATE user_groups SET superuser = 0 WHERE name = 'Administrators'`},
+		{"disable the user", `UPDATE admins SET status = 0 WHERE username = 'alice'`},
+		{"delete the user", `DELETE FROM admins WHERE username = 'alice'`},
+		{"move the user out of the superuser group", `UPDATE admins SET group_id = NULL WHERE username = 'alice'`},
+		{"clear the group's superuser flag", `UPDATE admin_groups SET superuser = 0 WHERE name = 'Administrators'`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, adm := loginStack(t)
@@ -77,13 +77,13 @@ func TestKeepingASuperuser_AllowsAChangeThatLeavesOne(t *testing.T) {
 	_, adm := loginStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at, status, group_id)
-		 VALUES ('bob', 'x', 0, 1, (SELECT id FROM user_groups WHERE name = 'Administrators'))`); err != nil {
+		`INSERT INTO admins (username, password_hash, created_at, status, group_id)
+		 VALUES ('bob', 'x', 0, 1, (SELECT id FROM admin_groups WHERE name = 'Administrators'))`); err != nil {
 		t.Fatal(err)
 	}
 
 	err := adm.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
-		_, err := tx.ExecContext(ctx, `UPDATE users SET status = 0 WHERE username = 'alice'`)
+		_, err := tx.ExecContext(ctx, `UPDATE admins SET status = 0 WHERE username = 'alice'`)
 		return err
 	})
 	if err != nil {

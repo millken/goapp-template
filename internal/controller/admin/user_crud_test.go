@@ -76,7 +76,7 @@ func TestUserCreate_StoresAHashedPasswordAndTheGroup(t *testing.T) {
 
 	var gid int64
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,7 +93,7 @@ func TestUserCreate_StoresAHashedPasswordAndTheGroup(t *testing.T) {
 	var status int
 	var got int64
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT password_hash, status, group_id FROM users WHERE username = 'carol'`).
+		`SELECT password_hash, status, group_id FROM admins WHERE username = 'carol'`).
 		Scan(&hash, &status, &got); err != nil {
 		t.Fatalf("carol was not created: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestUserCreate_RejectsBadInput(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	var gid int64
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -137,7 +137,7 @@ func TestUserCreate_RejectsBadInput(t *testing.T) {
 			}
 			var n int
 			if err := adm.DB.QueryRowContext(context.Background(),
-				`SELECT COUNT(*) FROM users WHERE username = ?`, c.form.Get("username")).Scan(&n); err != nil {
+				`SELECT COUNT(*) FROM admins WHERE username = ?`, c.form.Get("username")).Scan(&n); err != nil {
 				t.Fatal(err)
 			}
 			if c.form.Get("username") != "alice" && n != 0 {
@@ -155,12 +155,12 @@ func TestUserUpdate_BlankPasswordKeepsTheOldOne(t *testing.T) {
 
 	var id, gid int64
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT id, group_id FROM users WHERE username = 'alice'`).Scan(&id, &gid); err != nil {
+		`SELECT id, group_id FROM admins WHERE username = 'alice'`).Scan(&id, &gid); err != nil {
 		t.Fatal(err)
 	}
 	var before string
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT password_hash FROM users WHERE id = ?`, id).Scan(&before); err != nil {
+		`SELECT password_hash FROM admins WHERE id = ?`, id).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
 
@@ -175,7 +175,7 @@ func TestUserUpdate_BlankPasswordKeepsTheOldOne(t *testing.T) {
 
 	var after, name string
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT password_hash, username FROM users WHERE id = ?`, id).Scan(&after, &name); err != nil {
+		`SELECT password_hash, username FROM admins WHERE id = ?`, id).Scan(&after, &name); err != nil {
 		t.Fatal(err)
 	}
 	if after != before {
@@ -192,14 +192,14 @@ func TestUserUpdate_CannotChangeYourOwnGroup(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES ('Editors', 0, '[]', 0)`); err != nil {
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at) VALUES ('Editors', 0, '[]', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	var id, other int64
-	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE username = 'alice'`).Scan(&id); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM admins WHERE username = 'alice'`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
-	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM user_groups WHERE name = 'Editors'`).Scan(&other); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM admin_groups WHERE name = 'Editors'`).Scan(&other); err != nil {
 		t.Fatal(err)
 	}
 
@@ -212,7 +212,7 @@ func TestUserUpdate_CannotChangeYourOwnGroup(t *testing.T) {
 		t.Error("changing your own group must be refused")
 	}
 	var gid int64
-	if err := adm.DB.QueryRowContext(ctx, `SELECT group_id FROM users WHERE id = ?`, id).Scan(&gid); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT group_id FROM admins WHERE id = ?`, id).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 	if gid == other {
@@ -228,7 +228,7 @@ func TestUserCreate_RedirectIsAPayloadUnderPJAX(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	var gid int64
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -275,13 +275,13 @@ func TestUserDeleteAndDisable_CannotTargetYourself(t *testing.T) {
 			// verified: given a second superuser, a notSelf-stripped handler
 			// lets alice delete herself.
 			if _, err := adm.DB.ExecContext(context.Background(),
-				`INSERT INTO users (username, password_hash, created_at, status, group_id)
-				 VALUES ('bob', 'x', 0, 1, (SELECT id FROM user_groups WHERE name = 'Administrators'))`); err != nil {
+				`INSERT INTO admins (username, password_hash, created_at, status, group_id)
+				 VALUES ('bob', 'x', 0, 1, (SELECT id FROM admin_groups WHERE name = 'Administrators'))`); err != nil {
 				t.Fatal(err)
 			}
 			var id int64
 			if err := adm.DB.QueryRowContext(context.Background(),
-				`SELECT id FROM users WHERE username = 'alice'`).Scan(&id); err != nil {
+				`SELECT id FROM admins WHERE username = 'alice'`).Scan(&id); err != nil {
 				t.Fatal(err)
 			}
 
@@ -299,7 +299,7 @@ func TestUserDeleteAndDisable_CannotTargetYourself(t *testing.T) {
 
 			var n, status int
 			if err := adm.DB.QueryRowContext(context.Background(),
-				`SELECT COUNT(*), COALESCE(MAX(status), -1) FROM users WHERE id = ?`, id).
+				`SELECT COUNT(*), COALESCE(MAX(status), -1) FROM admins WHERE id = ?`, id).
 				Scan(&n, &status); err != nil {
 				t.Fatal(err)
 			}
@@ -320,12 +320,12 @@ func TestUserDelete_KeepsOneEnabledSuperuser(t *testing.T) {
 	ctx := context.Background()
 	// bob is a second superuser, so deleting him is allowed...
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at, status, group_id)
-		 VALUES ('bob', 'x', 0, 1, (SELECT id FROM user_groups WHERE name = 'Administrators'))`); err != nil {
+		`INSERT INTO admins (username, password_hash, created_at, status, group_id)
+		 VALUES ('bob', 'x', 0, 1, (SELECT id FROM admin_groups WHERE name = 'Administrators'))`); err != nil {
 		t.Fatal(err)
 	}
 	var bob int64
-	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE username = 'bob'`).Scan(&bob); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM admins WHERE username = 'bob'`).Scan(&bob); err != nil {
 		t.Fatal(err)
 	}
 	if w := post(t, eng, cookie, fmt.Sprintf("/admin/user/%d/delete", bob), nil); w.Code != http.StatusFound {
@@ -346,16 +346,16 @@ func TestUserSetStatus_DisablesANonSuperuser(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES ('Editors', 0, '[]', 0)`); err != nil {
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at) VALUES ('Editors', 0, '[]', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at, status, group_id)
-		 VALUES ('erin', 'x', 0, 1, (SELECT id FROM user_groups WHERE name = 'Editors'))`); err != nil {
+		`INSERT INTO admins (username, password_hash, created_at, status, group_id)
+		 VALUES ('erin', 'x', 0, 1, (SELECT id FROM admin_groups WHERE name = 'Editors'))`); err != nil {
 		t.Fatal(err)
 	}
 	var erin int64
-	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE username = 'erin'`).Scan(&erin); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM admins WHERE username = 'erin'`).Scan(&erin); err != nil {
 		t.Fatal(err)
 	}
 
@@ -364,7 +364,7 @@ func TestUserSetStatus_DisablesANonSuperuser(t *testing.T) {
 		t.Fatalf("status = %d, want 302; body: %s", w.Code, w.Body.String())
 	}
 	var status int
-	if err := adm.DB.QueryRowContext(ctx, `SELECT status FROM users WHERE id = ?`, erin).Scan(&status); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT status FROM admins WHERE id = ?`, erin).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != statusDisabled {
@@ -378,7 +378,7 @@ func TestUserSetStatus_DisablesANonSuperuser(t *testing.T) {
 			t.Fatalf("enable: status = %d, want 303", w.Code)
 		}
 	}
-	if err := adm.DB.QueryRowContext(ctx, `SELECT status FROM users WHERE id = ?`, erin).Scan(&status); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT status FROM admins WHERE id = ?`, erin).Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != statusActive {
@@ -394,7 +394,7 @@ func TestUserCreate_RejectsAPasswordTooLongInBytes(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	var gid int64
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -417,7 +417,7 @@ func TestUserCreate_RejectsAPasswordTooLongInBytes(t *testing.T) {
 	}
 	var n int
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM users WHERE username = 'toolong'`).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM admins WHERE username = 'toolong'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
@@ -468,7 +468,7 @@ func TestUserAvatar_RoundTripsAndIsValidated(t *testing.T) {
 
 	var gid int64
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -483,7 +483,7 @@ func TestUserAvatar_RoundTripsAndIsValidated(t *testing.T) {
 	}
 	var avatar string
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT avatar FROM users WHERE username = 'dave'`).Scan(&avatar); err != nil {
+		`SELECT avatar FROM admins WHERE username = 'dave'`).Scan(&avatar); err != nil {
 		t.Fatal(err)
 	}
 	if avatar != "photos/dave.png" {
@@ -502,7 +502,7 @@ func TestUserAvatar_RoundTripsAndIsValidated(t *testing.T) {
 	}
 	var n int
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM users WHERE username = 'erin'`).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM admins WHERE username = 'erin'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {

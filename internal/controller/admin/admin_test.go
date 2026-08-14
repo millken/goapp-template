@@ -22,7 +22,7 @@ func TestValidate(t *testing.T) {
 		t.Error("nil [admin] config should error")
 	}
 	// illegal users-table identifier → error (interpolated into SQL).
-	if err := New(nil, &Config{UsersTable: "bad table"}).Validate(); err == nil {
+	if err := New(nil, &Config{Table: "bad table"}).Validate(); err == nil {
 		t.Error("illegal users table name should error")
 	}
 	// a present config with defaults → ok.
@@ -42,7 +42,7 @@ func TestResolvedDefaults(t *testing.T) {
 	if a.authKey() != defaultAuthKey {
 		t.Errorf("authKey default: got %q", a.authKey())
 	}
-	if a.usersTable() != "users" {
-		t.Errorf("usersTable default: got %q", a.usersTable())
+	if a.adminsTable() != "admins" {
+		t.Errorf("adminsTable default: got %q", a.adminsTable())
 	}
 }

@@ -48,7 +48,7 @@ func TestLoginThrottle(t *testing.T) {
 	stale := time.Now().Add(-2 * loginWindow).UnixNano()
 	for range loginMaxAttempts + 5 {
 		if _, err := adm.DB.ExecContext(ctx,
-			`INSERT INTO login_attempts (ip, at) VALUES (?, ?)`, ip, stale); err != nil {
+			`INSERT INTO admin_login_attempts (ip, at) VALUES (?, ?)`, ip, stale); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -220,4 +220,33 @@ func TestUpsertSQL_PerFlavor(t *testing.T) {
 	}
 }
 
+// TestCreateTableSQL_PerFlavor pins the one part of the DDL that cannot be
+// shared: MySQL refuses a TEXT primary key without a prefix length, so id has to
+// be VARCHAR there. Without a live MySQL in the suite this is the only place the
+// mistake would be caught before deployment.
+func TestCreateTableSQL_PerFlavor(t *testing.T) {
+	db, _ := sqldb.Open("sqlite3", ":memory:")
+	t.Cleanup(func() { db.Close() })
+
+	s, _ := NewDBStore(db, "sessions")
+	if got := s.createTableSQL(); !strings.Contains(got, "id         TEXT PRIMARY KEY") {
+		t.Errorf("sqlite DDL: expected a TEXT id, got %q", got)
+	}
+
+	s.db.Flavor = sqldb.PostgreSQL
+	if got := s.createTableSQL(); !strings.Contains(got, "id         TEXT PRIMARY KEY") {
+		t.Errorf("postgres DDL: expected a TEXT id, got %q", got)
+	}
+
+	s.db.Flavor = sqldb.MySQL
+	got := s.createTableSQL()
+	// 64, not more: randomID is 32 bytes of hex, so the column is exact.
+	if !strings.Contains(got, "id         VARCHAR(64) PRIMARY KEY") {
+		t.Errorf("mysql DDL: expected a VARCHAR(64) id, got %q", got)
+	}
+	if !strings.Contains(got, "ENGINE=InnoDB") {
+		t.Errorf("mysql DDL: expected an InnoDB table, got %q", got)
+	}
+}
+
 //goappctl:end

@@ -38,7 +38,7 @@ func newUsersDB(t *testing.T) *sqldb.DB {
 	}
 	t.Cleanup(func() { d.Close() })
 	ctx := context.Background()
-	if _, err := d.ExecContext(ctx, `CREATE TABLE users (
+	if _, err := d.ExecContext(ctx, `CREATE TABLE admins (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT NOT NULL UNIQUE,
 		password_hash TEXT NOT NULL,
@@ -48,7 +48,7 @@ func newUsersDB(t *testing.T) *sqldb.DB {
 	}
 	hash, _ := HashPassword("pw")
 	if _, err := d.ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)`,
+		`INSERT INTO admins (username, password_hash, created_at) VALUES (?, ?, ?)`,
 		"alice", hash, time.Now().UnixNano()); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestFindUser(t *testing.T) {
 	d := newUsersDB(t)
 	ctx := context.Background()
 
-	u, err := findUser(ctx, d, "users", "alice")
+	u, err := findUser(ctx, d, "admins", "alice")
 	if err != nil {
 		t.Fatalf("findUser: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestFindUser(t *testing.T) {
 		t.Fatalf("expected alice, got %+v", u)
 	}
 
-	u, err = findUser(ctx, d, "users", "nobody")
+	u, err = findUser(ctx, d, "admins", "nobody")
 	if err != nil {
 		t.Fatalf("findUser(nobody): %v", err)
 	}
@@ -80,13 +80,13 @@ func TestAuthenticate(t *testing.T) {
 	d := newUsersDB(t)
 	ctx := context.Background()
 
-	if _, err := authenticate(ctx, d, "users", "alice", "pw"); err != nil {
+	if _, err := authenticate(ctx, d, "admins", "alice", "pw"); err != nil {
 		t.Errorf("authenticate(correct): %v", err)
 	}
-	if _, err := authenticate(ctx, d, "users", "alice", "bad"); !errors.Is(err, errInvalidCredentials) {
+	if _, err := authenticate(ctx, d, "admins", "alice", "bad"); !errors.Is(err, errInvalidCredentials) {
 		t.Errorf("authenticate(wrong pw): want errInvalidCredentials, got %v", err)
 	}
-	if _, err := authenticate(ctx, d, "users", "nobody", "pw"); !errors.Is(err, errInvalidCredentials) {
+	if _, err := authenticate(ctx, d, "admins", "nobody", "pw"); !errors.Is(err, errInvalidCredentials) {
 		t.Errorf("authenticate(unknown): want errInvalidCredentials, got %v", err)
 	}
 }

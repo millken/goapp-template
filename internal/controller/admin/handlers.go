@@ -62,7 +62,7 @@ func (a *Admin) LoginSubmit(c *inertia.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
 
-	user, err := authenticate(c.Request.Context(), a.DB, a.usersTable(), username, password)
+	user, err := authenticate(c.Request.Context(), a.DB, a.adminsTable(), username, password)
 	if err != nil {
 		if errors.Is(err, errAccountDisabled) {
 			a.renderLogin(c, sess, "该账号已被禁用。")
@@ -128,7 +128,7 @@ func (a *Admin) callerUnusable(c *inertia.Context, v any) bool {
 		// An unreadable id is not a session anyone can use either.
 		return true
 	}
-	cl, err := findCaller(c.Request.Context(), a.DB, a.usersTable(), id)
+	cl, err := findCaller(c.Request.Context(), a.DB, a.adminsTable(), id)
 	switch {
 	case errors.Is(err, errNoGroup):
 		// findCaller cannot tell "deleted" from "no group" — its join drops

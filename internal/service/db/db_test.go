@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dnsoa/go/sqldb"
 	"github.com/millken/goapp-template/internal/app"
 
 	// Register the SQLite driver for tests.
@@ -49,11 +50,11 @@ func TestStart_OpensAndMigrates(t *testing.T) {
 
 	// The sample migration creates app_meta; verify it is writable.
 	db := s.DB()
-	if _, err := db.ExecContext(ctx, `INSERT INTO app_meta (key, value) VALUES ('k', 'v')`); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO app_meta (name, value) VALUES ('k', 'v')`); err != nil {
 		t.Fatalf("insert into migrated table: %v", err)
 	}
 	var got string
-	if err := db.QueryRowContext(ctx, `SELECT value FROM app_meta WHERE key = 'k'`).Scan(&got); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT value FROM app_meta WHERE name = 'k'`).Scan(&got); err != nil {
 		t.Fatalf("select from migrated table: %v", err)
 	}
 	if got != "v" {
@@ -67,6 +68,45 @@ func TestStart_OpensAndMigrates(t *testing.T) {
 	}
 	if version == "" {
 		t.Fatalf("expected non-empty migration version, got %q", version)
+	}
+}
+
+// TestStart_InfersDriverFromDSN exercises the inference path end to end: with
+// db.driver left empty, ":memory:" has to reach the sqlite3 driver AND select
+// the sqlite migration directory. A unit test on sniffDriver alone would pass
+// even if migrationsFor were wired to the wrong flavor.
+func TestStart_InfersDriverFromDSN(t *testing.T) {
+	s := New(&Config{
+		DSN:        ":memory:",
+		Migrations: &Migrations{Table: "schema_migrations", Service: "test"},
+	})
+	ctx := context.Background()
+	if err := s.Start(ctx); err != nil {
+		t.Fatalf("Start with no driver: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Stop(ctx) })
+
+	if got := s.DB().Flavor; got != sqldb.SQLite {
+		t.Errorf("flavor = %s, want SQLite", got)
+	}
+	// The SQLite migrations ran, so the admins table exists with its columns.
+	if _, err := s.DB().ExecContext(ctx,
+		`SELECT id, username, group_id, status, avatar FROM admins WHERE 1 = 0`); err != nil {
+		t.Errorf("sqlite migrations did not run: %v", err)
+	}
+}
+
+// TestStart_UninferableDSN refuses rather than guessing. An extensionless path
+// is the case that matters: creating a file named after a mistyped connection
+// string is worse than not starting.
+func TestStart_UninferableDSN(t *testing.T) {
+	s := New(&Config{DSN: "/var/lib/myapp/store"})
+	err := s.Start(context.Background())
+	if err == nil {
+		t.Fatal("expected an error for an uninferable DSN")
+	}
+	if !strings.Contains(err.Error(), "cannot infer a driver") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

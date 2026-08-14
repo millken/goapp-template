@@ -46,7 +46,7 @@ func (a *Admin) passwordSubmit(c *inertia.Context) {
 	password := c.PostForm("password")
 	confirm := c.PostForm("confirm")
 
-	q := fmt.Sprintf(`SELECT password_hash FROM %s WHERE id = ?`, a.usersTable())
+	q := fmt.Sprintf(`SELECT password_hash FROM %s WHERE id = ?`, a.adminsTable())
 	var hash string
 	if err := a.DB.QueryRowContext(ctx, q, id).Scan(&hash); err != nil {
 		slog.Error("admin: load own password hash", "err", err, "user", id)
@@ -75,7 +75,7 @@ func (a *Admin) passwordSubmit(c *inertia.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	uq := fmt.Sprintf(`UPDATE %s SET password_hash = ? WHERE id = ?`, a.usersTable())
+	uq := fmt.Sprintf(`UPDATE %s SET password_hash = ? WHERE id = ?`, a.adminsTable())
 	if _, err := a.DB.ExecContext(ctx, uq, newHash, id); err != nil {
 		slog.Error("admin: change own password", "err", err, "user", id)
 		c.AbortWithStatus(http.StatusInternalServerError)

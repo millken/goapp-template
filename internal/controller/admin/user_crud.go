@@ -80,8 +80,8 @@ func (a *Admin) userBase() string { return a.Prefix() + "/user" }
 func (a *Admin) usersIndex(c *inertia.Context) {
 	q := fmt.Sprintf(`SELECT u.id, u.username, COALESCE(u.group_id, 0), COALESCE(g.name, ''),
 		u.status, u.created_at, u.avatar
-		FROM %s u LEFT JOIN user_groups g ON g.id = u.group_id
-		ORDER BY u.username`, a.usersTable())
+		FROM %s u LEFT JOIN admin_groups g ON g.id = u.group_id
+		ORDER BY u.username`, a.adminsTable())
 
 	rows, err := a.DB.QueryContext(c.Request.Context(), q)
 	if err != nil {
@@ -148,7 +148,7 @@ func (a *Admin) userCreate(c *inertia.Context) {
 	}
 
 	q := fmt.Sprintf(`INSERT INTO %s (username, password_hash, created_at, status, group_id, avatar)
-		VALUES (?, ?, ?, ?, ?, ?)`, a.usersTable())
+		VALUES (?, ?, ?, ?, ?, ?)`, a.adminsTable())
 	if _, err := a.DB.ExecContext(ctx, q, item.Username, hash, time.Now().UnixNano(),
 		statusActive, item.GroupID, item.Avatar); err != nil {
 		slog.Error("admin: create user", "err", err)
@@ -222,7 +222,7 @@ func (a *Admin) userUpdate(c *inertia.Context) {
 	// The group change can strand the last superuser, so it runs under the
 	// guard; the guard is harmless when nothing about superuser status changed.
 	err = a.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
-		q := fmt.Sprintf(`UPDATE %s SET username = ?, group_id = ?, avatar = ? WHERE id = ?`, a.usersTable())
+		q := fmt.Sprintf(`UPDATE %s SET username = ?, group_id = ?, avatar = ? WHERE id = ?`, a.adminsTable())
 		if _, err := tx.ExecContext(ctx, q, item.Username, item.GroupID, item.Avatar, id); err != nil {
 			return err
 		}
@@ -233,7 +233,7 @@ func (a *Admin) userUpdate(c *inertia.Context) {
 		if err != nil {
 			return err
 		}
-		pq := fmt.Sprintf(`UPDATE %s SET password_hash = ? WHERE id = ?`, a.usersTable())
+		pq := fmt.Sprintf(`UPDATE %s SET password_hash = ? WHERE id = ?`, a.adminsTable())
 		_, err = tx.ExecContext(ctx, pq, hash, id)
 		return err
 	})
@@ -270,7 +270,7 @@ func (a *Admin) userDelete(c *inertia.Context) {
 	}
 
 	err := a.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
-		q := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, a.usersTable())
+		q := fmt.Sprintf(`DELETE FROM %s WHERE id = ?`, a.adminsTable())
 		_, err := tx.ExecContext(ctx, q, id)
 		return err
 	})
@@ -308,7 +308,7 @@ func (a *Admin) userSetStatus(c *inertia.Context) {
 	}
 
 	set := func(tx *sqldb.Tx) error {
-		q := fmt.Sprintf(`UPDATE %s SET status = ? WHERE id = ?`, a.usersTable())
+		q := fmt.Sprintf(`UPDATE %s SET status = ? WHERE id = ?`, a.adminsTable())
 		_, err := tx.ExecContext(ctx, q, want, id)
 		return err
 	}
@@ -383,7 +383,7 @@ func (a *Admin) validateUser(ctx context.Context, item userRow, password string,
 // actionable, and the cause is in the log.
 func (a *Admin) usernameAvailable(ctx context.Context, exceptID int64) validate.Rule {
 	return func(name string) error {
-		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE username = ? AND id != ?`, a.usersTable())
+		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE username = ? AND id != ?`, a.adminsTable())
 		var n int
 		if err := a.DB.QueryRowContext(ctx, q, name, exceptID).Scan(&n); err != nil {
 			slog.Error("admin: check username", "err", err)
@@ -399,7 +399,7 @@ func (a *Admin) usernameAvailable(ctx context.Context, exceptID int64) validate.
 func (a *Admin) groupExists(ctx context.Context, id int64) (bool, error) {
 	var n int
 	if err := a.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM user_groups WHERE id = ?`, id).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM admin_groups WHERE id = ?`, id).Scan(&n); err != nil {
 		return false, err
 	}
 	return n > 0, nil
@@ -409,8 +409,8 @@ func (a *Admin) groupExists(ctx context.Context, id int64) (bool, error) {
 func (a *Admin) findUserRow(ctx context.Context, id int64) (*userRow, error) {
 	q := fmt.Sprintf(`SELECT u.id, u.username, COALESCE(u.group_id, 0), COALESCE(g.name, ''),
 		u.status, u.created_at, u.avatar
-		FROM %s u LEFT JOIN user_groups g ON g.id = u.group_id
-		WHERE u.id = ?`, a.usersTable())
+		FROM %s u LEFT JOIN admin_groups g ON g.id = u.group_id
+		WHERE u.id = ?`, a.adminsTable())
 	var u userRow
 	if err := a.DB.QueryRowContext(ctx, q, id).
 		Scan(&u.ID, &u.Username, &u.GroupID, &u.Group, &u.Status, &u.Created, &u.Avatar); err != nil {
@@ -424,7 +424,7 @@ func (a *Admin) findUserRow(ctx context.Context, id int64) (*userRow, error) {
 
 // groupOptions are the choices in the form's group select.
 func (a *Admin) groupOptions(ctx context.Context) ([]groupOption, error) {
-	rows, err := a.DB.QueryContext(ctx, `SELECT id, name FROM user_groups ORDER BY name`)
+	rows, err := a.DB.QueryContext(ctx, `SELECT id, name FROM admin_groups ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}

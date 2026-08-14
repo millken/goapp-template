@@ -90,8 +90,8 @@ func TestExampleConfig_Parses(t *testing.T) {
 		if cfg.Admin.Mount == "" {
 			t.Error("Admin.Mount is empty")
 		}
-		if cfg.Admin.UsersTable == "" {
-			t.Error("Admin.UsersTable is empty")
+		if cfg.Admin.Table == "" {
+			t.Error("Admin.Table is empty")
 		}
 	})
 	//goappctl:end

@@ -34,8 +34,18 @@ server:
 
 #goappctl:db
 db:
-  driver: sqlite3 # sqlite3 | mysql | pgx
-  dsn: app.db # SQLite file path, or a MySQL/PostgreSQL DSN
+  # driver: sqlite3 | mysql | pgx. Optional — leave it out and the driver is
+  # inferred from the shape of dsn (postgres:// and host=/dbname= → pgx;
+  # user:pass@tcp(...)/name and mysql:// → mysql; file:, :memory: and paths
+  # ending .db/.sqlite/.sqlite3 → sqlite3). An explicit value always wins, and a
+  # dsn that matches none of those shapes is a startup error, never a guess.
+  driver: sqlite3
+  dsn: app.db
+  # MySQL:      user:pass@tcp(127.0.0.1:3306)/myapp?parseTime=true&multiStatements=true
+  #             multiStatements=true is REQUIRED when [db.migrations] is set —
+  #             the migrator execs each .sql file as one string.
+  # PostgreSQL: postgres://user:pass@127.0.0.1:5432/myapp?sslmode=disable
+  # SQLite:     app.db   (or file:app.db?_journal=WAL)
   # max_open: 0                  # 0 = database/sql default (unlimited)
   # max_idle: 0
   # conn_max_lifetime: 0s
@@ -43,6 +53,8 @@ db:
   migrations: # presence of this section enables auto-migration
     table: schema_migrations # default "migrations"
     service: default # isolates histories when services share one DB
+    # The SQL applied comes from internal/service/db/migrations/<dialect>/ —
+    # one directory per dialect, same filenames. See its README.md.
 #goappctl:end
 
 #goappctl:session
@@ -63,7 +75,10 @@ admin:
   mount: /admin
   login_path: /admin/login # default <mount>/login
   auth_key: admin_user_id # session key holding the logged-in admin's id
-  users_table: users # login lookup table; created by the db migrations
+  # The admin accounts table, created by the db migrations. Named `admins`, not
+  # `users`, so your application keeps `users` for its own end users. The
+  # companion tables (admin_groups, admin_login_attempts) are not configurable.
+  table: admins
   # CIDRs whose X-Forwarded-For is believed when resolving the client address for
   # the login throttle. Empty (the default) means the header is never read:
   # anyone can send it, so trusting it without knowing the peer is a proxy lets a

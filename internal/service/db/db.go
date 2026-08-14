@@ -2,6 +2,15 @@
 // migrations via github.com/dnsoa/go/sqldb). It implements app.Lifecycle:
 // Start opens/pings/migrates, Stop closes. It imports no app kernel — serve.go
 // drives Start/Stop and hands the opened *sqldb.DB to app.Services.
+//
+// SQLite, MySQL and PostgreSQL are all supported, and which one is in use is a
+// property of the DSN rather than of the build: internal/driver registers all
+// three, Config.Driver may be left empty to be inferred from the DSN's shape
+// (dialect.go), and the migrations are carried once per dialect so Start can
+// select the right set from the opened handle's flavor. Queries elsewhere in the
+// app therefore hold one spelling — `?` placeholders, which sqldb rewrites to
+// `$1` for PostgreSQL. See migrations/README.md for the DDL differences that
+// this split exists to absorb.
 package db
 
 import (
@@ -18,7 +27,9 @@ import (
 // migrationFS holds the migration SQL files bundled with this package. The FS
 // comes from the package, not yaml (which cannot carry an fs.FS).
 //
-//go:embed migrations/*.sql
+// One subdirectory per dialect — see migrationsFor and migrations/README.md.
+//
+//go:embed migrations/*/*.sql
 var migrationFS embed.FS
 
 // Provider exposes the database handle. DB() panics if called before Start
@@ -30,7 +41,9 @@ type Provider interface {
 // Config configures the db service. A pointer in New lets Start distinguish
 // "enabled but misconfigured" (nil) from "not enabled" (never Started).
 type Config struct {
-	Driver          string        `yaml:"driver"` // "sqlite3" / "mysql" / "pgx" …
+	// Driver is "sqlite3", "mysql" or "pgx". Leave it empty to infer the driver
+	// from the shape of DSN (see resolveDriver); an explicit value always wins.
+	Driver          string        `yaml:"driver"`
 	DSN             string        `yaml:"dsn"`
 	MaxOpenConns    int           `yaml:"max_open"`
 	MaxIdleConns    int           `yaml:"max_idle"`
@@ -62,7 +75,12 @@ func (s *Service) Start(ctx context.Context) error {
 		return errors.New("db: service enabled but [db] config section missing")
 	}
 
-	d, err := sqldb.Open(s.cfg.Driver, s.cfg.DSN, sqldb.WithDebug(s.cfg.Debug))
+	driver, err := resolveDriver(s.cfg.Driver, s.cfg.DSN)
+	if err != nil {
+		return err
+	}
+
+	d, err := sqldb.Open(driver, s.cfg.DSN, sqldb.WithDebug(s.cfg.Debug))
 	if err != nil {
 		return fmt.Errorf("db open: %w", err)
 	}
@@ -93,8 +111,12 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// migrate runs up-migrations using the package-embedded FS.
+// migrate runs up-migrations using the dialect's slice of the embedded FS.
 func (s *Service) migrate(ctx context.Context, mg *Migrations) error {
+	if err := checkMultiStatements(s.db.Flavor, s.cfg.DSN); err != nil {
+		return err
+	}
+
 	var opts []sqldb.MigrationOption
 	if t := mg.Table; t != "" {
 		opts = append(opts, sqldb.WithMigrationTable(t))
@@ -102,14 +124,30 @@ func (s *Service) migrate(ctx context.Context, mg *Migrations) error {
 	if svc := mg.Service; svc != "" {
 		opts = append(opts, sqldb.WithMigrationService(svc))
 	}
-	sub, err := fs.Sub(migrationFS, "migrations")
+	sub, err := migrationsFor(s.db.Flavor)
 	if err != nil {
-		return fmt.Errorf("db migrate: resolve embedded migrations: %w", err)
+		return err
 	}
 	if err := s.db.MigrateUp(ctx, sub, opts...); err != nil {
 		return fmt.Errorf("db migrate: %w", err)
 	}
 	return nil
+}
+
+// migrationsFor returns the embedded migrations written for flavor, rooted so
+// the filenames the migrator records are the bare "002_admins.up.sql" — the same
+// version strings in every dialect, which is what lets a project be pointed at
+// a different database without its recorded history changing meaning.
+func migrationsFor(flavor sqldb.Flavor) (fs.FS, error) {
+	dir, ok := migrationDirs[flavor]
+	if !ok {
+		return nil, fmt.Errorf("db migrate: no migrations for flavor %s", flavor)
+	}
+	sub, err := fs.Sub(migrationFS, "migrations/"+dir)
+	if err != nil {
+		return nil, fmt.Errorf("db migrate: resolve embedded migrations for %s: %w", flavor, err)
+	}
+	return sub, nil
 }
 
 // DB returns the handle, panicking if called before Start.

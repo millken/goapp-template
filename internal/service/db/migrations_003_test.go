@@ -2,8 +2,9 @@ package db
 
 import (
 	"context"
-	"io/fs"
 	"testing"
+
+	"github.com/dnsoa/go/sqldb"
 )
 
 // newMigratedService opens a shared in-memory database and runs every migration.
@@ -31,7 +32,7 @@ func TestMigration003_SeedsAdministratorsAndAddsGroupID(t *testing.T) {
 	var name string
 	var superuser int
 	if err := s.DB().QueryRowContext(ctx,
-		`SELECT name, superuser FROM user_groups WHERE name = 'Administrators'`).
+		`SELECT name, superuser FROM admin_groups WHERE name = 'Administrators'`).
 		Scan(&name, &superuser); err != nil {
 		t.Fatalf("Administrators not seeded: %v", err)
 	}
@@ -40,7 +41,7 @@ func TestMigration003_SeedsAdministratorsAndAddsGroupID(t *testing.T) {
 	}
 
 	// The column must exist even with no rows, so select it rather than a row.
-	if _, err := s.DB().ExecContext(ctx, `SELECT group_id FROM users WHERE 1 = 0`); err != nil {
+	if _, err := s.DB().ExecContext(ctx, `SELECT group_id FROM admins WHERE 1 = 0`); err != nil {
 		t.Errorf("users.group_id missing: %v", err)
 	}
 }
@@ -71,25 +72,25 @@ func TestMigration003_AppliedOnlyOnce(t *testing.T) {
 // columns, so this is the part worth testing rather than assuming.
 //
 // The migrator's version string is the whole filename prefix before ".up.sql"
-// (see migrationUpMatcher in dnsoa/go/sqldb's migration.go), so "002_users" is
+// (see migrationUpMatcher in dnsoa/go/sqldb's migration.go), so "002_admins" is
 // what's recorded and compared — not "002" as the brief's placeholder had it.
 func TestMigration003_RollsBackCleanly(t *testing.T) {
 	s := newMigratedService(t, "file:mig003down?mode=memory&cache=shared")
 	ctx := context.Background()
 
-	sub, err := fs.Sub(migrationFS, "migrations")
+	sub, err := migrationsFor(sqldb.SQLite)
 	if err != nil {
-		t.Fatalf("sub FS: %v", err)
+		t.Fatalf("migrationsFor: %v", err)
 	}
-	if err := s.DB().MigrateTo(ctx, sub, "002_users"); err != nil {
-		t.Fatalf("migrate down to 002_users: %v", err)
+	if err := s.DB().MigrateTo(ctx, sub, "002_admins"); err != nil {
+		t.Fatalf("migrate down to 002_admins: %v", err)
 	}
 
 	// Both the table and the column must be gone.
-	if _, err := s.DB().ExecContext(ctx, `SELECT 1 FROM user_groups WHERE 1 = 0`); err == nil {
-		t.Error("user_groups survived the down migration")
+	if _, err := s.DB().ExecContext(ctx, `SELECT 1 FROM admin_groups WHERE 1 = 0`); err == nil {
+		t.Error("admin_groups survived the down migration")
 	}
-	if _, err := s.DB().ExecContext(ctx, `SELECT group_id FROM users WHERE 1 = 0`); err == nil {
+	if _, err := s.DB().ExecContext(ctx, `SELECT group_id FROM admins WHERE 1 = 0`); err == nil {
 		t.Error("users.group_id survived the down migration")
 	}
 
@@ -97,7 +98,7 @@ func TestMigration003_RollsBackCleanly(t *testing.T) {
 	if err := s.DB().MigrateUp(ctx, sub); err != nil {
 		t.Fatalf("re-apply after down: %v", err)
 	}
-	if _, err := s.DB().ExecContext(ctx, `SELECT group_id FROM users WHERE 1 = 0`); err != nil {
+	if _, err := s.DB().ExecContext(ctx, `SELECT group_id FROM admins WHERE 1 = 0`); err != nil {
 		t.Errorf("users.group_id missing after re-apply: %v", err)
 	}
 }
@@ -118,17 +119,17 @@ func TestMigration003_BackfillsUsersThatPredateIt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Stop(ctx) })
 
-	sub, err := fs.Sub(migrationFS, "migrations")
+	sub, err := migrationsFor(sqldb.SQLite)
 	if err != nil {
-		t.Fatalf("sub FS: %v", err)
+		t.Fatalf("migrationsFor: %v", err)
 	}
 	// Rewind to the state an existing project is in, then add a user the way it
 	// would have been created before groups existed.
-	if err := s.DB().MigrateTo(ctx, sub, "002_users"); err != nil {
-		t.Fatalf("migrate down to 002_users: %v", err)
+	if err := s.DB().MigrateTo(ctx, sub, "002_admins"); err != nil {
+		t.Fatalf("migrate down to 002_admins: %v", err)
 	}
 	if _, err := s.DB().ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at) VALUES ('legacy', 'x', 0)`); err != nil {
+		`INSERT INTO admins (username, password_hash, created_at) VALUES ('legacy', 'x', 0)`); err != nil {
 		t.Fatalf("seed pre-existing user: %v", err)
 	}
 
@@ -138,7 +139,7 @@ func TestMigration003_BackfillsUsersThatPredateIt(t *testing.T) {
 
 	var groupName string
 	if err := s.DB().QueryRowContext(ctx,
-		`SELECT g.name FROM users u JOIN user_groups g ON g.id = u.group_id
+		`SELECT g.name FROM admins u JOIN admin_groups g ON g.id = u.group_id
 		 WHERE u.username = 'legacy'`).Scan(&groupName); err != nil {
 		t.Fatalf("pre-existing user has no group after upgrade: %v", err)
 	}

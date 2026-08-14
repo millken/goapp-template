@@ -34,7 +34,7 @@ func TestGroupDelete_RefusedWhileItHasMembers(t *testing.T) {
 	ctx := context.Background()
 	var gid int64
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -44,7 +44,7 @@ func TestGroupDelete_RefusedWhileItHasMembers(t *testing.T) {
 	}
 	var n int
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM user_groups WHERE id = ?`, gid).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM admin_groups WHERE id = ?`, gid).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
@@ -56,11 +56,11 @@ func TestGroupDelete_SucceedsWhenEmpty(t *testing.T) {
 	eng, adm, cookie := groupStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES ('Empty', 0, '[]', 0)`); err != nil {
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at) VALUES ('Empty', 0, '[]', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	var gid int64
-	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM user_groups WHERE name = 'Empty'`).Scan(&gid); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM admin_groups WHERE name = 'Empty'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -68,7 +68,7 @@ func TestGroupDelete_SucceedsWhenEmpty(t *testing.T) {
 		t.Fatalf("status = %d, want 303", w.Code)
 	}
 	var n int
-	if err := adm.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_groups WHERE id = ?`, gid).Scan(&n); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM admin_groups WHERE id = ?`, gid).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
@@ -83,7 +83,7 @@ func TestGroupUpdate_CannotClearTheLastSuperuserFlag(t *testing.T) {
 	ctx := context.Background()
 	var gid int64
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT id FROM user_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Administrators'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -96,7 +96,7 @@ func TestGroupUpdate_CannotClearTheLastSuperuserFlag(t *testing.T) {
 	}
 	var superuser int
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT superuser FROM user_groups WHERE id = ?`, gid).Scan(&superuser); err != nil {
+		`SELECT superuser FROM admin_groups WHERE id = ?`, gid).Scan(&superuser); err != nil {
 		t.Fatal(err)
 	}
 	if superuser != 1 {
@@ -120,7 +120,7 @@ func TestGroupCreate_ValidatesTheName(t *testing.T) {
 	}
 	var n int
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM user_groups`).Scan(&n); err != nil {
+		`SELECT COUNT(*) FROM admin_groups`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
@@ -135,11 +135,11 @@ func TestGroupUpdate_NormalisesModifyImpliesAccess(t *testing.T) {
 	eng, adm, cookie := groupStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES ('Editors', 0, '[]', 0)`); err != nil {
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at) VALUES ('Editors', 0, '[]', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	var gid int64
-	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM user_groups WHERE name = 'Editors'`).Scan(&gid); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM admin_groups WHERE name = 'Editors'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -158,7 +158,7 @@ func TestGroupUpdate_NormalisesModifyImpliesAccess(t *testing.T) {
 
 	var raw string
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT permissions FROM user_groups WHERE id = ?`, gid).Scan(&raw); err != nil {
+		`SELECT permissions FROM admin_groups WHERE id = ?`, gid).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	var keys []string
@@ -180,11 +180,11 @@ func TestGroupUpdate_UnknownKeyNotStored(t *testing.T) {
 	eng, adm, cookie := groupStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES ('Editors2', 0, '[]', 0)`); err != nil {
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at) VALUES ('Editors2', 0, '[]', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	var gid int64
-	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM user_groups WHERE name = 'Editors2'`).Scan(&gid); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT id FROM admin_groups WHERE name = 'Editors2'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,7 +200,7 @@ func TestGroupUpdate_UnknownKeyNotStored(t *testing.T) {
 
 	var raw string
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT permissions FROM user_groups WHERE id = ?`, gid).Scan(&raw); err != nil {
+		`SELECT permissions FROM admin_groups WHERE id = ?`, gid).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	var keys []string
@@ -248,7 +248,7 @@ func TestGroupsIndex_CountsEachGroupsPermissions(t *testing.T) {
 	eng, adm, cookie := groupStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at)
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at)
 		 VALUES ('Editors', 0, '["user.access","user.modify"]', 0)`); err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestGroupCreate_SuperuserOnlyAcceptsTheCheckboxValue(t *testing.T) {
 
 	var superuser int
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT superuser FROM user_groups WHERE name = 'NotSuper'`).Scan(&superuser); err != nil {
+		`SELECT superuser FROM admin_groups WHERE name = 'NotSuper'`).Scan(&superuser); err != nil {
 		t.Fatal(err)
 	}
 	if superuser != 0 {
@@ -336,7 +336,7 @@ func TestGroupCreate_SuperuserOnlyAcceptsTheCheckboxValue(t *testing.T) {
 func TestGroupsIndex_PermissionCountExcludesStaleKeys(t *testing.T) {
 	eng, adm, cookie := groupStack(t)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`INSERT INTO user_groups (name, superuser, permissions, created_at)
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at)
 		 VALUES ('Mixed', 0, '["user.access","gone.access","gone.modify"]', 0)`); err != nil {
 		t.Fatal(err)
 	}
@@ -369,13 +369,13 @@ func TestGroupsIndex_PermissionCountExcludesStaleKeys(t *testing.T) {
 func TestGroupUpdate_StaleWarningSurvivesARejectedSave(t *testing.T) {
 	eng, adm, cookie := groupStack(t)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`INSERT INTO user_groups (name, superuser, permissions, created_at)
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at)
 		 VALUES ('Mixed', 0, '["user.access","gone.modify"]', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	var gid int64
 	if err := adm.DB.QueryRowContext(context.Background(),
-		`SELECT id FROM user_groups WHERE name = 'Mixed'`).Scan(&gid); err != nil {
+		`SELECT id FROM admin_groups WHERE name = 'Mixed'`).Scan(&gid); err != nil {
 		t.Fatal(err)
 	}
 

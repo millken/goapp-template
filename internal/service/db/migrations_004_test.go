@@ -2,8 +2,9 @@ package db
 
 import (
 	"context"
-	"io/fs"
 	"testing"
+
+	"github.com/dnsoa/go/sqldb"
 )
 
 // A constant DEFAULT on ADD COLUMN fills existing rows, so unlike 003 this
@@ -20,18 +21,18 @@ func TestMigration004_ExistingUsersLandActive(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Stop(ctx) })
 
-	sub, err := fs.Sub(migrationFS, "migrations")
+	sub, err := migrationsFor(sqldb.SQLite)
 	if err != nil {
-		t.Fatalf("sub FS: %v", err)
+		t.Fatalf("migrationsFor: %v", err)
 	}
 	// Rewind to the state a project on 003 is in, then add a user the way it
 	// would have been created before status existed.
-	if err := s.DB().MigrateTo(ctx, sub, "003_user_groups"); err != nil {
-		t.Fatalf("migrate down to 003_user_groups: %v", err)
+	if err := s.DB().MigrateTo(ctx, sub, "003_admin_groups"); err != nil {
+		t.Fatalf("migrate down to 003_admin_groups: %v", err)
 	}
 	if _, err := s.DB().ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at, group_id)
-		 VALUES ('legacy', 'x', 0, (SELECT id FROM user_groups WHERE name = 'Administrators'))`); err != nil {
+		`INSERT INTO admins (username, password_hash, created_at, group_id)
+		 VALUES ('legacy', 'x', 0, (SELECT id FROM admin_groups WHERE name = 'Administrators'))`); err != nil {
 		t.Fatalf("seed pre-existing user: %v", err)
 	}
 
@@ -41,7 +42,7 @@ func TestMigration004_ExistingUsersLandActive(t *testing.T) {
 
 	var status int
 	if err := s.DB().QueryRowContext(ctx,
-		`SELECT status FROM users WHERE username = 'legacy'`).Scan(&status); err != nil {
+		`SELECT status FROM admins WHERE username = 'legacy'`).Scan(&status); err != nil {
 		t.Fatalf("read status: %v", err)
 	}
 	if status != 1 {
@@ -67,14 +68,14 @@ func TestMigration004_RollsBackCleanly(t *testing.T) {
 	s := newMigratedService(t, "file:mig004down?mode=memory&cache=shared")
 	ctx := context.Background()
 
-	sub, err := fs.Sub(migrationFS, "migrations")
+	sub, err := migrationsFor(sqldb.SQLite)
 	if err != nil {
-		t.Fatalf("sub FS: %v", err)
+		t.Fatalf("migrationsFor: %v", err)
 	}
-	if err := s.DB().MigrateTo(ctx, sub, "003_user_groups"); err != nil {
-		t.Fatalf("migrate down to 003_user_groups: %v", err)
+	if err := s.DB().MigrateTo(ctx, sub, "003_admin_groups"); err != nil {
+		t.Fatalf("migrate down to 003_admin_groups: %v", err)
 	}
-	if _, err := s.DB().ExecContext(ctx, `SELECT status FROM users WHERE 1 = 0`); err == nil {
+	if _, err := s.DB().ExecContext(ctx, `SELECT status FROM admins WHERE 1 = 0`); err == nil {
 		t.Error("users.status survived the down migration")
 	}
 	if err := s.DB().MigrateUp(ctx, sub); err != nil {

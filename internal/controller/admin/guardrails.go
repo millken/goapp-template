@@ -67,8 +67,8 @@ func (a *Admin) keepingASuperuser(ctx context.Context, mutate func(tx *sqldb.Tx)
 		if err := mutate(tx); err != nil {
 			return err
 		}
-		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s u JOIN user_groups g ON g.id = u.group_id
-			WHERE g.superuser = 1 AND u.status = ?`, a.usersTable())
+		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s u JOIN admin_groups g ON g.id = u.group_id
+			WHERE g.superuser = 1 AND u.status = ?`, a.adminsTable())
 		var n int
 		if err := tx.QueryRowContext(ctx, q, statusActive).Scan(&n); err != nil {
 			return fmt.Errorf("admin: count enabled superusers: %w", err)

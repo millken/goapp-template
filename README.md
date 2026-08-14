@@ -32,10 +32,10 @@ Go + Vue 3 + Inertia.js 应用模板。
 ├── internal/buildinfo/          # 版本信息（ldflags 注入）
 ├── internal/config/             # YAML 配置加载
 <!--goappctl:db-->
-├── internal/driver/             # blank-import DB 驱动（默认 sqlite3）
+├── internal/driver/             # blank-import DB 驱动（sqlite3 / mysql / pgx 三个都注册）
 <!--goappctl:end-->
 <!--goappctl:db-->
-├── internal/service/db/         # sqldb 连接池 + 迁移（migrations/*.sql）
+├── internal/service/db/         # sqldb 连接池 + 迁移（migrations/<方言>/*.sql）
 <!--goappctl:end-->
 <!--goappctl:session-->
 ├── internal/service/session/    # 签名 cookie + memory/db store
@@ -131,11 +131,47 @@ myapp -v ...           # 全局 verbose（debug 日志）
   `db: service enabled but [db] config section missing` 这类错误，而不是静默降级。
 - 查找顺序：`-c <path>` → `$MYAPP_HOME/config.yaml` → `~/.myapp/config.yaml`。
 
+<!--goappctl:db-->
+### 数据库：SQLite / MySQL / PostgreSQL
+
+三个驱动都在 `internal/driver/` 里 blank-import，所以**换库只是换 DSN**，不用改代码、不用重新编译。
+
+```yaml
+db:
+  dsn: app.db                                                          # sqlite3
+  # dsn: app:secret@tcp(127.0.0.1:3306)/myapp?multiStatements=true     # mysql
+  # dsn: postgres://app:secret@127.0.0.1:5432/myapp?sslmode=disable    # pgx
+```
+
+`driver` 可以留空 —— 从 DSN 的形状推断：`postgres://`、`postgresql://` 和 `host=`/`dbname=`
+关键字串 → `pgx`；`mysql://` 和 `user:pass@tcp(...)/name` → `mysql`；`file:`、`:memory:` 以及
+`.db`/`.sqlite`/`.sqlite3` 结尾的路径 → `sqlite3`。**显式写的 `driver` 永远优先**；推不出来的 DSN
+是启动错误，不是猜测 —— 猜错意味着连错库，或者创建一个以连接串命名的文件。
+
+三件在写查询时需要知道的事：
+
+- **占位符统一写 `?`**，`dnsoa/go/sqldb` 会为 PostgreSQL 改写成 `$1`。
+- **迁移按方言分目录**：`internal/service/db/migrations/{sqlite,mysql,postgres}/`，同名同数，
+  启动时按 flavor 选一个。新增迁移**必须三份都写**，有测试（`TestMigrationDirs_HaveIdenticalFilenames`）
+  钉住文件名对齐。为什么不是一份带占位符的模板、以及各方言真正的差异清单，见
+  [migrations/README.md](internal/service/db/migrations/README.md)。
+- **MySQL 的 DSN 必须带 `multiStatements=true`**（迁移器把每个 `.sql` 文件整体 exec，有几个文件
+  是多语句）。缺了就在 Start 阶段直接报错，不会让它变成一句看不懂的 SQL 语法错误。
+
+时间戳一律是 `BIGINT` 存 UnixNano，不用原生日期类型 —— `INTEGER` 在 MySQL/PostgreSQL 上是 32 位。
+只有 SQLite 需要 cgo；`CGO_ENABLED=0` 的构建仍然带着 mysql 和 pgx。
+
+> 迁移的 MySQL / PostgreSQL 版本经过审阅，但测试套件只跑 SQLite（`:memory:`）—— 上生产前请先
+> 在一个临时库上过一遍。
+
+<!--goappctl:end-->
+
 ## 脚手架生成器（`goappctl gen`）
 
 生成 CRUD 脚手架，减少手写样板。生成器在 `goappctl` 里，不在应用二进制里 —— 它是开发期工具，
-不连 DB、不加载配置。**不生成迁移** —— schema 变更手写在 `internal/service/db/migrations/`
-（版本化 `NNN_*.up/down.sql`）。
+不连 DB、不加载配置。**不生成迁移** —— schema 变更手写在
+`internal/service/db/migrations/<方言>/`（版本化 `NNN_*.up/down.sql`，三个方言目录**同名同数**，
+见该目录下的 `README.md`）。
 
 ```bash
 # 模板仓库内
@@ -275,7 +311,7 @@ r.Menu("Content", "Post", ct.base)       // 侧边栏条目，受 post.access �
 后者漏一处就是静默的洞。生成的代码漏不掉（`gen admin` 只经注册器，有测试钉住）；
 手写路由仍可以直接调 `eng.GET`，那就绕过了守卫 —— 所以后台路由请一律走 `adm.Resource(...)`。
 
-权限存在分组上：`user_groups.permissions` 是一个 JSON 键数组，`superuser = 1` 直接放行。
+权限存在分组上：`admin_groups.permissions` 是一个 JSON 键数组，`superuser = 1` 直接放行。
 迁移会播种一个 `Administrators` 超管组，`admin create-user` 默认把用户放进去：
 
 ```bash
@@ -296,7 +332,7 @@ myapp admin create-user bob --group Editors        # 进指定组
 放进事务、然后数一次剩余的启用超管，为 0 就回滚 —— 四条能触发它的路径（禁用、删除、
 移出超管组、清掉分组的超管标记）共用同一个守卫，所以将来新增的第五条路径也漏不掉。
 
-禁用一个用户**下一个请求就生效**：`findCaller` 一次查询里就 JOIN 了 `user_groups`
+禁用一个用户**下一个请求就生效**：`findCaller` 一次查询里就 JOIN 了 `admin_groups`
 并读出 `status`，不需要额外一次查询。被禁用的用户会带着一条说明跳回登录页，
 且重新登录也会被拒绝。
 
@@ -337,8 +373,18 @@ handler 调 `sess.CSRFToken(ctx)`，页面用 `<CsrfField :token="csrfToken" />`
 一个分组；权限只挂在分组上，没有针对单个用户的例外。公开路由
 （`internal/controller/site/`）不涉及用户，这一整套只服务后台。
 
-**`users_table` 只影响运行时查询。** 迁移操作字面量 `users` 表（嵌入的 SQL 读不到配置），
-所以把它指向别的表意味着那张表的结构由你负责，包括 `group_id` 列。
+### 后台账号表叫 `admins`，不叫 `users`
+
+后台账号在 `admins`，配套的是 `admin_groups` 和 `admin_login_attempts`。**`users` 这个名字留给
+你的业务表** —— 这一层管的是后台操作者，不是 app 的终端用户，占掉最想要的那个表名会让两者
+迟早撞在一起。
+
+Go 侧的标识符仍然读作 "user"（`userRow`、`/admin/user`、`admin create-user`）：在 `admin` 包和
+`/admin` 前缀内部，user 不可能指别的东西，重命名只会让代码变长。
+
+**`[admin] table` 只影响运行时查询。** 迁移操作字面量 `admins` 表（嵌入的 SQL 读不到配置），
+所以把它指向别的表意味着那张表的结构由你负责，包括 `group_id`、`status`、`avatar` 列。
+`admin_groups` 和 `admin_login_attempts` 不可配置。
 <!--goappctl:end-->
 
 <!--goappctl:ssr-->

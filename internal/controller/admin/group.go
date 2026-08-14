@@ -40,7 +40,7 @@ type caller struct {
 }
 
 // findCaller loads the group, username, status and avatar of the user with
-// userID. usersTable is interpolated (it is configurable) and has already been
+// userID. adminsTable is interpolated (it is configurable) and has already been
 // validated by Admin.Validate against ^[A-Za-z_]\w*$; the id itself is
 // parameterised.
 //
@@ -49,10 +49,10 @@ type caller struct {
 // project regardless of whether the storage component is present. With storage
 // stripped the value is simply always empty and AdminShell renders nothing for
 // it — the same reasoning that keeps this query to one row per request.
-func findCaller(ctx context.Context, d *sqldb.DB, usersTable string, userID int64) (*caller, error) {
+func findCaller(ctx context.Context, d *sqldb.DB, adminsTable string, userID int64) (*caller, error) {
 	q := fmt.Sprintf(`SELECT u.username, u.status, u.avatar, g.superuser, g.permissions
-		FROM %s u JOIN user_groups g ON g.id = u.group_id
-		WHERE u.id = ?`, usersTable)
+		FROM %s u JOIN admin_groups g ON g.id = u.group_id
+		WHERE u.id = ?`, adminsTable)
 
 	var cl caller
 	var superuser int
@@ -84,7 +84,7 @@ func findCaller(ctx context.Context, d *sqldb.DB, usersTable string, userID int6
 // is then refused everything, which reads as a bug rather than a misconfiguration.
 func FindGroupID(ctx context.Context, d *sqldb.DB, name string) (int64, error) {
 	var id int64
-	err := d.QueryRowContext(ctx, `SELECT id FROM user_groups WHERE name = ?`, name).Scan(&id)
+	err := d.QueryRowContext(ctx, `SELECT id FROM admin_groups WHERE name = ?`, name).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("no permission group named %q — the migration seeds "+
 			"'Administrators'; pass --group with an existing name", name)

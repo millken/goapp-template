@@ -37,16 +37,34 @@ func NewDBStore(db *sqldb.DB, table string) (*DBStore, error) {
 
 // ensureTable creates the sessions table if absent. expires_at is BIGINT so it
 // holds UnixNano on all dialects (PostgreSQL/MySQL INTEGER is 32-bit).
+//
+// This table is created here rather than by a migration because the store is
+// what knows its own shape and the name is config — which is also why the DDL
+// has to be dialect-aware in the same way upsertSQL is.
 func (s *DBStore) ensureTable(ctx context.Context) error {
-	ddl := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    id         TEXT PRIMARY KEY,
-    data       TEXT NOT NULL,
-    expires_at BIGINT NOT NULL
-)`, s.table)
-	if _, err := s.db.ExecContext(ctx, ddl); err != nil {
+	if _, err := s.db.ExecContext(ctx, s.createTableSQL()); err != nil {
 		return fmt.Errorf("session: create table %s: %w", s.table, err)
 	}
 	return nil
+}
+
+// createTableSQL returns the dialect-correct DDL for the sessions table.
+//
+// MySQL is the reason this is not one string: it cannot make a TEXT column a
+// primary key without a prefix length, so id has to be VARCHAR there. 64 is
+// exact rather than generous — randomID returns 32 random bytes as hex.
+func (s *DBStore) createTableSQL() string {
+	idType := "TEXT"
+	suffix := ""
+	if s.db.Flavor == sqldb.MySQL {
+		idType = "VARCHAR(64)"
+		suffix = " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+	}
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+    id         %s PRIMARY KEY,
+    data       TEXT NOT NULL,
+    expires_at BIGINT NOT NULL
+)%s`, s.table, idType, suffix)
 }
 
 func (s *DBStore) Load(ctx context.Context, id string) (map[string]any, time.Time, bool, error) {

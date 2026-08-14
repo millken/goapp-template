@@ -24,7 +24,7 @@ func (a *Admin) loginBlocked(ctx context.Context, ip string) (bool, time.Duratio
 	var n int
 	var oldest *int64
 	if err := a.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*), MIN(at) FROM login_attempts WHERE ip = ? AND at > ?`,
+		`SELECT COUNT(*), MIN(at) FROM admin_login_attempts WHERE ip = ? AND at > ?`,
 		ip, cutoff).Scan(&n, &oldest); err != nil {
 		slog.Error("admin: count login attempts", "err", err, "ip", ip)
 		return false, 0
@@ -45,19 +45,19 @@ func (a *Admin) loginBlocked(ctx context.Context, ip string) (bool, time.Duratio
 func (a *Admin) recordLoginFailure(ctx context.Context, ip string) {
 	now := time.Now()
 	if _, err := a.DB.ExecContext(ctx,
-		`INSERT INTO login_attempts (ip, at) VALUES (?, ?)`, ip, now.UnixNano()); err != nil {
+		`INSERT INTO admin_login_attempts (ip, at) VALUES (?, ?)`, ip, now.UnixNano()); err != nil {
 		slog.Error("admin: record login failure", "err", err, "ip", ip)
 		return
 	}
 	if _, err := a.DB.ExecContext(ctx,
-		`DELETE FROM login_attempts WHERE at <= ?`, now.Add(-loginWindow).UnixNano()); err != nil {
+		`DELETE FROM admin_login_attempts WHERE at <= ?`, now.Add(-loginWindow).UnixNano()); err != nil {
 		slog.Warn("admin: prune login attempts", "err", err)
 	}
 }
 
 // clearLoginFailures forgets an address after it signs in successfully.
 func (a *Admin) clearLoginFailures(ctx context.Context, ip string) {
-	if _, err := a.DB.ExecContext(ctx, `DELETE FROM login_attempts WHERE ip = ?`, ip); err != nil {
+	if _, err := a.DB.ExecContext(ctx, `DELETE FROM admin_login_attempts WHERE ip = ?`, ip); err != nil {
 		slog.Warn("admin: clear login attempts", "err", err, "ip", ip)
 	}
 }

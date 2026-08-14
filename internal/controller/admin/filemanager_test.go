@@ -129,7 +129,7 @@ func TestFileManager_AGroupWithoutAccessIsRefused(t *testing.T) {
 	ctx := context.Background()
 	// A group holding nothing, and a user in it.
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at) VALUES ('Nobody', 0, '[]', 0)`); err != nil {
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at) VALUES ('Nobody', 0, '[]', 0)`); err != nil {
 		t.Fatal(err)
 	}
 	hash, err := HashPassword("pw")
@@ -137,8 +137,8 @@ func TestFileManager_AGroupWithoutAccessIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := adm.DB.ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at, group_id)
-		 VALUES ('nobody', ?, 0, (SELECT id FROM user_groups WHERE name = 'Nobody'))`, hash); err != nil {
+		`INSERT INTO admins (username, password_hash, created_at, group_id)
+		 VALUES ('nobody', ?, 0, (SELECT id FROM admin_groups WHERE name = 'Nobody'))`, hash); err != nil {
 		t.Fatal(err)
 	}
 	cookie := loginAs(t, eng, "nobody", "pw")

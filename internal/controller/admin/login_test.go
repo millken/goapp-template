@@ -91,8 +91,8 @@ func loginStackWithStore(t *testing.T, store session.StoreKind) (*inertia.Engine
 		t.Fatalf("HashPassword: %v", err)
 	}
 	if _, err := dbSvc.DB().ExecContext(ctx,
-		`INSERT INTO users (username, password_hash, created_at, group_id)
-		 VALUES (?, ?, ?, (SELECT id FROM user_groups WHERE name = 'Administrators'))`,
+		`INSERT INTO admins (username, password_hash, created_at, group_id)
+		 VALUES (?, ?, ?, (SELECT id FROM admin_groups WHERE name = 'Administrators'))`,
 		"alice", hash, time.Now().UnixNano()); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
@@ -383,12 +383,12 @@ func TestAuthenticate_DisabledAccount(t *testing.T) {
 	_, adm := loginStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET status = 0 WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
 	// Correct password, disabled account: a distinct error, not "invalid".
-	_, err := authenticate(ctx, adm.DB, "users", "alice", "pw")
+	_, err := authenticate(ctx, adm.DB, "admins", "alice", "pw")
 	if err == nil {
 		t.Fatal("a disabled account must not authenticate")
 	}
@@ -401,7 +401,7 @@ func TestAuthenticate_DisabledAccount(t *testing.T) {
 
 	// Wrong password on a disabled account stays "invalid credentials": the
 	// caller has not proved anything, so nothing may be revealed.
-	if _, err := authenticate(ctx, adm.DB, "users", "alice", "wrong"); !errors.Is(err, errInvalidCredentials) {
+	if _, err := authenticate(ctx, adm.DB, "admins", "alice", "wrong"); !errors.Is(err, errInvalidCredentials) {
 		t.Errorf("wrong password on a disabled account: want errInvalidCredentials, got %v", err)
 	}
 }
@@ -437,7 +437,7 @@ func TestLoginThrottle_DisabledAccountDoesNotCount(t *testing.T) {
 	eng, adm := loginStack(t)
 	ctx := context.Background()
 	if _, err := adm.DB.ExecContext(ctx,
-		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET status = 0 WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -448,7 +448,7 @@ func TestLoginThrottle_DisabledAccountDoesNotCount(t *testing.T) {
 	}
 
 	var n int
-	if err := adm.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM login_attempts`).Scan(&n); err != nil {
+	if err := adm.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM admin_login_attempts`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {

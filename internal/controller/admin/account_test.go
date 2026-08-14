@@ -53,7 +53,7 @@ func TestAccountPassword_ChangesThePassword(t *testing.T) {
 
 	var hash string
 	if err := adm.DB.QueryRowContext(ctx,
-		`SELECT password_hash FROM users WHERE username = 'alice'`).Scan(&hash); err != nil {
+		`SELECT password_hash FROM admins WHERE username = 'alice'`).Scan(&hash); err != nil {
 		t.Fatal(err)
 	}
 	if !verifyPassword(hash, "newpassword") {
@@ -86,7 +86,7 @@ func TestAccountPassword_Rejections(t *testing.T) {
 			}
 			var hash string
 			if err := adm.DB.QueryRowContext(context.Background(),
-				`SELECT password_hash FROM users WHERE username = 'alice'`).Scan(&hash); err != nil {
+				`SELECT password_hash FROM admins WHERE username = 'alice'`).Scan(&hash); err != nil {
 				t.Fatal(err)
 			}
 			if !verifyPassword(hash, "pw") {

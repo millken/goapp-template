@@ -41,7 +41,7 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 		return nil, false
 	}
 
-	cl, err := findCaller(c.Request.Context(), a.DB, a.usersTable(), id)
+	cl, err := findCaller(c.Request.Context(), a.DB, a.adminsTable(), id)
 	switch {
 	case errors.Is(err, errNoGroup):
 		// Fail closed. A user with no group has no permissions, and that is a

@@ -22,29 +22,29 @@ func groupFixture(t *testing.T) *sqldb.DB {
 	t.Cleanup(func() { _ = d.Close() })
 
 	for _, q := range []string{
-		`CREATE TABLE user_groups (
+		`CREATE TABLE admin_groups (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL UNIQUE,
 			superuser INTEGER NOT NULL DEFAULT 0,
 			permissions TEXT NOT NULL DEFAULT '[]',
 			created_at BIGINT NOT NULL)`,
-		`CREATE TABLE users (
+		`CREATE TABLE admins (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE,
 			password_hash TEXT NOT NULL,
 			created_at BIGINT NOT NULL,
-			group_id INTEGER REFERENCES user_groups(id),
+			group_id INTEGER REFERENCES admin_groups(id),
 			status INTEGER NOT NULL DEFAULT 1,
 			avatar TEXT NOT NULL DEFAULT '')`,
-		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)
+		`INSERT INTO admin_groups (id, name, superuser, permissions, created_at)
 		 VALUES (1, 'Administrators', 1, '[]', 0)`,
-		`INSERT INTO user_groups (id, name, superuser, permissions, created_at)
+		`INSERT INTO admin_groups (id, name, superuser, permissions, created_at)
 		 VALUES (2, 'Editors', 0, '["post.modify","user.access"]', 0)`,
-		`INSERT INTO users (id, username, password_hash, created_at, group_id)
+		`INSERT INTO admins (id, username, password_hash, created_at, group_id)
 		 VALUES (1, 'root', 'x', 0, 1)`,
-		`INSERT INTO users (id, username, password_hash, created_at, group_id)
+		`INSERT INTO admins (id, username, password_hash, created_at, group_id)
 		 VALUES (2, 'editor', 'x', 0, 2)`,
-		`INSERT INTO users (id, username, password_hash, created_at, group_id)
+		`INSERT INTO admins (id, username, password_hash, created_at, group_id)
 		 VALUES (3, 'orphan', 'x', 0, NULL)`,
 	} {
 		if _, err := d.ExecContext(context.Background(), q); err != nil {
@@ -58,7 +58,7 @@ func TestFindGroup(t *testing.T) {
 	d := groupFixture(t)
 	ctx := context.Background()
 
-	su, err := findCaller(ctx, d, "users", 1)
+	su, err := findCaller(ctx, d, "admins", 1)
 	if err != nil {
 		t.Fatalf("superuser: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestFindGroup(t *testing.T) {
 		t.Errorf("username = %q, want root", su.username)
 	}
 
-	ed, err := findCaller(ctx, d, "users", 2)
+	ed, err := findCaller(ctx, d, "admins", 2)
 	if err != nil {
 		t.Fatalf("editor: %v", err)
 	}
@@ -92,10 +92,10 @@ func TestFindGroup(t *testing.T) {
 func TestFindGroup_NoGroupIsErrNoGroup(t *testing.T) {
 	d := groupFixture(t)
 
-	if _, err := findCaller(context.Background(), d, "users", 3); !errors.Is(err, errNoGroup) {
+	if _, err := findCaller(context.Background(), d, "admins", 3); !errors.Is(err, errNoGroup) {
 		t.Errorf("orphaned user: got %v, want errNoGroup", err)
 	}
-	if _, err := findCaller(context.Background(), d, "users", 999); !errors.Is(err, errNoGroup) {
+	if _, err := findCaller(context.Background(), d, "admins", 999); !errors.Is(err, errNoGroup) {
 		t.Errorf("unknown user: got %v, want errNoGroup", err)
 	}
 }
@@ -105,11 +105,11 @@ func TestFindGroup_NoGroupIsErrNoGroup(t *testing.T) {
 func TestFindGroup_BadJSONIsNotErrNoGroup(t *testing.T) {
 	d := groupFixture(t)
 	if _, err := d.ExecContext(context.Background(),
-		`UPDATE user_groups SET permissions = 'not json' WHERE id = 2`); err != nil {
+		`UPDATE admin_groups SET permissions = 'not json' WHERE id = 2`); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := findCaller(context.Background(), d, "users", 2)
+	_, err := findCaller(context.Background(), d, "admins", 2)
 	if err == nil {
 		t.Fatal("want an error for malformed JSON")
 	}

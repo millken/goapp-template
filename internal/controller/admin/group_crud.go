@@ -53,9 +53,9 @@ func (a *Admin) groupsIndex(c *inertia.Context) {
 	// database: json_array_length is SQLite's spelling and this file has to work
 	// on the other two dialects as well.
 	q := fmt.Sprintf(`SELECT g.id, g.name, g.superuser, g.permissions, COUNT(u.id)
-		FROM user_groups g LEFT JOIN %s u ON u.group_id = g.id
+		FROM admin_groups g LEFT JOIN %s u ON u.group_id = g.id
 		GROUP BY g.id, g.name, g.superuser, g.permissions
-		ORDER BY g.name`, a.usersTable())
+		ORDER BY g.name`, a.adminsTable())
 
 	rows, err := a.DB.QueryContext(c.Request.Context(), q)
 	if err != nil {
@@ -133,7 +133,7 @@ func (a *Admin) groupCreate(c *inertia.Context) {
 		superuser = 1
 	}
 	if _, err := a.DB.ExecContext(ctx,
-		`INSERT INTO user_groups (name, superuser, permissions, created_at)
+		`INSERT INTO admin_groups (name, superuser, permissions, created_at)
 		 VALUES (?, ?, '[]', ?)`,
 		item.Name, superuser, time.Now().UnixNano()); err != nil {
 		slog.Error("admin: create group", "err", err)
@@ -200,7 +200,7 @@ func (a *Admin) groupUpdate(c *inertia.Context) {
 	}
 	err = a.keepingASuperuser(ctx, func(tx *sqldb.Tx) error {
 		_, err := tx.ExecContext(ctx,
-			`UPDATE user_groups SET name = ?, superuser = ?, permissions = ? WHERE id = ?`,
+			`UPDATE admin_groups SET name = ?, superuser = ?, permissions = ? WHERE id = ?`,
 			item.Name, superuser, string(raw), id)
 		return err
 	})
@@ -234,14 +234,14 @@ func (a *Admin) groupDelete(c *inertia.Context) {
 	// contribute to that count in the first place.
 	var members int
 	err := a.DB.Transaction(func(tx *sqldb.Tx) error {
-		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE group_id = ?`, a.usersTable())
+		q := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE group_id = ?`, a.adminsTable())
 		if err := tx.QueryRowContext(ctx, q, id).Scan(&members); err != nil {
 			return err
 		}
 		if members > 0 {
 			return errGroupHasMembers
 		}
-		_, err := tx.ExecContext(ctx, `DELETE FROM user_groups WHERE id = ?`, id)
+		_, err := tx.ExecContext(ctx, `DELETE FROM admin_groups WHERE id = ?`, id)
 		return err
 	})
 	switch {
@@ -271,7 +271,7 @@ func (a *Admin) groupNameAvailable(ctx context.Context, exceptID int64) validate
 	return func(name string) error {
 		var n int
 		if err := a.DB.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM user_groups WHERE name = ? AND id != ?`, name, exceptID).Scan(&n); err != nil {
+			`SELECT COUNT(*) FROM admin_groups WHERE name = ? AND id != ?`, name, exceptID).Scan(&n); err != nil {
 			slog.Error("admin: check group name", "err", err)
 			return errors.New("无法校验，请重试")
 		}
@@ -289,7 +289,7 @@ func (a *Admin) findGroupRow(ctx context.Context, id int64) (*groupRow, []string
 	var superuser int
 	var raw string
 	if err := a.DB.QueryRowContext(ctx,
-		`SELECT id, name, superuser, permissions FROM user_groups WHERE id = ?`, id).
+		`SELECT id, name, superuser, permissions FROM admin_groups WHERE id = ?`, id).
 		Scan(&g.ID, &g.Name, &superuser, &raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil, nil

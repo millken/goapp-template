@@ -83,7 +83,7 @@ func TestResolve_InjectsUsernameAndCurrentPath(t *testing.T) {
 func TestResolve_InjectsAdminUserAvatar(t *testing.T) {
 	eng, adm, cookie := adminStack(t)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`UPDATE users SET avatar = 'photos/alice.png' WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET avatar = 'photos/alice.png' WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,7 +204,7 @@ func TestResolve_DisabledUserIsBouncedToLoginWithAFlash(t *testing.T) {
 	cookie := loginAndGetCookie(t, eng)
 
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET status = 0 WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -230,7 +230,7 @@ func TestResolve_DisabledUserIsBouncedOnEveryRequest(t *testing.T) {
 	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {})
 	cookie := loginAndGetCookie(t, eng)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET status = 0 WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -252,7 +252,7 @@ func TestResolve_DisabledIsNeitherForbiddenNorInternalError(t *testing.T) {
 	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {})
 	cookie := loginAndGetCookie(t, eng)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET status = 0 WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -283,7 +283,7 @@ func TestResolve_DisabledUserSeesTheReasonOnTheLoginPage(t *testing.T) {
 	eng.GET("/admin/probe", adm.AuthMiddleware(), func(ic *inertia.Context) {})
 	cookie := loginAndGetCookie(t, eng)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`UPDATE users SET status = 0 WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET status = 0 WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -318,7 +318,7 @@ func TestLoginForm_RendersForADeletedUsersSession(t *testing.T) {
 	eng, adm := loginStack(t)
 	cookie := loginAndGetCookie(t, eng)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`DELETE FROM users WHERE username = 'alice'`); err != nil {
+		`DELETE FROM admins WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -342,7 +342,7 @@ func TestLoginForm_RendersForAGrouplessSession(t *testing.T) {
 	eng, adm := loginStack(t)
 	cookie := loginAndGetCookie(t, eng)
 	if _, err := adm.DB.ExecContext(context.Background(),
-		`UPDATE users SET group_id = NULL WHERE username = 'alice'`); err != nil {
+		`UPDATE admins SET group_id = NULL WHERE username = 'alice'`); err != nil {
 		t.Fatal(err)
 	}
 
