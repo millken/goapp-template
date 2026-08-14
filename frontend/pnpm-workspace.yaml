@@ -1,0 +1,11 @@
+# pnpm 10+ refuses to run a dependency's install scripts until someone decides,
+# per package, whether it may. Left undecided, `pnpm install` exits 1 with
+# ERR_PNPM_IGNORED_BUILDS — which is what `pnpm dev` runs first, so `make dev`
+# never reaches Vite. pnpm writes this file itself with the entry set to the
+# literal string "set this to true or false"; the answer belongs in git, not in
+# each clone, or every checkout hits the same wall.
+#
+# vue-demi arrives via @vueuse/core and reka-ui. Its postinstall picks the Vue 2
+# or Vue 3 shim, so this project (Vue 3) is exactly the case it exists to handle.
+allowBuilds:
+  vue-demi: true

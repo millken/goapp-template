@@ -102,6 +102,12 @@ make build-prod
 
 打开 http://localhost:8080
 
+> **加了带 install script 的前端依赖之后**：pnpm 10+ 在没人逐包批准之前拒绝执行它，并让
+> `pnpm install` **exit 1**（`ERR_PNPM_IGNORED_BUILDS`）。而 `pnpm dev` 会先跑一次 install，
+> 所以症状是 `make dev` 连 Vite 都起不来。pnpm 会把待决条目写进
+> [frontend/pnpm-workspace.yaml](frontend/pnpm-workspace.yaml) 的 `allowBuilds`，值是字面量
+> `set this to true or false` —— 把它改成 `true`/`false` 并**提交**，否则每个 clone 都要重踩一遍。
+
 ## CLI
 
 ```bash
