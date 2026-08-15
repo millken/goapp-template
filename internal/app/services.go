@@ -5,6 +5,9 @@ import (
 
 	"github.com/dnsoa/go/sqldb"
 	"github.com/millken/goapp-template/internal/service/session"
+	//goappctl:queue
+	"github.com/millken/goapp-template/internal/service/queue"
+	//goappctl:end
 	//goappctl:storage
 	"github.com/millken/goapp-template/internal/service/storage"
 	//goappctl:end
@@ -45,6 +48,18 @@ type Services struct {
 	// from an optional component, so only the storage and admin areas may
 	// reference it.
 	Storage *storage.Service
+	//goappctl:end
+
+	//goappctl:queue
+	// Queue is the task queue. Same rule as Session and Storage: its type comes
+	// from an optional component, so only the queue and admin areas may reference
+	// it.
+	//
+	// Unlike the others, this field is assigned BEFORE its Start rather than after
+	// (see serve.go). Start launches the worker, and a handler registered in
+	// internal/tasks reads svc.Queue when it runs — so the field has to be there
+	// first or the two race.
+	Queue *queue.Service
 	//goappctl:end
 }
 

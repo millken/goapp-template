@@ -88,6 +88,16 @@ func (a *Admin) resolve(c *inertia.Context) (*group, bool) {
 	c.Set("loginPath", a.LoginPath())
 	c.Set("currentPath", c.Request.URL.Path)
 
+	//goappctl:queue
+	// Set here for the same reason as canBrowseFiles below: this is the one place
+	// already holding the caller's group, and the area's rule is one group query per
+	// request. The cron list uses it to decide whether to link a plan to its task
+	// history — cron.modify does not imply task.access, so an unconditional link would
+	// send some operators to a 403.
+	c.Set("canViewTasks", cl.group.Superuser ||
+		cl.group.Permissions.Allows("task"+verbAccess))
+	//goappctl:end
+
 	//goappctl:storage
 	// Two props, read by more than one component (ImagePicker, AdminShell, the
 	// user list and form), set here rather than in the handlers that render

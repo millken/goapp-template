@@ -79,6 +79,39 @@ var All = []Component{
 		},
 	},
 	{
+		Name: "queue",
+		// db only: it is a pure database queue. Deliberately NOT admin — a build with
+		// a worker and no management screens is a supported combination, and declaring
+		// admin a dependency would forbid it.
+		Deps: []string{"db"},
+		// Same split as storage, for the same reason: admin owns its directories
+		// wholesale, so the files this component puts inside them have to be named one
+		// by one for "admin on, queue off" to strip correctly. With admin also off,
+		// admin's own directory entries delete them again — deletion is idempotent.
+		//
+		// internal/service/queue carries its own migrations/ subdirectory, so the schema
+		// goes with the directory. That is the second payoff of the queue recording
+		// migrations under its own service name: there is no numbered file in
+		// internal/service/db/migrations to keep or leave behind, and a queue-less
+		// project has no unused tables.
+		Owned: []string{
+			"internal/service/queue",
+			"internal/tasks",
+			"commands/queue.go",
+			"internal/controller/admin/task.go",
+			"internal/controller/admin/task_test.go",
+			"internal/controller/admin/cron.go",
+			"internal/controller/admin/cron_test.go",
+			"frontend/pages/admin/task",
+			"frontend/pages/admin/cron",
+			"frontend/src/components/admin/ServerTable.vue",
+			"frontend/src/components/admin/ServerTable.test.ts",
+			"frontend/src/components/admin/StatusBadge.vue",
+			"frontend/src/lib/task-status.ts",
+			"frontend/src/lib/task-status.test.ts",
+		},
+	},
+	{
 		Name: "ssr",
 		Owned: []string{
 			"frontend/ssr",

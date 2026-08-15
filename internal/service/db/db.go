@@ -72,7 +72,8 @@ func New(cfg *Config) *Service { return &Service{cfg: cfg} }
 // configured. On failure it closes the pool it opened.
 func (s *Service) Start(ctx context.Context) error {
 	if s.cfg == nil {
-		return errors.New("db: service enabled but [db] config section missing")
+		return errors.New("db: service enabled but [db] config section missing " +
+			"(copy that section from config.example.yaml)")
 	}
 
 	driver, err := resolveDriver(s.cfg.Driver, s.cfg.DSN)
@@ -148,6 +149,30 @@ func migrationsFor(flavor sqldb.Flavor) (fs.FS, error) {
 		return nil, fmt.Errorf("db migrate: resolve embedded migrations for %s: %w", flavor, err)
 	}
 	return sub, nil
+}
+
+// MigrationsEnabled reports whether this service applies migrations, i.e.
+// whether the [db.migrations] section is present.
+//
+// It exists for other components that carry their own schema: they must not
+// migrate behind the back of an operator who left the section out to manage
+// schema by hand. Nil-safe, like the accessors on the other services.
+func (s *Service) MigrationsEnabled() bool {
+	return s.cfg != nil && s.cfg.Migrations != nil
+}
+
+// MigrationTable returns the migrations table other components should record
+// their own history in, or "" when migrations are disabled.
+//
+// One table, one row per migration service — that is sqldb's model
+// (WithMigrationService), and it is why this is exposed as a string instead of
+// each component inventing a table. An empty result means "let sqldb use its
+// default", which matches how the section's own `table` key behaves.
+func (s *Service) MigrationTable() string {
+	if !s.MigrationsEnabled() {
+		return ""
+	}
+	return s.cfg.Migrations.Table
 }
 
 // DB returns the handle, panicking if called before Start.

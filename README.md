@@ -43,6 +43,11 @@ Go + Vue 3 + Inertia.js 应用模板。
 <!--goappctl:storage-->
 ├── internal/service/storage/    # 上传文件树（os.Root + Backend 接口）
 <!--goappctl:end-->
+<!--goappctl:queue-->
+├── internal/service/queue/      # 任务队列（三张表 + worker + cron；自带 migrations/）
+├── internal/tasks/tasks.go      #   handler 与 cron 的唯一注册表（对标 mount_gen.go）
+├── commands/queue.go            #   myapp queue worker / enqueue / ls / retry / kinds
+<!--goappctl:end-->
 ├── internal/validate/           # 表单校验（纯 stdlib，规则是 func(string) error）
 ├── internal/controller/         # HTTP 控制器（嵌入 *app.Services，无生命周期）
 ├── internal/controller/mount_gen.go  #   MountAll：非 admin 区域路由挂载（gen:mounts 区块）
@@ -52,6 +57,10 @@ Go + Vue 3 + Inertia.js 应用模板。
 <!--goappctl:end-->
 <!--goappctl:storage-->
 ├── internal/controller/admin/filemanager.go  #   文件管理器：页面 + JSON API
+<!--goappctl:end-->
+<!--goappctl:queue-->
+├── internal/controller/admin/task.go #   任务：列表 + 详情 + 重试/取消/立即执行/删除
+├── internal/controller/admin/cron.go #   定时任务：改表达式 / 暂停 / 触发一次
 <!--goappctl:end-->
 ├── server/server.go             # inertia.Engine 构造
 ├── server/mode_dev.go           # !prod：从磁盘读 dist
@@ -86,21 +95,27 @@ Go + Vue 3 + Inertia.js 应用模板。
 ## 快速开始
 
 ```bash
-# 配置（必须：没有 config.yaml 时 serve 会因缺少组件配置段直接报错）
-cp config.example.yaml config.yaml
-
 # 依赖
 make tidy
 cd frontend && pnpm install && cd ..
 
 # 开发模式（同时启动 Vite + Go serve；Ctrl+C 自动清理 Vite）
+# 首次运行会自动从 config.example.yaml 生成 config.yaml，并播种 admin/admin
 make dev
+
+# 想先改配置再跑就自己复制一份 —— make dev 只在文件不存在时创建，不会覆盖
+cp config.example.yaml config.yaml
 
 # 生产构建（产物：bin/myapp，前端 dist 已 embed）
 make build-prod
 ```
 
 打开 http://localhost:8080
+
+> **升级模板之后 `serve` 报「缺少某个配置段」**：模板新增了一个组件，而你的 `config.yaml`
+> 早于它。已启用组件的配置段是必填的（`serve` 报错而不是静默降级），把
+> `config.example.yaml` 里对应的那一段复制过去即可 —— 报错信息里写了是哪一段。
+> `make dev` 不会替你改这个文件：里面可能有你调过的 DSN。
 
 > **加了带 install script 的前端依赖之后**：pnpm 10+ 在没人逐包批准之前拒绝执行它，并让
 > `pnpm install` **exit 1**（`ERR_PNPM_IGNORED_BUILDS`）。而 `pnpm dev` 会先跑一次 install，
@@ -116,6 +131,15 @@ myapp serve [-a :8080] [--dev-addr http://localhost:5173] [-c config.yaml]
 <!--goappctl:admin-->
 ```bash
 myapp admin create-user <username> [--group Administrators] # 创建 admin 登录用户（bcrypt）
+```
+<!--goappctl:end-->
+<!--goappctl:queue-->
+```bash
+myapp queue worker [--concurrency N]      # 独立 worker 进程（与 serve 内嵌的那个等价）
+myapp queue enqueue <kind> ['{"a":1}']    # 手工入队（--delay/--max-attempts/--priority/--unique）
+myapp queue ls [--status dead] [--kind x] # 列出任务
+myapp queue retry <id>...                 # 重新入队
+myapp queue kinds                         # 本进程注册了哪些 handler 与 cron
 ```
 <!--goappctl:end-->
 ```bash
@@ -134,8 +158,11 @@ myapp -v ...           # 全局 verbose（debug 日志）
 
 - 配置文件可以完全不存在 —— 缺失的文件或段落都回落到 [internal/config/config.go](internal/config/config.go) 的默认值。
 - 但**已启用组件的配置段是必填的**：`serve` 会在 Start 阶段报
-  `db: service enabled but [db] config section missing` 这类错误，而不是静默降级。
+  `db: service enabled but [db] config section missing (copy that section from config.example.yaml)`
+  这类错误，而不是静默降级。报错里已经写明是哪一段、去哪儿抄。
 - 查找顺序：`-c <path>` → `$MYAPP_HOME/config.yaml` → `~/.myapp/config.yaml`。
+- `make dev` 在 `config.yaml` 不存在时自动从样板生成一份；**已存在则不动**，因为里面可能有
+  你调过的 DSN。
 
 <!--goappctl:db-->
 ### 数据库：SQLite / MySQL / PostgreSQL
@@ -169,6 +196,135 @@ db:
 
 > 迁移的 MySQL / PostgreSQL 版本经过审阅，但测试套件只跑 SQLite（`:memory:`）—— 上生产前请先
 > 在一个临时库上过一遍。
+
+<!--goappctl:end-->
+
+<!--goappctl:queue-->
+## 任务队列
+
+一次性、延迟、周期（cron）三种任务，带重试与退避、每次尝试的失败日志，以及后台的查看与
+干预。**纯数据库队列**——就是三张表（`queue_tasks` / `queue_attempts` / `queue_schedules`），
+所以换库仍然只是换 DSN，不需要 Redis。
+
+**支点是一句话：周期性是生产者的属性，不是任务的属性。** `queue_schedules` 负责生产，
+`queue_tasks` 只认识一个 `run_at`：一次性是 `run_at = now`，延迟是 `now + d`，周期是调度器
+每次到点插进去的一行普通任务。于是重试、退避、超时、失败日志和后台的每个动作都是一套实现
+同时服务三者，而某个 cron 的历史就是 `WHERE schedule_id = ?`。
+
+```go
+// internal/tasks/tasks.go —— handler 与 cron 的唯一注册表，serve 和 queue worker 都读它
+func Register(r *queue.Registry, svc *app.Services) {
+    r.Handle("mail:welcome", queue.JSON(func(ctx context.Context, arg welcomeArg) error {
+        return mailer.SendWelcome(ctx, arg.UserID)
+    }))
+    r.HandleCron("report:daily", "0 3 * * *", func(ctx context.Context, t *queue.Task) error {
+        return reports.Build(ctx)
+    })
+}
+
+// 入队（HTTP handler 里、或另一个任务的 handler 里都可以）
+svc.Queue.Enqueue(ctx, "mail:welcome", welcomeArg{UserID: 7})
+svc.Queue.Enqueue(ctx, "mail:welcome", arg, queue.After(10*time.Minute))
+svc.Queue.Enqueue(ctx, "report:daily", nil, queue.Unique("report:2026-08-14"))
+```
+
+`internal/tasks` 单独成包，是因为 handler 需要 `*app.Services` 而 queue 包**不能** import
+`internal/app`（`internal/config` 依赖 queue，反向就成环）——handler 用闭包捕获 svc，依赖方向
+就只有一条。业务逻辑不写在这个文件里：它是接线表，和 `mount_gen.go` 一个地位。
+
+### 两种部署形态
+
+`serve` 默认内嵌 worker，所以 `make dev` 起来就是完整的。也可以拆开：
+
+```yaml
+queue:
+  concurrency: 0     # serve 只提供后台查看，不跑任何任务
+```
+```bash
+myapp queue worker --concurrency 8    # 活儿交给独立进程，可单独扩容
+```
+
+**cron 触发、租约回收、保留期裁剪都住在 worker 的 ticker 里**，所以至少要有一个进程
+`concurrency > 0`。全都设成 0 的部署有后台界面、没有队列。
+
+### 并发正确性
+
+抢任务是**两阶段乐观 CAS**：先无锁挑候选，再逐条 `UPDATE ... WHERE id = ? AND status = 'pending'`，
+`RowsAffected == 1` 才算拿到。那个谓词就是 compare-and-swap，三个方言都对该行原子加锁并对
+已提交值求值，所以并发的 N 个 worker 里恰好一个成功。**没有用 `FOR UPDATE SKIP LOCKED`**——
+SQLite 不支持它，而一套代码服务三方言比省掉几次白跑的往返更值钱（接缝写在 `claim.go` 的注释里）。
+
+- **`attempts` 在抢占时就 +1**，不是完成时。这一句就是「能把进程搞死的任务也会消耗一次尝试」
+  的全部机制；否则一个必然 OOM 的任务会永远重试，每次带走一个 worker。
+- **租约 + 围栏令牌**：抢到时写一个随机 `lease_token`，心跳每 `heartbeat` 批量续租。worker 卡死
+  到租约过期，回收器把任务捞回并补一条 `outcome='lost'` 的尝试记录；那个卡死的进程之后想写结果
+  会因为令牌不匹配被拒绝，不会覆盖别人正在跑的行。
+- **worker 只捡自己注册过的 kind**。这让滚动发布安全（旧进程不会抢新 kind 也不会烧掉它的次数），
+  代价是「库里有 kind、代码里没 handler」的孤儿任务会停住——所以调度器每轮告警、后台列表也会
+  显著标出，`orphan_grace`（默认 24h）后判死。停住但看得见，比失败或无限重试都好。
+- 退避是 `min(retry_base * 2^(n-1), retry_max)` 再叠**等值抖动**（落在 `[d/2, d)`）。用等值而不是
+  full jitter：后者会在一次一小时的退避后给出 1 秒的重试，在后台里看起来像 bug。
+- 重试用尽后是 `dead`，**没有 `failed` 这个状态**：一次失败但还能重试的任务回到 `pending`，
+  所以叫 `failed` 会让人以为它是「任何一次失败之后的状态」，而那个误读的直接产物就是后台的
+  失败筛选在重试在途时空空如也。
+
+SQLite 可用，但只适合开发与单进程：它的写是全库串行的。DSN 必须带 WAL 和 `_busy_timeout`，
+否则第二个 worker 会直接拿到 `SQLITE_BUSY` 而不是排队等待——`config.example.yaml` 的默认
+DSN 已经是这个形式，从旧版本升上来的 `config.yaml` 需要自己补。生产多实例请用
+MySQL / PostgreSQL。
+
+### cron：代码为准，后台可改
+
+计划只能来自代码注册——后台**没有新建入口**，那不是一个被拦住的按钮，而是两条不存在的路由。
+但表达式是运维的：`/admin/cron` 能改表达式、暂停/启用、立即触发一次。
+
+两者靠 `spec`（当前生效）和 `code_spec`（上次同步时代码里的值）做一次**三方合并**：
+
+| 情况 | 判据 | 结果 |
+|---|---|---|
+| 运维没动过，代码改了 | `spec == code_spec` | 跟随代码，并重算下次执行 |
+| 运维改过 | `spec != code_spec` | **保留运维的值**，只更新 `code_spec` |
+
+所以后台能显示「代码默认 X / 当前生效 Y」并提供「恢复代码默认值」，而重启不会把改动冲掉。
+`enabled` 同理，永远归运维，同步不碰它。代码里删掉的计划标 `present=0` 而**不删行**——删了会
+因为一次缺少 handler 的发布丢掉运维的修改和整段执行历史。
+
+**多实例只触发一次**靠 `next_run_at` 上的 CAS：它严格单调递增，所以读到的旧值就是围栏令牌，
+`RowsAffected == 0` 的实例知道别人已经触发过了。**漏掉的场次不补跑**——停机三天的日更任务
+只触发一次，然后把下次算到未来；补跑会在恢复瞬间灌进三条同样的任务。
+
+cron 表达式解析是自写的（`cronexpr.go`，五字段 + `@daily` 等 + `@every 30s`），不引第三方：
+库的主体价值是它自带的调度器，而多实例仲裁必须过 DB，那部分**必然不用**。两处经典陷阱有
+专门的测试钉住——日与星期在两者都非 `*` 时是 **OR** 不是 AND，以及 `next()` 必须有上界并对
+`30 2 30 2 *` 这类永不成立的表达式报错。
+
+`timezone` 是 IANA 名（如 `Asia/Shanghai`），**解析不了就启动失败**，绝不静默回落 UTC：
+服务器跑 UTC 而业务在 UTC+8 时，`0 3 * * *` 会在上午 11 点执行，而那是从一份没来的报表里
+发现的。
+
+### 后台
+
+两个资源、两套权限：`task.access/modify` 和 `cron.access/modify`。分开是因为改一个 cron 表达式
+能让某个 job 每秒触发一次，而重试一个失败任务不能——爆炸半径不同，权限就该能分别授予。
+
+- **任务列表**（`/admin/task`）：按状态/类型服务端筛选与分页，外加「按编号跳转」。**没有全文搜索**
+  ——唯一值得搜的自由文本是错误消息，那是这个 schema 里最大的表上的无索引扫描；而运维真正会做的
+  是从日志里粘一个 id。列表用 `ServerTable` 而不是 `DataTable`：后者的计数行读 `data.length`，
+  拿一页数据给它就会把页大小当成总数报出来。
+- **详情页**：概要 + 载荷 + 执行记录。失败日志是表格不是时间线（同构字段行，扫的是「从哪一次开始
+  失败」）；Go 的 panic 堆栈用 `<details>` 折叠 + 软折行展开，横向滚动读栈是没法读的。
+- **人工操作**：重试 / 立即执行 / 取消 / 删除。全部是原生 form POST，没有一处 fetch。
+  每个动作的前置条件都写在 SQL 的 `WHERE` 里、靠 `RowsAffected` 判定拒绝——先 SELECT 再 UPDATE
+  是一个竞态，中间被 worker 捡走的任务会被覆盖。界面按状态隐藏动作只是便利，强制在服务端。
+- **「立即执行」不同步执行**：它把 `run_at` 提前让 worker 捡走。同步执行会把 HTTP 请求扣在
+  handler 整个时长上、在 web 进程里跑、并绕过租约让并发的 worker 也跑一遍。文案对这个间接性诚实。
+- **取消正在执行的任务**不需要新列也不需要 handler 轮询：改状态让持有者的下一次心跳续租失败，
+  心跳就取消那个 handler 的 ctx。代价是最多一个 `heartbeat` 的延迟，界面会这么说。
+- **时间戳在 Go 侧格式化**。这是硬约束不是偏好：SSR 跑在 QuickJS 上，没有 `Intl`；而客户端
+  格式化读的是浏览器时区、SSR 读的是服务器时区，同一个 prop 会渲染出两个字符串，按构造就是
+  hydration 不一致。也**不做相对时间**（「3 分钟前」渲染出来立刻就过期）。
+- **列表不自动刷新**：一个「刷新」链接就是一个锚点，PJAX 原地替换同一个 URL。轮询需要给 PJAX 层
+  开一个新的公共 API（`navigate` 没有导出），而且会在运维正展开着错误堆栈时把 DOM 换掉。
 
 <!--goappctl:end-->
 

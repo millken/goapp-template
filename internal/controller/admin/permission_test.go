@@ -324,9 +324,20 @@ func TestMount_RegistersUsersGroupsAndAccount(t *testing.T) {
 	for _, p := range a.Permissions() {
 		got[p.Key] = true
 	}
-	for _, want := range []string{"user.access", "user.modify", "group.access", "group.modify"} {
-		if !got[want] {
-			t.Errorf("catalogue missing %q — a resource was not mounted", want)
+	want := []string{"user.access", "user.modify", "group.access", "group.modify"}
+	//goappctl:queue
+	// Two resources, not one: changing a cron expression can make a job fire every
+	// second, retrying one task cannot, so the permissions have to be separable.
+	//
+	// Reaching this line at all is the other half of the assertion. a is built with a
+	// nil *app.Services, so a mount function that read a.Queue — a nil check, a call to
+	// Kinds() — would panic here rather than in production. That is what keeps the
+	// "mount unconditionally" rule enforced rather than merely documented.
+	want = append(want, "task.access", "task.modify", "cron.access", "cron.modify")
+	//goappctl:end
+	for _, key := range want {
+		if !got[key] {
+			t.Errorf("catalogue missing %q — a resource was not mounted", key)
 		}
 	}
 

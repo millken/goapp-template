@@ -171,7 +171,7 @@ func TestRun_Combos(t *testing.T) {
 		wantFilesAbsent []string
 	}{
 		{
-			name: "all-on", with: []string{"db", "session", "admin", "storage", "ssr"},
+			name: "all-on", with: []string{"db", "session", "admin", "storage", "queue", "ssr"},
 			wantPresent: []string{"mattn/go-sqlite3", "buke/quickjs-go"},
 		},
 		{
@@ -211,6 +211,37 @@ func TestRun_Combos(t *testing.T) {
 			// with no UI at all.
 			name: "storage-only", with: []string{"storage"},
 			wantAbsent: []string{"mattn/go-sqlite3", "buke/quickjs-go"},
+		},
+		{
+			// The queue's twin of admin-without-storage, and the case its Owned list
+			// exists for: the admin area present, its task screens gone. Every path
+			// below sits inside a directory admin owns, so admin's own entries do not
+			// remove them — only the queue naming them individually does.
+			name: "admin-without-queue", with: []string{"db", "session", "admin"},
+			wantPresent: []string{"mattn/go-sqlite3"},
+			wantFilesAbsent: []string{
+				"internal/service/queue",
+				"internal/tasks",
+				"commands/queue.go",
+				"internal/controller/admin/task.go",
+				"internal/controller/admin/cron.go",
+				"frontend/pages/admin/task",
+				"frontend/pages/admin/cron",
+				"frontend/src/components/admin/ServerTable.vue",
+				"frontend/src/lib/task-status.ts",
+			},
+		},
+		{
+			// A worker with no management screens, which is why queue does not depend on
+			// admin. The closure pulls db in; nothing here should reference the admin
+			// area, and Run's own `go build ./...` is what proves it.
+			name: "queue-without-admin", with: []string{"queue"},
+			wantPresent: []string{"mattn/go-sqlite3"},
+			wantAbsent:  []string{"buke/quickjs-go"},
+			wantFilesAbsent: []string{
+				"internal/controller/admin",
+				"frontend/pages/admin",
+			},
 		},
 	}
 	for _, c := range cases {

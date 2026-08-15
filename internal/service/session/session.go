@@ -72,7 +72,8 @@ func New(cfg *Config, db *sqldb.DB) *Service {
 // Start resolves the store. For store=db the db service must Start first.
 func (s *Service) Start(ctx context.Context) error {
 	if s.cfg == nil {
-		return errors.New("session: service enabled but [session] config section missing")
+		return errors.New("session: service enabled but [session] config section missing " +
+			"(copy that section from config.example.yaml)")
 	}
 	if s.cfg.Secret == "" {
 		return errors.New("session: secret is required")

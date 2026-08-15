@@ -94,7 +94,8 @@ func New(cfg *Config) *Service { return &Service{cfg: cfg} }
 // Start resolves and creates the root, opens it, and proves it is writable.
 func (s *Service) Start(_ context.Context) error {
 	if s.cfg == nil {
-		return errors.New("storage: service enabled but [storage] config section missing")
+		return errors.New("storage: service enabled but [storage] config section missing " +
+			"(copy that section from config.example.yaml)")
 	}
 	if strings.TrimSpace(s.cfg.Root) == "" {
 		return errors.New("storage: root is required")

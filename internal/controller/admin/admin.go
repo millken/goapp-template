@@ -93,7 +93,8 @@ func New(svc *app.Services, cfg *Config) *Admin {
 // name (interpolated into SQL). Accessors stay nil-safe so tests may skip it.
 func (a *Admin) Validate() error {
 	if a.cfg == nil {
-		return errors.New("admin: enabled but [admin] config section missing")
+		return errors.New("admin: enabled but [admin] config section missing " +
+			"(copy that section from config.example.yaml)")
 	}
 	if table := a.adminsTable(); !tableNameRe.MatchString(table) {
 		return fmt.Errorf("admin: illegal admins table name %q", table)
@@ -134,6 +135,15 @@ func (a *Admin) Mount(eng *inertia.Engine) {
 	// nil check here would mean a misconfigured process silently serving an
 	// admin area with no file manager instead of failing at Start.
 	a.mountFileManager(eng)
+	//goappctl:end
+
+	//goappctl:queue
+	// Unconditional, for exactly the reasons on mountFileManager above. Enforced
+	// rather than merely intended: permission_test.go's TestMount_Registers… calls
+	// Mount on a nil *app.Services, so a nil check — or any other read of a service —
+	// would panic there.
+	a.mountTasks(eng)
+	a.mountCrons(eng)
 	//goappctl:end
 }
 

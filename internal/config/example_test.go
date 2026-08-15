@@ -109,6 +109,23 @@ func TestExampleConfig_Parses(t *testing.T) {
 		}
 	})
 	//goappctl:end
+
+	//goappctl:queue
+	t.Run("queue", func(t *testing.T) {
+		if cfg.Queue == nil {
+			t.Fatal("Queue is nil; the example must carry a queue section")
+		}
+		// Concurrency is a *int precisely so that "absent" and "zero" are different
+		// things, and the example has to supply it: Start refuses an absent value
+		// rather than reading it as "run no work at all".
+		if cfg.Queue.Concurrency == nil {
+			t.Error("Queue.Concurrency is unset; it is required and the example must set it")
+		} else if *cfg.Queue.Concurrency <= 0 {
+			t.Errorf("Queue.Concurrency = %d; the example should ship a working worker",
+				*cfg.Queue.Concurrency)
+		}
+	})
+	//goappctl:end
 }
 
 //goappctl:tooling
@@ -132,7 +149,10 @@ func TestExampleConfig_MarkersAreWellFormed(t *testing.T) {
 	)
 	// components must each have exactly one block; "tooling" is the reserved
 	// always-stripped name and may appear anywhere, including not at all.
-	components := map[string]bool{"db": true, "session": true, "admin": true, "ssr": true, "storage": true}
+	components := map[string]bool{
+		"db": true, "session": true, "admin": true, "ssr": true, "storage": true,
+		"queue": true,
+	}
 	known := map[string]bool{"tooling": true}
 	for name := range components {
 		known[name] = true

@@ -40,12 +40,17 @@ db:
   # ending .db/.sqlite/.sqlite3 → sqlite3). An explicit value always wins, and a
   # dsn that matches none of those shapes is a startup error, never a guess.
   driver: sqlite3
-  dsn: app.db
+  # The bare filename `app.db` also works, but not once anything writes
+  # concurrently: WAL lets readers run during a write, _busy_timeout makes a
+  # blocked writer wait instead of failing with SQLITE_BUSY straight away, and
+  # _txlock=immediate takes the write lock up front rather than upgrading
+  # mid-statement. Cheap insurance for a single-process app, and required for a
+  # multi-worker one.
+  dsn: "file:app.db?_journal=WAL&_busy_timeout=5000&_txlock=immediate"
   # MySQL:      user:pass@tcp(127.0.0.1:3306)/myapp?parseTime=true&multiStatements=true
   #             multiStatements=true is REQUIRED when [db.migrations] is set —
   #             the migrator execs each .sql file as one string.
   # PostgreSQL: postgres://user:pass@127.0.0.1:5432/myapp?sslmode=disable
-  # SQLite:     app.db   (or file:app.db?_journal=WAL)
   # max_open: 0                  # 0 = database/sql default (unlimited)
   # max_idle: 0
   # conn_max_lifetime: 0s
@@ -99,4 +104,55 @@ storage:
   # same entry. .svg is deliberately absent: an SVG served from this origin
   # executes script on this origin. Add it only if you understand that.
   # allowed_ext: [".jpg", ".jpeg", ".png", ".gif", ".webp", ".pdf", ".zip"]
+#goappctl:end
+
+#goappctl:queue
+queue:
+  # How many tasks this process runs at once. REQUIRED — there is no default,
+  # because 0 is a real setting ("admin screens only, run nothing") and a process
+  # that was meant to do work but quietly does none is the worst outcome here.
+  #
+  # On SQLite keep it small, 1–4: SQLite serialises writers, so more workers only
+  # queue behind each other. It also needs the WAL/_busy_timeout DSN the db
+  # section above already uses — with a bare `app.db` filename, a second worker
+  # gets SQLITE_BUSY instead of waiting its turn.
+  concurrency: 4
+  # poll_interval: 1s          # idle polling; enqueueing in this process wakes it
+  #                            # immediately, so this is only the latency for work
+  #                            # another process created
+  # tick_interval: 5s          # drives cron, lease reaping and pruning — and is
+  #                            # therefore the most a cron plan can be late
+  # lease_ttl: 60s             # how long a claim survives without a heartbeat.
+  #                            # Must be more than twice heartbeat, or one missed
+  #                            # renewal loses the task. Checked at startup.
+  # heartbeat: 20s             # also the upper bound on how long "cancel this
+  #                            # running task" takes to reach the handler
+  # task_timeout: 5m           # deadline on one attempt. Deliberately NOT tied to
+  #                            # lease_ttl: the heartbeat renews a running task's
+  #                            # lease, so a long task under a short lease is fine
+  # shutdown_grace: 30s        # how long a stopping process waits for in-flight
+  #                            # tasks before cancelling them. A task interrupted
+  #                            # this way is requeued with its attempt refunded
+  # max_attempts: 3            # default ceiling, stamped onto each task when it is
+  #                            # enqueued — changing it leaves queued work alone
+  # retry_base: 15s            # backoff = min(base * 2^(n-1), max), then spread
+  # retry_max: 1h              # over [d/2, d)
+  # timezone: ""               # IANA name (e.g. Asia/Shanghai) that cron
+  #                            # expressions are read in; empty = this process's
+  #                            # local zone. An unknown name fails startup rather
+  #                            # than falling back to UTC — a UTC server running a
+  #                            # UTC+8 business turns "0 3 * * *" into 11am
+  # orphan_grace: 24h          # how long a pending task whose kind has no handler
+  #                            # is left alone before being declared dead. Must
+  #                            # outlast a rolling deployment. No "never" setting:
+  #                            # a task waiting forever is invisible rot
+  # retention_succeeded: 168h  # how long finished tasks and their attempt logs are
+  # retention_dead: 720h       # kept. No "forever" setting either — set a long
+  # prune_interval: 1h         # duration if that is what you want
+  # admin_page_size: 25        # rows per page in the admin task list
+  #
+  # At least one process must be running a worker (concurrency > 0), because cron
+  # firing, lease reaping and retention pruning all live in the worker's ticker.
+  # A deployment that sets concurrency: 0 everywhere has an admin screen and no
+  # queue.
 #goappctl:end

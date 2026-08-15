@@ -14,6 +14,9 @@ import (
 
 	"github.com/millken/goapp-template/internal/app"
 	"github.com/millken/goapp-template/internal/service/db"
+	//goappctl:queue
+	"github.com/millken/goapp-template/internal/service/queue"
+	//goappctl:end
 	"github.com/millken/goapp-template/internal/service/session"
 	//goappctl:storage
 	"github.com/millken/goapp-template/internal/service/storage"
@@ -78,6 +81,27 @@ func loginStackWithStore(t *testing.T, store session.StoreKind) (*inertia.Engine
 	}
 	t.Cleanup(func() { _ = storSvc.Stop(ctx) })
 	svc.Storage = storSvc
+	//goappctl:end
+
+	//goappctl:queue
+	// concurrency 0: the queue's tables and its registry, with no worker. A test that
+	// asserts on a task's status must not have a poller racing it, and every queue test
+	// here drives the store directly or through the handlers.
+	//
+	// Two kinds are registered because the screens distinguish a kind with a handler
+	// from one without, and one kind cannot show both. `queueTestKind` is the one that
+	// exists; anything else is an orphan.
+	queueReg := queue.NewRegistry()
+	queueReg.Handle(queueTestKind, func(context.Context, *queue.Task) error { return nil })
+	queueReg.HandleCron(queueCronKind, "0 3 * * *",
+		func(context.Context, *queue.Task) error { return nil })
+	queueSvc := queue.New(&queue.Config{Concurrency: new(int)}, svc.DB, queueReg,
+		slog.Default(), queue.WithMigrations(dbSvc.MigrationTable()))
+	if err := queueSvc.Start(ctx); err != nil {
+		t.Fatalf("start queue: %v", err)
+	}
+	t.Cleanup(func() { _ = queueSvc.Stop(ctx) })
+	svc.Queue = queueSvc
 	//goappctl:end
 
 	adm := New(svc, &Config{Mount: "/admin"})

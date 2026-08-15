@@ -15,6 +15,14 @@ export const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
+        // Not upstream. Task statuses need a third semantic colour: destructive is
+        // reserved for danger and default is the page's primary action, which leaves
+        // nothing for "this finished cleanly". Emerald because alert already made that
+        // the project's success colour for the same reason — a deviation pinned by a
+        // test beats bg-emerald-600 literals scattered through three pages, which
+        // would break the "components use tokens, pages do not hardcode colours" rule.
+        success:
+          "border-transparent bg-emerald-600 text-white hover:bg-emerald-600/80 dark:bg-emerald-500",
       },
     },
     defaultVariants: {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -19,6 +20,13 @@ func TestClosure(t *testing.T) {
 		{"admin pulls session and db", []string{"admin"}, []string{"db", "session", "admin"}, []string{"db", "session"}},
 		{"admin with db already picked", []string{"db", "admin"}, []string{"db", "session", "admin"}, []string{"session"}},
 		{"all", []string{"ssr", "admin", "session", "db"}, []string{"db", "session", "admin", "ssr"}, nil},
+		// The queue is a pure database queue, so db is its only dependency. Notably NOT
+		// admin: a worker with no management screens is a supported build.
+		{"queue pulls db", []string{"queue"}, []string{"db", "queue"}, []string{"db"}},
+		{"queue with admin", []string{"admin", "queue"},
+			[]string{"db", "session", "admin", "queue"}, []string{"db", "session"}},
+		{"everything", []string{"queue", "storage", "ssr", "admin"},
+			[]string{"db", "session", "admin", "storage", "queue", "ssr"}, []string{"db", "session"}},
 		{"blank entries ignored", []string{"db", "", " "}, []string{"db"}, nil},
 		{"storage is independent", []string{"storage"}, []string{"storage"}, nil},
 		{"storage with admin", []string{"admin", "storage"}, []string{"db", "session", "admin", "storage"}, []string{"db", "session"}},
@@ -133,6 +141,71 @@ func TestStorageOwnsItsAdminSideFiles(t *testing.T) {
 	for _, w := range want {
 		if !slices.Contains(c.Owned, w) {
 			t.Errorf("storage does not own %q", w)
+		}
+	}
+}
+
+// TestQueueOwnsItsAdminSideFiles is the storage test's twin, and it exists for the same
+// reason: the queue's management screens live under directories admin owns, so "admin on,
+// queue off" only strips correctly if each of those files is named here.
+//
+// frontend/src/lib is admin's, so task-status.ts has to be named too — and both of its
+// files, since a stripped project keeping a test for deleted code is a broken build rather
+// than a cosmetic leftover.
+func TestQueueOwnsItsAdminSideFiles(t *testing.T) {
+	c, ok := Get("queue")
+	if !ok {
+		t.Fatal("no queue component")
+	}
+	want := []string{
+		"internal/service/queue",
+		"internal/tasks",
+		"commands/queue.go",
+		"internal/controller/admin/task.go",
+		"internal/controller/admin/task_test.go",
+		"internal/controller/admin/cron.go",
+		"internal/controller/admin/cron_test.go",
+		"frontend/pages/admin/task",
+		"frontend/pages/admin/cron",
+		"frontend/src/components/admin/ServerTable.vue",
+		"frontend/src/components/admin/ServerTable.test.ts",
+		"frontend/src/lib/task-status.ts",
+		"frontend/src/lib/task-status.test.ts",
+	}
+	for _, w := range want {
+		if !slices.Contains(c.Owned, w) {
+			t.Errorf("queue does not own %q", w)
+		}
+	}
+}
+
+// The queue's schema travels with internal/service/queue rather than as a numbered file in
+// internal/service/db/migrations, and that is load-bearing rather than tidy.
+//
+// sqldb's migrator keeps ONE version per migration service and skips any file whose version
+// is <= it. Under a shared numbering the queue's file would claim, say, 007; a project
+// generated without the queue never applies it and its mark moves on to 008, 009 — and the
+// day it adds the queue back, 007 <= 009 and the file is silently skipped. No tables, and
+// the failure surfaces at runtime.
+func TestQueueMigrationsAreNotOwnedByDB(t *testing.T) {
+	db, ok := Get("db")
+	if !ok {
+		t.Fatal("no db component")
+	}
+	for _, p := range db.Owned {
+		if strings.Contains(p, "queue") {
+			t.Errorf("db owns %q; the queue's schema must live under internal/service/queue "+
+				"so it is recorded under its own migration service", p)
+		}
+	}
+
+	queue, _ := Get("queue")
+	if !slices.Contains(queue.Owned, "internal/service/queue") {
+		t.Error("queue must own its whole directory, migrations included")
+	}
+	for _, p := range queue.Owned {
+		if strings.HasPrefix(p, "internal/service/db/") {
+			t.Errorf("queue owns %q inside the db component's directory; its schema is its own", p)
 		}
 	}
 }

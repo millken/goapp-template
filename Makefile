@@ -12,7 +12,7 @@ LDFLAGS := -s -w \
 	-X $(BUILD_PKG).Commit=$(COMMIT) \
 	-X $(BUILD_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: build build-prod frontend-build test lint clean tidy dev update update-go update-npm
+.PHONY: build build-prod frontend-build test lint clean tidy dev dev-config dev-admin update update-go update-npm
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
@@ -33,9 +33,27 @@ DEV_PORT ?= 5173
 ADMIN_USER ?= admin
 ADMIN_PASS ?= admin
 
+# Create config.yaml from the sample, idempotently — the same bargain dev-admin
+# makes for credentials: `make dev` should work on a fresh clone without a manual
+# step, and README's `cp config.example.yaml config.yaml` is now only needed if you
+# want to edit it first.
+#
+# It never overwrites: an existing config.yaml is yours, and clobbering a tuned DSN
+# to fix a missing section would be a much worse surprise than the error it avoids.
+#
+# That leaves one case this cannot fix, and it is worth knowing about: an existing
+# config.yaml that predates a newly added component has no section for it, and
+# serve refuses to start rather than degrade silently. The error names the missing
+# section and where to copy it from — see the accessors in internal/service/*.
+dev-config:
+	@if [ ! -f config.yaml ]; then \
+	  cp config.example.yaml config.yaml; \
+	  echo "created config.yaml from config.example.yaml"; \
+	fi
+
 # Seed the admin login, idempotently: an existing username is reported and
 # tolerated, while any other failure still stops the build.
-dev-admin:
+dev-admin: dev-config
 	@out=$$(MYAPP_HOME=. go run -ldflags "$(LDFLAGS)" . admin create-user $(ADMIN_USER) --password '$(ADMIN_PASS)' 2>&1); \
 	case "$$out" in \
 	  *"created admin user"*) echo "$$out";; \

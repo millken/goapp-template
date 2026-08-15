@@ -81,6 +81,9 @@ func New() *cobra.Command {
 	//goappctl:admin
 	root.AddCommand(newAdminCmd())
 	//goappctl:end
+	//goappctl:queue
+	root.AddCommand(newQueueCmd())
+	//goappctl:end
 
 	return root
 }

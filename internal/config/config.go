@@ -7,6 +7,9 @@ import (
 
 	"github.com/millken/goapp-template/internal/controller/admin"
 	"github.com/millken/goapp-template/internal/service/db"
+	//goappctl:queue
+	"github.com/millken/goapp-template/internal/service/queue"
+	//goappctl:end
 	"github.com/millken/goapp-template/internal/service/session"
 	//goappctl:storage
 	"github.com/millken/goapp-template/internal/service/storage"
@@ -35,6 +38,10 @@ type Config struct {
 	//goappctl:storage
 	// Storage holds the file-storage service config. nil when not used.
 	Storage *storage.Config `yaml:"storage"`
+	//goappctl:end
+	//goappctl:queue
+	// Queue holds the task-queue service config. nil when not used.
+	Queue *queue.Config `yaml:"queue"`
 	//goappctl:end
 }
 

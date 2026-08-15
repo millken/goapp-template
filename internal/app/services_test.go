@@ -27,4 +27,9 @@ func TestNewServices_StartsEmpty(t *testing.T) {
 		t.Error("Session should be nil until the session component assigns it")
 	}
 	//goappctl:end
+	//goappctl:queue
+	if svc.Queue != nil {
+		t.Error("Queue should be nil until the queue component assigns it")
+	}
+	//goappctl:end
 }

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 // against DOM libs with no node types, and widening that for one test would be
 // the wrong trade.
 import alertIndex from './alert/index.ts?raw'
+import badgeIndex from './badge/index.ts?raw'
 import buttonIndex from './button/index.ts?raw'
 import inputSource from './input/Input.vue?raw'
 import selectTrigger from './select/SelectTrigger.vue?raw'
@@ -29,6 +30,15 @@ describe('local deviations from the shadcn-vue registry', () => {
   it('alert keeps the success variant upstream does not have', () => {
     // Upstream ships default and destructive only; flash messages need a third.
     expect(alertIndex).toContain('success')
+  })
+
+  it('badge keeps the success variant upstream does not have', () => {
+    // Same reasoning as alert's, for task statuses: destructive is reserved for
+    // danger and default is the page's primary action, so "succeeded" had no colour.
+    // Reverting this makes every green badge silently render as primary — the queue
+    // screens would look fine and mean something else.
+    expect(badgeIndex).toContain('success')
+    expect(badgeIndex).toContain('emerald')
   })
 
   // The registry ships a 40px control height — h-10 for the button default, the
