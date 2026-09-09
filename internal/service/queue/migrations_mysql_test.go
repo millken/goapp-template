@@ -33,19 +33,6 @@ func TestMySQLMigrations_RoundTripUpDownUp(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	// The queue's migrate() runs before any db.Service has started in this
-	// test, so the migrations-table workaround for sqldb's MySQL-incompatible
-	// DDL (TEXT primary key, Error 1170) has to be applied here — in production
-	// db.Service.Start does it before the queue ever migrates.
-	if _, err := db.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS schema_migrations (
-			service VARCHAR(191) NOT NULL,
-			version VARCHAR(191) NOT NULL DEFAULT '',
-			PRIMARY KEY (service)
-		)`); err != nil {
-		t.Fatalf("precreate migrations table: %v", err)
-	}
-
 	// The same call queue.Service.Start makes: default service name, the db
 	// component's migrations table.
 	if err := migrate(ctx, db, "schema_migrations"); err != nil {

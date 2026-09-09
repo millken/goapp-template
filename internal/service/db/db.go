@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"regexp"
 	"time"
 
 	"github.com/dnsoa/go/sqldb"
@@ -113,60 +112,9 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-// migrationTableRe is the same shape sqldb itself enforces on the name (its
-// migrationTableMatcher). It is re-checked on the precreate path because that
-// path concatenates the name into DDL on a connection that MySQL requires to
-// run with multiStatements=true: without the re-check, a crafted table name
-// from config would execute as more than one statement instead of being
-// rejected.
-var migrationTableRe = regexp.MustCompile(`^[\w.]+$`)
-
-// precreateMigrationsTable works around dnsoa/go/sqldb v0.0.4's migrations
-// table DDL: `service text not null, primary key (service)`. MySQL refuses a
-// TEXT column in a key specification (Error 1170), so the migrator's own
-// `create table if not exists` fails on the very first run against an empty
-// MySQL — the production path for anyone who picks the mysql driver, not just
-// CI. Pre-creating the table with a VARCHAR primary key is enough: the
-// migrator's IF NOT EXISTS then no-ops and everything downstream (upsert,
-// version compare) is type-agnostic. SQLite and PostgreSQL accept the original
-// DDL, so the pre-create is MySQL-only. Fixed upstream, this becomes a no-op.
-func precreateMigrationsTable(ctx context.Context, d *sqldb.DB, table string) error {
-	if d.Flavor != sqldb.MySQL {
-		return nil
-	}
-	if !migrationTableRe.MatchString(table) {
-		return fmt.Errorf("db: illegal migration table name %q", table)
-	}
-	// 191: the safe single-column index length under utf8mb4, the same ceiling
-	// the queue's unique_key column uses. version matches service's width so a
-	// long migration stem cannot overflow the column the migrator writes its
-	// high-water mark into (Error 1406, raised after the DDL has committed —
-	// too late to fix cheaply).
-	_, err := d.ExecContext(ctx,
-		`CREATE TABLE IF NOT EXISTS `+table+` (
-			service VARCHAR(191) NOT NULL,
-			version VARCHAR(191) NOT NULL DEFAULT '',
-			PRIMARY KEY (service)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
-	if err != nil {
-		return fmt.Errorf("db: precreate migrations table %s: %w", table, err)
-	}
-	return nil
-}
-
 // migrate runs up-migrations using the dialect's slice of the embedded FS.
 func (s *Service) migrate(ctx context.Context, mg *Migrations) error {
 	if err := checkMultiStatements(s.db.Flavor, s.cfg.DSN); err != nil {
-		return err
-	}
-	// The migrator resolves an absent table name to "migrations" only inside
-	// its own option handling; precreate needs the effective name eagerly, so
-	// resolve it once here and feed the same value to both paths.
-	table := mg.Table
-	if table == "" {
-		table = "migrations" // sqldb's default, see WithMigrationTable
-	}
-	if err := precreateMigrationsTable(ctx, s.db, table); err != nil {
 		return err
 	}
 
