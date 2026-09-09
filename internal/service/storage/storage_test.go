@@ -107,7 +107,7 @@ func TestSymlinkEscapeIsRefusedByStatOpenAndFS(t *testing.T) {
 	// through, so this is the one that matters most: a symlink escape here is
 	// a symlink escape onto the internet.
 	if f, err := s.FS().Open("escape.txt"); err == nil {
-		f.Close()
+		_ = f.Close()
 		t.Error("Service.FS() must refuse a symlink pointing outside the root")
 	}
 }
@@ -459,7 +459,7 @@ func TestRename_RefusesAnExistingDestination(t *testing.T) {
 		t.Fatalf("Open(keep.png): %v", err)
 	}
 	got, _ := io.ReadAll(f)
-	f.Close()
+	_ = f.Close()
 	if string(got) != "original" {
 		t.Errorf("keep.png content = %q, want unchanged %q", got, "original")
 	}
@@ -512,7 +512,7 @@ func TestMove_RefusesACollidingItemButMovesTheRest(t *testing.T) {
 		t.Fatalf("Open(dst/a.png): %v", err)
 	}
 	got, _ := io.ReadAll(f)
-	f.Close()
+	_ = f.Close()
 	if string(got) != "original" {
 		t.Errorf("dst/a.png content = %q, want unchanged %q", got, "original")
 	}
@@ -591,7 +591,7 @@ func TestURLFor_ChineseFilenameRoundTripsThroughTheStaticRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the static route could not open what URLFor(%q) pointed at (%q): %v", "图片.png", got, err)
 	}
-	f.Close()
+	_ = f.Close()
 }
 
 // TestReason_DoesNotLeakTheSentinelPrefix pins that a user-facing message is a

@@ -80,6 +80,12 @@ func render(tmplName, outPath string, spec Spec, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", full, err)
 	}
-	defer f.Close()
-	return tmpl.Execute(f, spec)
+	// Close's error is returned rather than deferred away: it is where a failed
+	// flush surfaces, and swallowing it would write a silently truncated file
+	// into someone's project and report success.
+	if err := tmpl.Execute(f, spec); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

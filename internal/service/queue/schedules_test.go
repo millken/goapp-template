@@ -628,7 +628,7 @@ func TestScheduleFirings_CarryTheKindsRegisteredOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	n := 0
 	for rows.Next() {
 		var id, maxAtt, timeoutMS, priority int

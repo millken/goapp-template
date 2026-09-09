@@ -209,8 +209,8 @@ func parseCronItem(item string, f cronField) (uint64, error) {
 	}
 
 	var lo, hi uint
-	switch {
-	case rangePart == "*":
+	switch rangePart {
+	case "*":
 		lo, hi = f.min, f.max
 	default:
 		loStr, hiStr, isRange := strings.Cut(rangePart, "-")

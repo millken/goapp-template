@@ -30,7 +30,7 @@ func attemptsOf(t *testing.T, db *sqldb.DB, taskID int64) []attemptState {
 	if err != nil {
 		t.Fatalf("read attempts of %d: %v", taskID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []attemptState{}
 	for rows.Next() {

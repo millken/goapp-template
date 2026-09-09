@@ -231,7 +231,7 @@ func (s *Service) ListTasks(ctx context.Context, f TaskFilter) (TaskPage, error)
 	if err != nil {
 		return TaskPage{}, fmt.Errorf("queue: list tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Never nil: the frontend expects [] rather than null for an empty page.
 	items := []TaskListItem{}
@@ -375,7 +375,7 @@ func (s *Service) Attempts(ctx context.Context, taskID int64, limit int) ([]Atte
 	if err != nil {
 		return nil, fmt.Errorf("queue: attempts of task %d: %w", taskID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []Attempt{}
 	for rows.Next() {
@@ -426,7 +426,7 @@ func (s *Service) Schedules(ctx context.Context) ([]ScheduleView, error) {
 	if err != nil {
 		return nil, fmt.Errorf("queue: list schedules: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []ScheduleView{}
 	for rows.Next() {

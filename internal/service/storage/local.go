@@ -29,7 +29,7 @@ func (b *localBackend) List(_ context.Context, dir string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	des, err := f.ReadDir(-1)
 	if err != nil {
@@ -72,7 +72,7 @@ func (b *localBackend) Save(_ context.Context, name string, r io.Reader) error {
 		return err
 	}
 	if _, err := io.Copy(f, r); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()

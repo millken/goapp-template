@@ -63,7 +63,7 @@ func (a *Admin) groupsIndex(c *inertia.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := []groupRow{}
 	for rows.Next() {

@@ -334,7 +334,7 @@ func dueSchedules(ctx context.Context, db *sqldb.DB, now int64) ([]scheduleRow, 
 	if err != nil {
 		return nil, fmt.Errorf("queue: select due schedules: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []scheduleRow{}
 	for rows.Next() {

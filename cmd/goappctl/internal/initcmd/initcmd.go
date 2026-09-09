@@ -109,16 +109,16 @@ func Run(o Options) error {
 		return err
 	}
 	if len(added) > 0 {
-		fmt.Fprintf(o.Out, "adding %s (required by your selection)\n", strings.Join(added, ", "))
+		_, _ = fmt.Fprintf(o.Out, "adding %s (required by your selection)\n", strings.Join(added, ", "))
 	}
 	off := components.Off(resolved)
 	shown := resolved
 	if len(shown) == 0 {
 		shown = []string{"(none)"}
 	}
-	fmt.Fprintf(o.Out, "components: %s\n", strings.Join(shown, ", "))
+	_, _ = fmt.Fprintf(o.Out, "components: %s\n", strings.Join(shown, ", "))
 	if o.DryRun {
-		fmt.Fprintln(o.Out, "\n-- dry run: nothing will be written --")
+		_, _ = fmt.Fprintln(o.Out, "\n-- dry run: nothing will be written --")
 	}
 
 	// step 3 + 7: delete owned paths, then template-only paths. Both are
@@ -157,7 +157,7 @@ func Run(o Options) error {
 	}
 
 	if o.DryRun {
-		fmt.Fprintln(o.Out, "\ndry run complete; re-run without --dry-run to apply")
+		_, _ = fmt.Fprintln(o.Out, "\ndry run complete; re-run without --dry-run to apply")
 		return nil
 	}
 
@@ -165,7 +165,7 @@ func Run(o Options) error {
 	if err := formatGoFiles(o); err != nil {
 		return err
 	}
-	fmt.Fprintln(o.Out, "running go mod tidy")
+	_, _ = fmt.Fprintln(o.Out, "running go mod tidy")
 	if err := runCmd(o, "go", "mod", "tidy"); err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func Run(o Options) error {
 	// step 9: verify, then optionally re-init git.
 	for _, args := range [][]string{{"build", "./..."}, {"vet", "./..."}, {"test", "./..."}} {
 		label := "go " + strings.Join(args, " ")
-		fmt.Fprintf(o.Out, "verifying: %s\n", label)
+		_, _ = fmt.Fprintf(o.Out, "verifying: %s\n", label)
 		if err := runCmd(o, "go", args...); err != nil {
 			return fmt.Errorf("%s failed on the transformed project: %w", label, err)
 		}
@@ -184,7 +184,7 @@ func Run(o Options) error {
 		}
 	}
 
-	fmt.Fprintf(o.Out, "\ndone: %s is ready\n", o.Module)
+	_, _ = fmt.Fprintf(o.Out, "\ndone: %s is ready\n", o.Module)
 	return nil
 }
 
@@ -245,7 +245,7 @@ func deletePaths(o Options, paths []string) error {
 		if _, err := os.Lstat(full); err != nil {
 			continue // tolerated: the template may not have this path
 		}
-		fmt.Fprintf(o.Out, "  delete %s\n", rel)
+		_, _ = fmt.Fprintf(o.Out, "  delete %s\n", rel)
 		if o.DryRun {
 			continue
 		}
@@ -280,7 +280,7 @@ func stripMarkers(o Options, off map[string]bool) error {
 			return err
 		}
 		if n > 0 {
-			fmt.Fprintf(o.Out, "  strip %s (%d block(s))\n", rel, n)
+			_, _ = fmt.Fprintf(o.Out, "  strip %s (%d block(s))\n", rel, n)
 		}
 		total, files = total+n, files+1
 		if o.DryRun || bytes.Equal(out, src) {
@@ -291,7 +291,7 @@ func stripMarkers(o Options, off map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(o.Out, "markers: %d block(s) stripped across %d file(s)\n", total, files)
+	_, _ = fmt.Fprintf(o.Out, "markers: %d block(s) stripped across %d file(s)\n", total, files)
 	return nil
 }
 
@@ -312,7 +312,7 @@ func stripSSRScripts(o Options) error {
 	if bytes.Equal(out, src) {
 		return nil
 	}
-	fmt.Fprintf(o.Out, "  edit %s (drop SSR scripts)\n", rel)
+	_, _ = fmt.Fprintf(o.Out, "  edit %s (drop SSR scripts)\n", rel)
 	if o.DryRun {
 		return nil
 	}
@@ -330,10 +330,10 @@ func materializeConfig(o Options) error {
 		return nil
 	}
 	if _, err := os.Stat(dst); err == nil {
-		fmt.Fprintln(o.Out, "  keep config.yaml (already present)")
+		_, _ = fmt.Fprintln(o.Out, "  keep config.yaml (already present)")
 		return nil
 	}
-	fmt.Fprintln(o.Out, "  create config.yaml (from config.example.yaml)")
+	_, _ = fmt.Fprintln(o.Out, "  create config.yaml (from config.example.yaml)")
 	if o.DryRun {
 		return nil
 	}
@@ -387,7 +387,7 @@ func rewriteIdentity(o Options) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(o.Out, "module path: %s -> %s (%d file(s))\n", TemplateModule, o.Module, changed)
+	_, _ = fmt.Fprintf(o.Out, "module path: %s -> %s (%d file(s))\n", TemplateModule, o.Module, changed)
 
 	// App name: a separate identity dimension from the module path, since the
 	// binary name need not be the module's last segment.
@@ -414,7 +414,7 @@ func rewriteIdentity(o Options) error {
 			return fmt.Errorf("rewrite %s: %w", rel, err)
 		}
 	}
-	fmt.Fprintf(o.Out, "app name: %s -> %s (%d file(s))\n", templateAppName, o.Name, renamed)
+	_, _ = fmt.Fprintf(o.Out, "app name: %s -> %s (%d file(s))\n", templateAppName, o.Name, renamed)
 	return nil
 }
 
@@ -446,7 +446,7 @@ func formatGoFiles(o Options) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(o.Out, "goimports: %d file(s) rewritten\n", n)
+	_, _ = fmt.Fprintf(o.Out, "goimports: %d file(s) rewritten\n", n)
 	return nil
 }
 
@@ -461,7 +461,7 @@ func runCmd(o Options, name string, args ...string) error {
 }
 
 func gitReinit(o Options) error {
-	fmt.Fprintln(o.Out, "re-initializing git history")
+	_, _ = fmt.Fprintln(o.Out, "re-initializing git history")
 	if err := os.RemoveAll(filepath.Join(o.Root, ".git")); err != nil {
 		return err
 	}

@@ -93,7 +93,7 @@ func newVersionCmd() *cobra.Command {
 			if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" {
 				v = bi.Main.Version
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "goappctl", v)
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "goappctl", v)
 		},
 	}
 }
@@ -119,7 +119,7 @@ func promptComponents(cmd *cobra.Command) ([]string, error) {
 			strings.Join(components.Names(), ","))
 	}
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "Select components (y/N):")
+	_, _ = fmt.Fprintln(out, "Select components (y/N):")
 	in := bufio.NewScanner(os.Stdin)
 	var selected []string
 	for _, c := range components.All {
@@ -127,7 +127,7 @@ func promptComponents(cmd *cobra.Command) ([]string, error) {
 		if len(c.Deps) > 0 {
 			suffix = fmt.Sprintf(" [needs %s]", strings.Join(c.Deps, "+"))
 		}
-		fmt.Fprintf(out, "  %s%s? ", c.Name, suffix)
+		_, _ = fmt.Fprintf(out, "  %s%s? ", c.Name, suffix)
 		if !in.Scan() {
 			break
 		}

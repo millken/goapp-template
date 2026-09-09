@@ -242,19 +242,19 @@ func claimTasks(
 		var c candidate
 		if err := rows.Scan(&c.id, &c.kind, &c.payload, &c.attempts, &c.maxAttempts,
 			&c.timeout, &c.scheduleID); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return nil, fmt.Errorf("queue: scan claim candidate: %w", err)
 		}
 		candidates = append(candidates, c)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close()
 		return nil, fmt.Errorf("queue: select claim candidates: %w", err)
 	}
 	// Closed before the UPDATEs below rather than deferred: with
 	// MaxOpenConns(1) — which the test suite uses — holding the rows open would
 	// deadlock against the first UPDATE's need for a connection.
-	rows.Close()
+	_ = rows.Close()
 
 	claimed := make([]claimedTask, 0, len(candidates))
 	for _, c := range candidates {
@@ -480,7 +480,7 @@ func renewLeases(
 	if err != nil {
 		return nil, fmt.Errorf("queue: read back renewed leases: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	held := make(map[leaseHold]bool, len(ids))
 	for rows.Next() {
@@ -527,7 +527,7 @@ func expiredLeases(ctx context.Context, db *sqldb.DB, now int64, limit int) ([]e
 	if err != nil {
 		return nil, fmt.Errorf("queue: select expired leases: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []expiredLease{}
 	for rows.Next() {
@@ -569,7 +569,7 @@ func taskCounts(ctx context.Context, db *sqldb.DB) ([]taskCell, error) {
 	if err != nil {
 		return nil, fmt.Errorf("queue: count tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []taskCell{}
 	for rows.Next() {
@@ -615,7 +615,7 @@ func orphanCounts(ctx context.Context, db *sqldb.DB, kinds []string) (map[string
 	if err != nil {
 		return nil, fmt.Errorf("queue: count orphan kinds: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := map[string]int{}
 	for rows.Next() {
@@ -660,7 +660,7 @@ func orphanTasks(ctx context.Context, db *sqldb.DB, kinds []string, cutoff int64
 	if err != nil {
 		return nil, fmt.Errorf("queue: select orphan tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []orphanTask{}
 	for rows.Next() {
@@ -779,7 +779,7 @@ func scanIDs(ctx context.Context, db *sqldb.DB, q string, args []any, what strin
 	if err != nil {
 		return nil, fmt.Errorf("queue: %s: %w", what, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	out := []int64{}
 	for rows.Next() {

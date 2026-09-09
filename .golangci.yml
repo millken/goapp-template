@@ -1,0 +1,12 @@
+# golangci-lint v2 config. The default linters (errcheck, govet, ineffassign,
+# staticcheck, unused) stay on; formatters are opt-in even when their linter
+# counterpart used to be default, so gofmt is enabled explicitly — without it a
+# file with alignment drift lints clean and only `gofmt -l` notices.
+#
+# The version the CI job installs is pinned in .github/workflows/ci.yml; keep
+# the two in step, and bump them deliberately alongside go.mod.
+version: "2"
+
+formatters:
+  enable:
+    - gofmt

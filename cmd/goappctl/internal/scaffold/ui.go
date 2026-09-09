@@ -46,7 +46,7 @@ func fetchItem(base, name string) (registryItem, error) {
 	if err != nil {
 		return registryItem{}, fmt.Errorf("cannot reach the component registry at %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return registryItem{}, fmt.Errorf("no component named %q in the registry (%s)", name, url)
@@ -252,7 +252,7 @@ func UI(names []string, opts UIOptions) error {
 	}
 
 	for _, p := range plan {
-		fmt.Fprintf(out, "  %s\n", p.dest)
+		_, _ = fmt.Fprintf(out, "  %s\n", p.dest)
 		if opts.DryRun {
 			continue
 		}
@@ -276,7 +276,7 @@ func UI(names []string, opts UIOptions) error {
 	if len(missing) > 0 {
 		// Printed, not run: gen admin prints its mount line rather than editing
 		// serve.go, and the generator does not silently change dependencies.
-		fmt.Fprintf(out, "\ninstall the packages these components need:\n    pnpm -C frontend add %s\n",
+		_, _ = fmt.Fprintf(out, "\ninstall the packages these components need:\n    pnpm -C frontend add %s\n",
 			strings.Join(missing, " "))
 	}
 	return nil

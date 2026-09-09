@@ -135,7 +135,7 @@ func Run(t *testing.T, newBackend func(t *testing.T) storage.Backend) {
 		if err != nil {
 			t.Fatalf("Open: %v", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		if _, err := f.Seek(4, io.SeekStart); err != nil {
 			t.Fatalf("Seek: %v", err)
 		}
@@ -246,7 +246,7 @@ func mustRead(t *testing.T, b storage.Backend, name string) string {
 	if err != nil {
 		t.Fatalf("Open(%s): %v", name, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(f)
 	if err != nil {
 		t.Fatalf("ReadAll(%s): %v", name, err)

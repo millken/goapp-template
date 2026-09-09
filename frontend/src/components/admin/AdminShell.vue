@@ -113,9 +113,10 @@ const iconFor = (title: string) => sectionIcons[title] ?? FileText
 // session middleware consumes them, so they vanish on the next navigation.
 //
 // A key is either a bare kind ("success") or "<style>:<kind>" when the handler
-// named the presentation explicitly via flashAs. The style has to ride in the
-// key because a flash value must be a flat string — store_db round-trips the
-// session through JSON and store_memory does not.
+// names the presentation explicitly — staging "toast:error" or "alert:success"
+// through stageFlash. The style has to ride in the key because a flash value
+// must be a flat string — store_db round-trips the session through JSON and
+// store_memory does not.
 //
 // The default follows the kind: a success is a receipt you do not need once
 // read, so it goes to a toast that dismisses itself; anything else is context

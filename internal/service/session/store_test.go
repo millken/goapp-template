@@ -105,7 +105,7 @@ func TestDBStore_Lifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	s, err := NewDBStore(db, "sessions_test")
 	if err != nil {
@@ -154,7 +154,7 @@ func TestDBStore_Lifecycle(t *testing.T) {
 func TestDBStore_Expiry(t *testing.T) {
 	ctx := context.Background()
 	db, _ := sqldb.Open("sqlite3", ":memory:")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	s, _ := NewDBStore(db, "sessions_test")
 	_ = s.ensureTable(ctx)
 
@@ -172,7 +172,7 @@ func TestDBStore_Expiry(t *testing.T) {
 
 func TestNewDBStore_InvalidTableName(t *testing.T) {
 	db, _ := sqldb.Open("sqlite3", ":memory:")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	cases := []string{
 		"has space",
 		"name;drop--",
@@ -196,7 +196,7 @@ func TestNewDBStore_InvalidTableName(t *testing.T) {
 // MySQL/PostgreSQL instances.
 func TestUpsertSQL_PerFlavor(t *testing.T) {
 	db, _ := sqldb.Open("sqlite3", ":memory:")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	// SQLite flavor (default from open).
 	s, _ := NewDBStore(db, "sessions")
@@ -226,7 +226,7 @@ func TestUpsertSQL_PerFlavor(t *testing.T) {
 // mistake would be caught before deployment.
 func TestCreateTableSQL_PerFlavor(t *testing.T) {
 	db, _ := sqldb.Open("sqlite3", ":memory:")
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	s, _ := NewDBStore(db, "sessions")
 	if got := s.createTableSQL(); !strings.Contains(got, "id         TEXT PRIMARY KEY") {

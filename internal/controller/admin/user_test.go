@@ -36,7 +36,7 @@ func newUsersDB(t *testing.T) *sqldb.DB {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	t.Cleanup(func() { d.Close() })
+	t.Cleanup(func() { _ = d.Close() })
 	ctx := context.Background()
 	if _, err := d.ExecContext(ctx, `CREATE TABLE admins (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

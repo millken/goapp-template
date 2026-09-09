@@ -37,9 +37,13 @@ jobs:
           go-version-file: go.mod
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # Pin the minor: "latest" resolved to a go1.24-built binary that
+          # refuses to load a go 1.26 module, so the job failed before it
+          # linted anything. Bump deliberately, alongside go.mod and
+          # .golangci.yml.
+          version: v2.13.2
 
   # The frontend had no CI at all, which is why `pnpm type-check` could stay
   # broken unnoticed. It is also the guard against `make update-npm`
@@ -52,7 +56,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Actions do not inherit the job's working-directory default, so the
+      # version cannot be discovered from frontend/package.json — name it here.
       - uses: pnpm/action-setup@v4
+        with:
+          version: 11
 
       - uses: actions/setup-node@v4
         with:

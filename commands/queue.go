@@ -276,9 +276,9 @@ func newQueueLsCmd() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tKIND\tSTATUS\tTRIES\tRUN AT\tERROR")
+			_, _ = fmt.Fprintln(w, "ID\tKIND\tSTATUS\tTRIES\tRUN AT\tERROR")
 			for _, it := range result.Items {
-				fmt.Fprintf(w, "%d\t%s\t%s\t%d/%d\t%s\t%s\n",
+				_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%d/%d\t%s\t%s\n",
 					it.ID, it.Kind, it.Status, it.Attempts, it.MaxAttempts,
 					cliTime(it.RunAt), truncateForCLI(it.LastError, 60))
 			}
@@ -365,9 +365,9 @@ func newQueueKindsCmd() *cobra.Command {
 			defer env.stop()
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "KIND")
+			_, _ = fmt.Fprintln(w, "KIND")
 			for _, kind := range env.queue.Kinds() {
-				fmt.Fprintf(w, "%s\n", kind)
+				_, _ = fmt.Fprintf(w, "%s\n", kind)
 			}
 			if err := w.Flush(); err != nil {
 				return err
@@ -380,7 +380,7 @@ func newQueueKindsCmd() *cobra.Command {
 			if len(plans) > 0 {
 				fmt.Println()
 				w = tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-				fmt.Fprintln(w, "SCHEDULE\tKIND\tSPEC\tENABLED\tNEXT RUN\tNOTE")
+				_, _ = fmt.Fprintln(w, "SCHEDULE\tKIND\tSPEC\tENABLED\tNEXT RUN\tNOTE")
 				for _, p := range plans {
 					note := ""
 					switch {
@@ -391,7 +391,7 @@ func newQueueKindsCmd() *cobra.Command {
 					case p.Drifted:
 						note = "overridden (code: " + p.CodeSpec + ")"
 					}
-					fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\t%s\n",
+					_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\t%s\n",
 						p.Name, p.Kind, p.Spec, p.Enabled, cliTime(p.NextRunAt), note)
 				}
 				if err := w.Flush(); err != nil {

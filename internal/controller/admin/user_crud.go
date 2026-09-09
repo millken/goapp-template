@@ -89,7 +89,7 @@ func (a *Admin) usersIndex(c *inertia.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := []userRow{}
 	for rows.Next() {
@@ -428,7 +428,7 @@ func (a *Admin) groupOptions(ctx context.Context) ([]groupOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := []groupOption{}
 	for rows.Next() {
 		var g groupOption
@@ -469,21 +469,11 @@ func (a *Admin) renderUserForm(c *inertia.Context, item userRow, errs map[string
 // almost always: a success is a receipt you do not need once you have read it,
 // so it becomes a toast that dismisses itself; an error is context you need
 // while fixing something, so it stays on the page until the next navigation.
-// Use flashAs when a particular message wants the other treatment.
+//
+// To override that default, stage the key yourself: stageFlash(c, "toast:error",
+// msg) or "alert:success" — AdminShell.vue's split() reads the prefix.
 func (a *Admin) flash(c *inertia.Context, kind, message string) {
 	a.stageFlash(c, kind, message)
-}
-
-// flashAs stages a message with the presentation named explicitly — "toast" for
-// the transient corner notice, "alert" for the one that stays in the page.
-//
-// The style rides in the flash key rather than beside the message because a
-// flash value has to be a flat string: store_db round-trips the session through
-// JSON and store_memory does not, so a struct would read back as two different
-// types depending on which store is configured. session/flash.go documents the
-// same constraint.
-func (a *Admin) flashAs(c *inertia.Context, style, kind, message string) {
-	a.stageFlash(c, style+":"+kind, message)
 }
 
 func (a *Admin) stageFlash(c *inertia.Context, key, message string) {
