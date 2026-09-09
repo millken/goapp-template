@@ -11,9 +11,8 @@ import (
 	"github.com/millken/inertia"
 )
 
-// uploadsEngine wires up the real storage service on a temp root, the same
-// way runServe does: two routes over one storageFileServer, at the bare
-// prefix and the wildcard.
+// uploadsEngine wires up the real storage service on a temp root, the same way
+// runServe does: one wildcard route over inertia.StaticFileServer.
 func uploadsEngine(t *testing.T) (*inertia.Engine, *storage.Service) {
 	t.Helper()
 	stor := storage.New(&storage.Config{Root: t.TempDir()})
@@ -27,23 +26,21 @@ func uploadsEngine(t *testing.T) (*inertia.Engine, *storage.Service) {
 		t.Fatalf("inertia.New: %v", err)
 	}
 	prefix := stor.URLPrefix() + "/"
-	serve := storageFileServer(prefix, stor.FS())
-	eng.GET(prefix, serve)
-	eng.GET(prefix+"*", serve)
+	eng.GET(prefix+"*", inertia.StaticFileServer(prefix, stor.FS()))
 	if err := eng.RegistrationError(); err != nil {
 		t.Fatalf("registration: %v", err)
 	}
 	return eng, stor
 }
 
-// TestStorageFileServer_MalformedPathIs404NotAServerError is finding 4:
-// inertia.StaticFileServer trims its prefix off the decoded r.URL.Path and
-// hands the rest to fs.FS.Open, which answers fs.ErrInvalid for a ".."
-// segment — neither os.IsNotExist nor os.IsPermission, so unwrapped this
-// falls through to inertia's 500 handler and an ERROR log line for every
-// malformed request an unauthenticated scanner sends. Every case here must
-// answer 404 instead, the same as a path that is merely missing.
-func TestStorageFileServer_MalformedPathIs404NotAServerError(t *testing.T) {
+// TestUploadsRoute_MalformedPathIs404NotAServerError pins the two ways this
+// route used to answer 500 for ordinary traffic. Both were fixed in inertia
+// v1.1.4 and the wrapper this file used to test is gone, but the guarantee is
+// the storage area's, not the router's, so it stays pinned here: a ".."
+// segment reaches fs.FS.Open as fs.ErrInvalid (neither ErrNotExist nor
+// ErrPermission), and "/uploads/" is a tree node with no handler of its own.
+// Every case must be a 404, the same as a path that is merely missing.
+func TestUploadsRoute_MalformedPathIs404NotAServerError(t *testing.T) {
 	eng, _ := uploadsEngine(t)
 	for _, p := range []string{
 		"/uploads/../secret.txt",
@@ -62,10 +59,10 @@ func TestStorageFileServer_MalformedPathIs404NotAServerError(t *testing.T) {
 	}
 }
 
-// TestStorageFileServer_ServesAnActualFile guards against the fix answering
+// TestUploadsRoute_ServesAnActualFile guards against the fix answering
 // 404 for everything: a real, legal path must still resolve, and a merely
 // missing one (as opposed to a malformed one) must still be a plain 404.
-func TestStorageFileServer_ServesAnActualFile(t *testing.T) {
+func TestUploadsRoute_ServesAnActualFile(t *testing.T) {
 	eng, stor := uploadsEngine(t)
 	if _, err := stor.Upload(context.Background(), "", "a.png", strings.NewReader("x")); err != nil {
 		t.Fatalf("Upload: %v", err)

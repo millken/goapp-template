@@ -8,7 +8,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.48
-	github.com/millken/inertia v1.1.2
+	github.com/millken/inertia v1.1.4
 	github.com/millken/inertia/middleware v1.1.0
 	github.com/millken/inertia/ssr v1.1.0
 	github.com/millken/inertia/ssr/quickjs v1.1.0
