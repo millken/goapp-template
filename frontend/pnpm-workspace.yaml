@@ -7,5 +7,11 @@
 #
 # vue-demi arrives via @vueuse/core and reka-ui. Its postinstall picks the Vue 2
 # or Vue 3 shim, so this project (Vue 3) is exactly the case it exists to handle.
+#
+# esbuild asks for the same decision (Vite pulls it in). Its install script only
+# resolves the platform binary that @esbuild/<os>-<arch> already ships, so
+# skipping it costs nothing and keeps one fewer download in the install path —
+# false is the answer, not "undecided".
 allowBuilds:
+  esbuild: false
   vue-demi: true
