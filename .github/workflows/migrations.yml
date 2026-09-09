@@ -12,6 +12,9 @@ name: Migrations
 # under .github are never stripped.
 
 on:
+  # Manually runnable: a migration change is exactly the kind of edit you want
+  # to try against a real MySQL from a branch, before it reaches main.
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
