@@ -1,9 +1,11 @@
 // MountAll wires every non-admin controller area onto the engine. Admin is
 // wired separately in serve.go because it needs its own config.
 //
-// The gen:mounts block below is the registration point for generated
-// resources. `gen resource` does not edit it — it prints the Mount line and you
-// add it here by hand. Keep the block markers intact so tooling can find it.
+// The gen:mounts block below is the registration point for generated resources.
+// `goappctl gen resource` edits it in place — idempotently, and only inside the
+// markers — so keep them intact. `--no-mount` prints the line instead of adding
+// it. Admin resources are not registered here: they mount in serve.go, after the
+// admin area exists.
 package controller
 
 import (

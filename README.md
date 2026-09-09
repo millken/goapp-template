@@ -9,6 +9,11 @@ Go + Vue 3 + Inertia.js 应用模板。
 <!--goappctl:end-->
 - **构建**：dev/prod 双模式，prod 通过 `//go:build prod` 把前端 dist embed 进二进制
 
+> **给 AI agent 的入口**：[.claude/skills/goapp/SKILL.md](.claude/skills/goapp/SKILL.md)。
+> 一页写清组件探测、三条加功能的路、以及不能破的规矩（后台路由必须走 registrar、校验失败重渲染、
+> CSRF、SSR overlay、迁移三方言并行、标记成对）。Claude Code 在本仓库里会自动加载它；
+> 它随 `init` 进到生成的项目，所以刻意不含 module 路径和应用名（`.claude/` 是点目录，init 不改写）。
+
 ## 项目结构
 
 路径写成扁平形式、每项统一用 `├──`：这样删掉任意一行都不会留下悬空的树枝
