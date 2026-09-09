@@ -31,8 +31,16 @@ const Tooling = "tooling"
 // All is the component list, in checklist order.
 var All = []Component{
 	{
-		Name:  "db",
-		Owned: []string{"internal/service/db", "internal/driver"},
+		Name: "db",
+		// The MySQL round-trip workflow tests this component's migrations (and
+		// the queue's, when present), so it goes when the component goes. It has
+		// to be named here rather than marked up: init does not walk
+		// dot-directories, so a marker under .github would ship verbatim.
+		Owned: []string{
+			"internal/service/db",
+			"internal/driver",
+			".github/workflows/migrations.yml",
+		},
 	},
 	{
 		Name:  "session",

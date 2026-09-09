@@ -1,0 +1,73 @@
+name: Migrations
+
+# The test job in ci.yml runs everything on SQLite, which cannot prove that the
+# MySQL dialect of the migrations parses and applies on MySQL: a dialect-only
+# syntax error (an index declared outside CREATE TABLE, say) passes there and
+# fails the first deploy. This workflow executes the MySQL dialect of both
+# migration sets against a real mysql:8.0 — up, down to zero, back up.
+#
+# It lives in its own file rather than as a job in ci.yml because the db
+# component owns it: `goappctl init` without db deletes this file, and a marker
+# block could not do that job — init does not walk dot-directories, so markers
+# under .github are never stripped.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          # The _test suffix is a hard precondition: the tests refuse any other
+          # database name because they MigrateDown to zero.
+          MYSQL_DATABASE: app_test
+        ports:
+          - 3306:3306
+        # The probe must go over TCP (-h 127.0.0.1), the path the tests
+        # themselves take: during first-boot initialization the image runs a
+        # temporary --skip-networking server, so a socket ping succeeds while
+        # 3306 is not listening yet and MYSQL_DATABASE may not exist — the job
+        # would start early and fail with connection refused / unknown
+        # database. A socket probe here is a flaky-green trap, not a shortcut.
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      MYSQL_TEST_DSN: root:root@tcp(127.0.0.1:3306)/app_test?multiStatements=true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download dependencies
+        run: go mod download
+
+      # A skip counts as a pass for `go test`, so a renamed env key or a dropped
+      # env block would leave this green while executing nothing — exactly the
+      # silent coverage loss it exists to prevent. The grep turns a skip into a
+      # failure.
+      #
+      # The queue leg is guarded by its directory because queue is optional
+      # while db is on; deleting this file is the db component's business, and
+      # the queue component has no way to edit it.
+      - name: Migration round-trip (db + queue)
+        run: |
+          set -e
+          go test ./internal/service/db/ -run TestMySQLMigrations -v | tee db.out
+          grep -q -- '--- PASS: TestMySQLMigrations_RoundTripUpDownUp' db.out
+          if [ -d internal/service/queue ]; then
+            go test ./internal/service/queue/ -run TestMySQLMigrations -v | tee queue.out
+            grep -q -- '--- PASS: TestMySQLMigrations_RoundTripUpDownUp' queue.out
+          fi

@@ -58,9 +58,22 @@ no such switch.
 ## Down migrations
 
 Every up has a down, and `TestMigration…_RollsBackCleanly` exercises the pair on
-SQLite. The MySQL and PostgreSQL versions are not covered by the test suite (it
-runs against `:memory:` SQLite only) — treat them as reviewed, not proven, and
-try them against a scratch database before relying on one in production.
+SQLite. MySQL is covered at the execution level too:
+`TestMySQLMigrations_RoundTripUpDownUp` runs up → down to zero → up against a
+real server, gated on `MYSQL_TEST_DSN` and wired into
+`.github/workflows/migrations.yml`. Every component with its own migrations
+carries its own copy. Locally:
+
+```bash
+docker run --rm -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=app_test -p 3306:3306 mysql:8.0
+export MYSQL_TEST_DSN='root:root@tcp(127.0.0.1:3306)/app_test?multiStatements=true'
+go test ./... -run TestMySQLMigrations
+```
+
+The database name must end in `_test`: the test migrates down to zero and
+refuses to touch anything else. PostgreSQL has no such coverage — treat that
+dialect as reviewed, not proven, and try it against a scratch database before
+relying on it in production.
 
 <!--goappctl:queue-->
 ## A component with its own migrations
