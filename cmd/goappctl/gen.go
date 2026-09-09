@@ -49,10 +49,10 @@ func newGenCmd() *cobra.Command {
 			if err := scaffold.Resource(args[0], scaffold.Options{Force: force, ModuleRoot: p.Root, Module: p.Module}); err != nil {
 				return err
 			}
-			fmt.Fprintf(out, "generated resource %s\n", spec.Package)
+			_, _ = fmt.Fprintf(out, "generated resource %s\n", spec.Package)
 
 			if noMount {
-				fmt.Fprintf(out, "\nnot mounted (--no-mount); add this inside the gen:mounts region of %s:\n    %s.Mount(eng, svc)\n",
+				_, _ = fmt.Fprintf(out, "\nnot mounted (--no-mount); add this inside the gen:mounts region of %s:\n    %s.Mount(eng, svc)\n",
 					scaffold.MountGenPath, spec.Package)
 				return nil
 			}
@@ -61,9 +61,9 @@ func newGenCmd() *cobra.Command {
 				return err
 			}
 			if added {
-				fmt.Fprintf(out, "mounted in %s\n", scaffold.MountGenPath)
+				_, _ = fmt.Fprintf(out, "mounted in %s\n", scaffold.MountGenPath)
 			} else {
-				fmt.Fprintf(out, "already mounted in %s\n", scaffold.MountGenPath)
+				_, _ = fmt.Fprintf(out, "already mounted in %s\n", scaffold.MountGenPath)
 			}
 			return nil
 		},
@@ -72,7 +72,7 @@ func newGenCmd() *cobra.Command {
 	adminCmd := &cobra.Command{
 		Use:   "admin <name>",
 		Short: "Generate an admin CRUD resource (auth-guarded, under the admin mount)",
-		Long: "Generates internal/controller/admin<name>/ and frontend/pages/admin/<name>/.\n" +
+		Long: "Generates internal/controller/admin/<name>/ and frontend/pages/admin/<name>/.\n" +
 			"Admin areas mount inside serve.go rather than the gen:mounts region, so the\n" +
 			"wiring line is printed for you to add.",
 		Args: cobra.ExactArgs(1),
@@ -94,9 +94,8 @@ func newGenCmd() *cobra.Command {
 			if err := scaffold.Admin(args[0], scaffold.Options{Force: force, ModuleRoot: p.Root, Module: p.Module}); err != nil {
 				return err
 			}
-			pkg := "admin" + spec.Package
-			fmt.Fprintf(out, "generated admin resource %s\n", pkg)
-			fmt.Fprintf(out, "\nadd this to commands/serve.go, after adm.Mount(eng):\n    %s.Mount(eng, svc, adm)\n", pkg)
+			_, _ = fmt.Fprintf(out, "generated admin resource %s/%s\n", scaffold.AdminDir, spec.Package)
+			_, _ = fmt.Fprintf(out, "\nadd this to commands/serve.go, after adm.Mount(eng):\n    %s.Mount(eng, svc, adm)\n", spec.Package)
 			return nil
 		},
 	}
@@ -142,6 +141,6 @@ func warnNoDB(out io.Writer, p scaffold.Project) {
 	if p.HasDB {
 		return
 	}
-	fmt.Fprintf(out, "warning: %s has no internal/service/db/ — svc.DB is nil at runtime, so the\n"+
+	_, _ = fmt.Fprintf(out, "warning: %s has no internal/service/db/ — svc.DB is nil at runtime, so the\n"+
 		"         generated CRUD handlers cannot query anything until you add a database.\n", p.Root)
 }

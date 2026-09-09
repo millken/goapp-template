@@ -353,14 +353,16 @@ goappctl gen resource post -C ../other    # 指定项目根目录
 产物：
 
 - `gen resource post` → `internal/controller/post/{handler,model}.go` + `frontend/pages/post/{index,form}.vue`
-- `gen admin post` → `internal/controller/adminpost/{handler,model}.go` + `frontend/pages/admin/post/{index,form}.vue`
+- `gen admin post` → `internal/controller/admin/post/{handler,model}.go` + `frontend/pages/admin/post/{index,form}.vue`
+  （Go 目录和前端目录一样嵌在 `admin/` 下，包名就是 `post`）
 
 接线：
 
 - **resource 自动接线** —— 直接改 [internal/controller/mount_gen.go](internal/controller/mount_gen.go)
   的 `gen:mounts` 区块（加 import + `post.Mount(eng, svc)`，按名排序）。重复执行不会产生重复项。
 - **admin resource 需手动一行** —— admin 区域挂在 [commands/serve.go](commands/serve.go) 里而非
-  `gen:mounts` 区块，所以命令会把 `adminpost.Mount(eng, svc, adm)` 打印出来让你粘贴。
+  `gen:mounts` 区块，所以命令会把 `post.Mount(eng, svc, adm)` 打印出来让你粘贴。
+  同名的公开资源（`internal/controller/post/`）是另一个包、包名也叫 `post`，同一个文件里都用到时给其中一个起别名。
 
 校验：
 

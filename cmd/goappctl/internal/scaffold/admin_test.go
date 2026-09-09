@@ -14,8 +14,8 @@ func TestAdmin_CreatesAllFiles(t *testing.T) {
 	}
 
 	want := []string{
-		"internal/controller/adminblogpost/handler.go",
-		"internal/controller/adminblogpost/model.go",
+		"internal/controller/admin/blogpost/handler.go",
+		"internal/controller/admin/blogpost/model.go",
 		"frontend/pages/admin/blog-post/index.vue",
 		"frontend/pages/admin/blog-post/form.vue",
 	}
@@ -31,7 +31,7 @@ func TestAdmin_HandlerHasAdminRoutes(t *testing.T) {
 	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
-	handler, err := os.ReadFile(filepath.Join(root, "internal/controller/adminpost/handler.go"))
+	handler, err := os.ReadFile(filepath.Join(root, "internal/controller/admin/post/handler.go"))
 	if err != nil {
 		t.Fatalf("read handler: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestAdmin_WritesFlashOnEveryRedirect(t *testing.T) {
 	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
-	handler, err := os.ReadFile(filepath.Join(root, "internal/controller/adminpost/handler.go"))
+	handler, err := os.ReadFile(filepath.Join(root, "internal/controller/admin/post/handler.go"))
 	if err != nil {
 		t.Fatalf("read handler: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestAdmin_RoutesGoThroughTheRegistrar(t *testing.T) {
 	if err := Admin("post", Options{ModuleRoot: root, Module: testModule}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(root, "internal/controller/adminpost/handler.go"))
+	data, err := os.ReadFile(filepath.Join(root, "internal/controller/admin/post/handler.go"))
 	if err != nil {
 		t.Fatalf("read handler.go: %v", err)
 	}

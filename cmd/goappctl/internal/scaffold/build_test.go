@@ -40,8 +40,7 @@ func TestAdmin_OutputCompiles(t *testing.T) {
 	root := moduleRoot(t)
 
 	const resource = "genwiresmoke"
-	pkg := "admin" + resource
-	pkgDir := filepath.Join(root, "internal", "controller", pkg)
+	pkgDir := filepath.Join(root, AdminDir, resource)
 	viewDir := filepath.Join(root, "frontend", "pages", "admin", resource)
 	t.Cleanup(func() {
 		_ = os.RemoveAll(pkgDir)
@@ -51,7 +50,7 @@ func TestAdmin_OutputCompiles(t *testing.T) {
 	if err := Admin(resource, Options{ModuleRoot: root, Module: testModule, Force: true}); err != nil {
 		t.Fatalf("Admin: %v", err)
 	}
-	goBuild(t, root, "./internal/controller/"+pkg+"/...")
+	goBuild(t, root, "./"+AdminDir+"/"+resource+"/...")
 }
 
 func goBuild(t *testing.T, dir, pattern string) {

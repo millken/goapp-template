@@ -76,7 +76,7 @@ func TestGeneratedImportsTargetModule(t *testing.T) {
 		path string
 	}{
 		{"resource", Resource, "internal/controller/post/handler.go"},
-		{"admin", Admin, "internal/controller/adminpost/handler.go"},
+		{"admin", Admin, "internal/controller/admin/post/handler.go"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -116,7 +116,7 @@ func TestGeneratedWriteHandlersValidate(t *testing.T) {
 		},
 		{
 			"admin", Admin,
-			"internal/controller/adminpost/handler.go", "frontend/pages/admin/post/form.vue",
+			"internal/controller/admin/post/handler.go", "frontend/pages/admin/post/form.vue",
 			[]string{`errors?: Record<string, string>`, `errors?.name`, `:model-value="item.name"`},
 		},
 	} {
