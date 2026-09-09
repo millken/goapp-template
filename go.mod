@@ -3,7 +3,7 @@ module github.com/millken/goapp-template
 go 1.26.2
 
 require (
-	github.com/dnsoa/go/sqldb v0.0.6
+	github.com/dnsoa/go/sqldb v0.0.7
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
